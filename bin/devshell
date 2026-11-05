@@ -42,7 +42,9 @@ json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
 while (($#)); do
     case "$1" in
         --profile | --approve | --component)
-            (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail "valor ausente para $1"
+            if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
+                fail "valor ausente para $1"
+            fi
             case "$1" in --profile) profile=$2 ;; --approve) approval=$2 ;; --component)
                 component=$2
                 component_set=1
