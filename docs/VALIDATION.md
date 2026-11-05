@@ -6,7 +6,9 @@
 
 A versão é experimental. Há evidência local em Ubuntu 26.04 x86_64/glibc;
 fixtures de adaptadores não certificam instalação em outras distribuições.
-Nenhuma execução remota do workflow foi comprovada nesta entrega.
+As execuções remotas do workflow `checks` estão disponíveis no
+[GitHub Actions](https://github.com/talesgomes27/data-lab-dotfiles/actions/workflows/ci.yml).
+O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
@@ -64,7 +66,7 @@ publicação foi feita como parte desta reorganização.
 
 ## Limitações remanescentes
 
-- Containers multi-distro e GitHub Actions remoto ainda não executados.
+- Containers multi-distro e smoke online remoto ainda não executados.
 - Sem validação de runtime musl/aarch64, GPU/PyTorch ou aplicação Shiny.
 - Sem teste visual completo do emulador/fonte ou de todas as interfaces de terminal.
 - Atualização manual de Chezmoi testada com executáveis artificiais; outros
@@ -121,12 +123,12 @@ exigência de PR, conversas resolvidas, histórico linear, bloqueio de exclusão
 force push, e check `checks` do GitHub Actions (integration_id 15368).
 São exigidas zero aprovações externas para permitir manutenção individual.
 O check é dispensado na criação inicial da branch; atualizações posteriores
-exigem aprovação do CI. O repositório está vazio: nenhum commit, push ou release
-foi feito nesta etapa. A regra efetiva foi consultada mesmo sem a branch criada.
+exigem aprovação do CI. Na preparação, o repositório ainda estava vazio: nenhum commit, push ou release
+havia sido feito nessa etapa. A regra efetiva foi consultada mesmo sem a branch criada.
 
-O Docker recusou acesso ao socket; containers não foram executados. Nenhum CI
-remoto foi executado, e os requisitos da política ainda não foram exercitados
-por um PR real. A alteração do workflow foi revisada; não havia parser YAML
+O Docker recusou acesso ao socket; containers não foram executados. Na preparação
+anterior ao primeiro envio, o CI remoto e os requisitos por PR ainda estavam
+pendentes. A alteração do workflow foi revisada; não havia parser YAML
 instalado para validação adicional. Consulte [Contribuição](../CONTRIBUTING.md#proteger-a-main)
 para consultar ou aplicar a política em outro destino.
 
@@ -134,3 +136,18 @@ O Git local foi inicializado em main, com origin apontando para o repositório
 criado. Somente os 85 arquivos revisados foram colocados no índice; não houve
 commit ou push. A proteção no GitHub foi confirmada por leitura das regras
 efetivas para main. A cópia local está preparada para o primeiro envio revisado.
+
+
+## Primeiro envio e compatibilidade do CI
+
+O commit inicial foi enviado à main com as regras ativas. A
+[primeira execução](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/41949383235)
+identificou um aviso SC2015 no ShellCheck do runner Ubuntu 24.04, antes de executar
+os testes. A validação de argumentos foi reescrita com `if` explícito,
+preservando a recusa de valores ausentes, vazios ou iniciados por outra opção.
+Nove casos foram conferidos em HOME temporária, sem escrita.
+
+A correção é integrada por PR e pelo check `checks` do GitHub Actions, usando
+o mesmo ruleset. A consulta das regras não substitui o teste de rejeição de um
+push direto. Os bloqueios de exclusão e force push são conferidos na política;
+não se deve apagar ou reescrever a main apenas para testá-los.

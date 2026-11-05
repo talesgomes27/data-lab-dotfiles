@@ -2,6 +2,9 @@
 
 ## Não publicado
 
+- Validação de argumentos com `if` explícito para compatibilidade com o ShellCheck
+  do runner Ubuntu 24.04, preservando as recusas de entradas inválidas.
+
 - Preparação da publicação: exclusão de caches/estado local, job CI `checks`
   com nome estável e política revisável de proteção da main para ativação no GitHub.
 
