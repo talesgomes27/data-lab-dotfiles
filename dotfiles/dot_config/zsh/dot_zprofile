@@ -1,0 +1,3 @@
+# O ambiente também é carregado em .zshrc para terminais sem login.
+case "${XDG_CONFIG_HOME-}" in /*) _foundry_config=$XDG_CONFIG_HOME ;; *) _foundry_config=$HOME/.config ;; esac
+source "$_foundry_config/devshell/env.sh"

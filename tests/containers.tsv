@@ -1,0 +1,6 @@
+# nome adaptador imagem; tags de release podem receber updates de segurança.
+ubuntu apt ubuntu:24.04
+debian apt debian:13-slim
+fedora dnf fedora:44
+arch pacman archlinux:base
+opensuse zypper opensuse/leap:16.0

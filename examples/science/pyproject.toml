@@ -1,0 +1,22 @@
+[project]
+name = "science-example"
+version = "0.1.0"
+description = "Projeto científico isolado de exemplo"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "numpy>=2,<3",
+    "pandas>=2,<4",
+    "scipy>=1.15,<2",
+    "statsmodels>=0.14,<0.15",
+    "scikit-learn>=1.6,<2",
+    "matplotlib>=3.10,<4",
+    "ipykernel>=6,<8",
+]
+
+[dependency-groups]
+notebook = ["jupyterlab>=4,<5"]
+dev = ["ruff>=0.14,<1", "pytest>=8,<10"]
+analytics = ["duckdb>=1.4,<2", "polars>=1,<2", "pyarrow>=18,<25"]
+
+[tool.uv]
+package = false

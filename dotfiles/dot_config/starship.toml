@@ -1,0 +1,86 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+add_newline = false
+command_timeout = 500
+format = '$username$hostname$directory$git_branch$git_status$python$rlang$java$rust$golang$nodejs${custom.javascript}${custom.typescript}$quarto${custom.astro}$cmd_duration$status$line_break$character'
+
+[directory]
+truncation_length = 3
+truncation_symbol = '…/'
+format = '[](fg:#245b72)[$path]($style)[](fg:#245b72)[$read_only]($read_only_style) '
+style = 'bold fg:#e6f7ff bg:#245b72'
+
+[git_branch]
+symbol = ' '
+format = '[](fg:#644481)[$symbol$branch]($style)[](fg:#644481) '
+style = 'bold fg:#faf0ff bg:#644481'
+
+[git_status]
+style = 'bold yellow'
+
+[python]
+symbol = ' '
+format = '[](fg:#715923)[$symbol$version( \($virtualenv\))]($style)[](fg:#715923) '
+style = 'bold fg:#fff4ce bg:#715923'
+
+[rlang]
+symbol = 'R '
+format = '[](fg:#37598a)[$symbol$version]($style)[](fg:#37598a) '
+style = 'bold fg:#eef5ff bg:#37598a'
+
+[java]
+symbol = 'Java '
+format = '[](fg:#8a4d29)[$symbol$version]($style)[](fg:#8a4d29) '
+style = 'bold fg:#fff1e6 bg:#8a4d29'
+
+[rust]
+symbol = 'Rust '
+format = '[](fg:#7e4535)[$symbol$version]($style)[](fg:#7e4535) '
+style = 'bold fg:#fff1e8 bg:#7e4535'
+
+[golang]
+symbol = 'Go '
+format = '[](fg:#246779)[$symbol$version]($style)[](fg:#246779) '
+style = 'bold fg:#e9fbff bg:#246779'
+
+[nodejs]
+symbol = 'Node '
+detect_extensions = ['js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx']
+format = '[](fg:#346a45)[$symbol$version]($style)[](fg:#346a45) '
+style = 'bold fg:#eefff1 bg:#346a45'
+
+[quarto]
+symbol = 'Quarto '
+format = '[](fg:#37647e)[$symbol$version]($style)[](fg:#37647e) '
+style = 'bold fg:#eef9ff bg:#37647e'
+
+[custom.javascript]
+detect_extensions = ['js', 'mjs', 'cjs', 'jsx']
+command = 'printf JS'
+format = '[](fg:#80601f)[$output]($style)[](fg:#80601f) '
+style = 'bold fg:#fff7da bg:#80601f'
+
+[custom.typescript]
+detect_extensions = ['ts', 'mts', 'cts', 'tsx']
+command = 'printf TS'
+format = '[](fg:#245c89)[$output]($style)[](fg:#245c89) '
+style = 'bold fg:#eef7ff bg:#245c89'
+
+[custom.astro]
+detect_files = ['astro.config.mjs', 'astro.config.js', 'astro.config.ts', 'astro.config.mts', 'astro.config.cjs']
+command = 'printf Astro'
+format = '[](fg:#7b4260)[$output]($style)[](fg:#7b4260) '
+style = 'bold fg:#fff1f8 bg:#7b4260'
+
+[cmd_duration]
+min_time = 2000
+format = 'em [$duration]($style) '
+style = 'bold yellow'
+
+[status]
+disabled = false
+format = '[erro $status]($style) '
+style = 'bold red'
+
+[character]
+success_symbol = '[❯](bold green)'
+error_symbol = '[❯](bold red)'

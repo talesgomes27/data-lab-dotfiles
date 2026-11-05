@@ -1,0 +1,171 @@
+{
+  "schema": 1,
+  "artifacts": [
+    {
+      "component": "uv",
+      "version": "0.13.7",
+      "arch": "x86_64",
+      "libc": "gnu",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "c5221ff41b7892bfc223543883600125f6a47fe845093e0f5bdff4f359196d83",
+      "format": "tar.gz",
+      "binary": "uv",
+      "binaries": [
+        "uv",
+        "uvx"
+      ]
+    },
+    {
+      "component": "uv",
+      "version": "0.13.7",
+      "arch": "x86_64",
+      "libc": "musl",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "287491da03f2a785c70fa75b13e1f849918c2f2b5415fe84876b8214eeb792f9",
+      "format": "tar.gz",
+      "binary": "uv",
+      "binaries": [
+        "uv",
+        "uvx"
+      ]
+    },
+    {
+      "component": "uv",
+      "version": "0.13.7",
+      "arch": "aarch64",
+      "libc": "gnu",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "71279f8d3c67241e807b9d8db872d1bf541579fb9f08b7d1eb1682196d1e57dc",
+      "format": "tar.gz",
+      "binary": "uv",
+      "binaries": [
+        "uv",
+        "uvx"
+      ]
+    },
+    {
+      "component": "uv",
+      "version": "0.13.7",
+      "arch": "aarch64",
+      "libc": "musl",
+      "url": "https://github.com/astral-sh/uv/releases/download/0.13.7/uv-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "2d3ec076a0c4c0e8250bb6418c44080828b544f1a3be0b6e46adf9fb6923de45",
+      "format": "tar.gz",
+      "binary": "uv",
+      "binaries": [
+        "uv",
+        "uvx"
+      ]
+    },
+    {
+      "component": "chezmoi",
+      "version": "2.74.0",
+      "arch": "x86_64",
+      "libc": "gnu",
+      "url": "https://github.com/twpayne/chezmoi/releases/download/v2.74.0/chezmoi-linux-amd64",
+      "sha256": "442ebbe0152f423b302ce5c6d94ff005773e5d61455c45f4be00b3430ae396a2",
+      "format": "raw",
+      "binary": "chezmoi"
+    },
+    {
+      "component": "chezmoi",
+      "version": "2.74.0",
+      "arch": "x86_64",
+      "libc": "musl",
+      "url": "https://github.com/twpayne/chezmoi/releases/download/v2.74.0/chezmoi-linux-amd64-musl",
+      "sha256": "ee037adb6b1f1074dacc344e6d6d71a38dd3e9ea03b055cadf61e7996193dffe",
+      "format": "raw",
+      "binary": "chezmoi"
+    },
+    {
+      "component": "chezmoi",
+      "version": "2.74.0",
+      "arch": "aarch64",
+      "libc": "gnu",
+      "url": "https://github.com/twpayne/chezmoi/releases/download/v2.74.0/chezmoi_2.74.0_linux_arm64.tar.gz",
+      "sha256": "bf89495d1aab5e4fa0fc1ba9457837b34ee8dec9b787570f2de3e1c12a5835a5",
+      "format": "tar.gz",
+      "binary": "chezmoi"
+    },
+    {
+      "component": "nu",
+      "version": "0.116.1",
+      "arch": "x86_64",
+      "libc": "gnu",
+      "url": "https://github.com/nushell/nushell/releases/download/0.116.1/nu-0.116.1-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "d6d8ace4be491ed8abba4026e73b60c0470b4671d7039307e7d772282ef863da",
+      "format": "tar.gz",
+      "binary": "nu"
+    },
+    {
+      "component": "nu",
+      "version": "0.116.1",
+      "arch": "x86_64",
+      "libc": "musl",
+      "url": "https://github.com/nushell/nushell/releases/download/0.116.1/nu-0.116.1-x86_64-unknown-linux-musl.tar.gz",
+      "sha256": "13ef75df08df30f8d7b031df538e82a52c6e74ce839b1a9091c3a3f1969c3742",
+      "format": "tar.gz",
+      "binary": "nu"
+    },
+    {
+      "component": "nu",
+      "version": "0.116.1",
+      "arch": "aarch64",
+      "libc": "gnu",
+      "url": "https://github.com/nushell/nushell/releases/download/0.116.1/nu-0.116.1-aarch64-unknown-linux-gnu.tar.gz",
+      "sha256": "e7bbb1639253fb83e2391600b957ba3e918f04a2c81850e9f30a68cb1ef20ef8",
+      "format": "tar.gz",
+      "binary": "nu"
+    },
+    {
+      "component": "nu",
+      "version": "0.116.1",
+      "arch": "aarch64",
+      "libc": "musl",
+      "url": "https://github.com/nushell/nushell/releases/download/0.116.1/nu-0.116.1-aarch64-unknown-linux-musl.tar.gz",
+      "sha256": "b103770c00bf322c409caa007aad44882d1cc5d24d82f719f877812ac33d6ad1",
+      "format": "tar.gz",
+      "binary": "nu"
+    },
+    {
+      "version": "v0.7.1",
+      "url": "https://api.github.com/repos/zsh-users/zsh-autosuggestions/tarball/v0.7.1",
+      "sha256": "52ca878a8d7f2e8eb2cc6503bd83db00e872eeceb423fbe765cbc9a16a05473e",
+      "component": "plugins",
+      "name": "autosuggestions",
+      "arch": "any",
+      "libc": "any",
+      "format": "tar.gz",
+      "health": {
+        "zsh-autosuggestions.zsh": "eec7ba8f7a71414ace0ea0fab0908d005b24cf65d83b169c0ff97815d3cfc51a"
+      }
+    },
+    {
+      "version": "0.8.0",
+      "url": "https://api.github.com/repos/zsh-users/zsh-syntax-highlighting/tarball/0.8.0",
+      "sha256": "0e329871928620b6f521bf366dfe8f8ddf4b03d97f8fa3eb6af25a26a6ed9b21",
+      "component": "plugins",
+      "name": "highlighting",
+      "arch": "any",
+      "libc": "any",
+      "format": "tar.gz",
+      "health": {
+        "zsh-syntax-highlighting.zsh": "156ebe9530eb991dcef54d476967e2ff4338d35dabaaff9e5462673a287cc63b",
+        "highlighters/main/main-highlighter.zsh": "b338a0b6b71ee276a5ff8979cb655d8fa940b15e7993706de33275984962f515"
+      }
+    },
+    {
+      "component": "firacode",
+      "version": "3.5.1",
+      "url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/FiraCode.zip",
+      "sha256": "239395baf60c89b2eaf4862b6b09db0ef95605cd3e8eef51c00345822a81a665",
+      "format": "zip",
+      "arch": "any",
+      "libc": "any",
+      "health": {
+        "FiraCodeNerdFontMono-Regular.ttf": "53eebbaaa09c483ebb27fdd5cf21073cc4b760308e5d666728e9db2f41616c00",
+        "LICENSE": "1d41e10031ab125302780a05ec4c91d218e47db0c7e37cf315cce5e608cdc25c"
+      }
+    }
+  ]
+}

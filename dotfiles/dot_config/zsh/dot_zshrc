@@ -1,0 +1,45 @@
+[[ -o interactive ]] || return
+[[ ${_DEVSHELL_ZSH_LOADED:-0} == 1 ]] && return
+_DEVSHELL_ZSH_LOADED=1
+case "${XDG_CONFIG_HOME-}" in /*) _foundry_config=$XDG_CONFIG_HOME ;; *) _foundry_config=$HOME/.config ;; esac
+source "$_foundry_config/devshell/env.sh"
+case "${XDG_STATE_HOME-}" in /*) _foundry_state=$XDG_STATE_HOME ;; *) _foundry_state=$HOME/.local/state ;; esac
+case "${XDG_DATA_HOME-}" in /*) _foundry_data=$XDG_DATA_HOME ;; *) _foundry_data=$HOME/.local/share ;; esac
+(umask 077; mkdir -p -- "$_foundry_state/zsh")
+HISTFILE="$_foundry_state/zsh/history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt HIST_IGNORE_ALL_DUPS HIST_SAVE_NO_DUPS HIST_IGNORE_SPACE SHARE_HISTORY EXTENDED_HISTORY
+setopt AUTO_CD INTERACTIVE_COMMENTS
+bindkey -e
+autoload -Uz compinit
+# Não aceitar diretórios de completion inseguros; -i os ignora sem perguntar.
+compinit -i -d "$_foundry_state/zsh/zcompdump"
+zstyle ':completion:*' menu select
+if devshell_enabled uv && (( $+commands[uv] )); then eval "$(uv generate-shell-completion zsh)"; fi
+if devshell_enabled plugins; then
+    _foundry_plugins="$_foundry_data/devshell/plugins"
+    [[ ! -r "$_foundry_plugins/autosuggestions/zsh-autosuggestions.zsh" ]] || source "$_foundry_plugins/autosuggestions/zsh-autosuggestions.zsh"
+fi
+if devshell_enabled starship && (( $+commands[starship] )); then
+    eval "$(starship init zsh)"
+else
+    autoload -Uz vcs_info
+    precmd_functions+=(vcs_info)
+    setopt PROMPT_SUBST
+    zstyle ':vcs_info:git:*' formats ' (%b)'
+    PROMPT='%n@%m:%~${vcs_info_msg_0_}%# '
+fi
+if devshell_enabled fzf && (( $+commands[fzf] )); then
+    # --zsh está disponível desde fzf 0.48; versões antigas mantêm o uso manual.
+    if fzf --help | command grep -q -- '--zsh'; then eval "$(fzf --zsh)"; fi
+fi
+if devshell_enabled zoxide && (( $+commands[zoxide] )); then
+    eval "$(zoxide init --cmd cd zsh)"
+    z() { cd "$@"; }
+    zi() { cdi "$@"; }
+fi
+if devshell_enabled direnv && (( $+commands[direnv] )); then eval "$(direnv hook zsh)"; fi
+if devshell_enabled plugins; then
+    [[ ! -r "$_foundry_plugins/highlighting/zsh-syntax-highlighting.zsh" ]] || source "$_foundry_plugins/highlighting/zsh-syntax-highlighting.zsh"
+fi

@@ -1,0 +1,5 @@
+# Apenas o encaminhamento XDG; sem ferramentas, rede ou operações de disco.
+case "${XDG_CONFIG_HOME-}" in
+  /*) export ZDOTDIR="$XDG_CONFIG_HOME/zsh" ;;
+  *) export ZDOTDIR="$HOME/.config/zsh" ;;
+esac

@@ -1,0 +1,4 @@
+btop
+ncdu
+tldr
+lazygit

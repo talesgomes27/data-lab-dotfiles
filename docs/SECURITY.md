@@ -1,0 +1,148 @@
+# Segurança, backups e recuperação
+
+[Início](../README.md) · [Diagnóstico](TROUBLESHOOTING.md) · [Validação](VALIDATION.md)
+
+## Escopo e downloads
+
+Toda inspeção é local e sem privilégios. A CLI não chama chsh, git pull/push,
+direnv allow, remoção de .venv ou instalador shell baixado. Os comandos
+individuais apenas apresentam os pacotes administrativos. O setup guiado pode
+executar o comando de pacotes exibido com sudo após confirmação específica;
+sem essa autorização, não há execução administrativa. Confie no conteúdo do clone antes de executá-lo: um hash de plano não
+protege contra código malicioso no próprio projeto.
+
+O instalador explícito aceita apenas URLs HTTPS de fontes GitHub declaradas,
+versões exatas e SHA-256. O manifesto registra o digest do asset da release;
+os plugins fixados têm checksum obtido da fonte oficial. Não há busca de
+latest durante a operação. Arquivos tar são lidos sem extração arbitrária:
+paths absolutos, `..`, links executáveis e arquivos especiais são recusados.
+Links README de documentação dos plugins oficiais são ignorados, nunca extraídos. O cache é
+revalidado antes do uso. Uma atualização de tag cujo conteúdo mudou falha no
+checksum, em vez de executar conteúdo novo silenciosamente.
+
+A instalação de interpretadores/ferramentas é delegada a uv com versões
+fixadas e sem `--force`. As versões das CLI raiz são fixas; suas dependências
+transitivas são resolvidas por uv em cada instalação, sem um lock separado de
+ferramentas. O lock científico, por outro lado, fixa a resolução do projeto. O lock do exemplo científico contém os hashes de
+artefatos de dependências resolvidos. Fontes oficiais e checksums reduzem o
+risco de transporte/substituição, mas não equivalem a auditoria do fornecedor.
+
+## Aplicação e caminhos
+
+`apply` exige o SHA-256 do plano atual. Arquivos existentes diferentes e não
+reconhecidos como versão gerenciada exigem `--replace-existing`. Symlinks em
+alvos/ancestrais, hardlinks, arquivos especiais, permissões inseguras e
+proprietário inesperado são recusados. Use diretórios sob seu controle; não
+execute em diretórios compartilhados hostis.
+
+Diretórios adicionados automaticamente ao PATH são recusados se contiverem
+`:`: nesse contexto o caractere dividiria um caminho em entradas separadas.
+O instalador uv também recusa `UV_TOOL_BIN_DIR` com `:` antes de gravar.
+
+## Backups e recuperação
+
+Antes da escrita, Chezmoi renderiza numa HOME temporária, a CLI confere os
+bytes e obtém um lock exclusivo. Cada arquivo existente é copiado com seus
+metadados para uma transação em `$XDG_STATE_HOME/devshell/transactions/ID`.
+O journal é escrito antes de alterar os alvos; arquivos novos usam modo 600,
+backups/estado ficam em diretórios privados. Arquivos preexistentes conservam
+modo, UID e GID. Substituições são atômicas por arquivo, não por diretório.
+
+Uma falha capturada durante aplicação tenta restaurar os arquivos já escritos.
+Se o processo for morto ou a máquina cair, um journal pending impede a próxima
+aplicação. `rollback` pode recuperar os alvos registrados, verificando se estão
+no estado anterior ou no estado aplicado. Um disco que permaneça cheio ou
+falha de hardware pode impedir a recuperação automática; preserve o backup e
+resolva o armazenamento antes de tentar novamente.
+
+Antes de restaurar, rollback registra o estado `rolling-back`. Uma nova
+revisão pode retomar a operação, aceitando somente arquivos que ainda estejam
+no estado aplicado ou no estado anterior registrado. Cada alvo é conferido
+novamente imediatamente antes de sua restauração; edição detectada interrompe
+a operação. O lock coordena processos devshell, não impede escritores externos.
+Backups ausentes ou com hash incorreto são recusados com diagnóstico específico.
+
+O `doctor` verifica arquivos esperados, presença e hashes de arquivos essenciais
+dos plugins e da fonte, e metadados/RECORD de ferramentas uv. Para CPython,
+verifica caminho executável e a versão declarada no cabeçalho instalado: isso
+não prova integridade do binário. O RECORD também não é uma assinatura contra
+um invasor capaz de alterar tanto o executável quanto os metadados locais.
+As versões mínimas de uv, Chezmoi, Zsh e Nushell continuam sendo consultadas
+por `--version` com HOME e diretórios XDG temporários. Isso reduz efeitos
+normais de inicialização, mas não é sandbox: os binários ainda precisam ser
+confiáveis e podem acessar caminhos absolutos. Interpretadores e ferramentas
+uv de science são conferidos por arquivos e metadados, sem executá-los.
+
+```bash
+./bin/devshell rollback --json
+# Revise o plano, então:
+./bin/devshell rollback --approve HASH_DO_ROLLBACK
+```
+
+Rollback só atua sobre caminhos reconhecidos e registrados. Backups corrompidos
+ou edições posteriores são recusados antes da restauração. Se um arquivo foi
+editado manualmente, copie-o para um local privado, faça a mesclagem necessária
+e só então decida como recuperar. Não edite o journal para forçar uma operação.
+A restauração recupera conteúdo, modo, UID/GID e timestamps do backup. Não há
+garantia de preservar ACLs/capabilities/xattrs em todos os filesystems; o escopo
+suportado é arquivo regular do usuário. Diretórios vazios podem permanecer.
+
+| Alteração | Recuperação |
+|---|---|
+| Dotfile preexistente aplicado | rollback do backup, se não houve edição posterior |
+| Dotfile criado pela transação | remoção pelo rollback, se ainda corresponde ao aplicado |
+| Diretórios criados | podem permanecer vazios |
+| Binários/plugins instalados | preservar/remover manualmente os paths revistos |
+| uv Python/tools/cache | manutenção manual por uv; sem remoção automática |
+| Pacotes do sistema via setup | comando exibido e confirmado separadamente; recuperação manual |
+| Drivers e login shell | nunca alterados pela CLI |
+| Projetos e .venv externos | fora do escopo, nunca removidos |
+
+O setup oferece correções de permissões somente após exibir cada caminho e
+seu modo anterior/proposto. Ele não usa chmod recursivo, recusa alvos
+redirecionados, donos inesperados e arquivos com múltiplos hardlinks e não
+corrige ancestrais fora do escopo declarado. A revisão é revalidada antes da
+primeira correção, e cada descritor é conferido antes de fchmod. Ajustes de
+modo explicitamente autorizados não são parte do rollback dos dotfiles.
+Mudanças concorrentes ou falhas podem interromper uma sequência de reparos já
+iniciada; o setup não promete uma transação global para permissões/pacotes.
+
+Instalações não são uma transação de configuração. Uma interrupção pode deixar
+parte dos binários/plugins instalada; repetir a mesma versão completa os
+arquivos ausentes e recusa divergências. Nenhum binário preexistente diferente
+é substituído. Para atualização de versões, mantenha a anterior e faça a
+substituição manual após revisar as fontes. O rollback nunca desinstala
+pacotes nem apaga interpretadores.
+
+## Dados privados
+
+Não versione histórico, kernelspecs pessoais, SSH, credenciais ou `.env`.
+Os relatórios contêm caminhos/hashes e não armazenam os conteúdos originais;
+os backups contêm o dotfile original e devem permanecer privados. `diff` exibe
+conteúdo local por solicitação: não envie esse resultado a serviços externos
+sem revisão. Não redirecione logs de comandos sensíveis para o repositório.
+
+Histórico das shells é local; começar uma linha com espaço evita registro no
+Zsh/Bash configurados. Isso não deve ser usado como controle para segredos:
+use entrada interativa ou armazenamento apropriado. direnv só carrega `.envrc`
+após autorização individual; o projeto nunca a concede automaticamente.
+
+
+## Relatar uma vulnerabilidade
+
+A versão atual é experimental, sem uma série de releases estáveis mantidas.
+Correções são destinadas à versão em desenvolvimento; versões antigas não têm
+um compromisso de backport. A [validação](VALIDATION.md) delimita as plataformas
+e operações verificadas e não constitui garantia geral de segurança.
+
+No repositório publicado, use **Security > Report a vulnerability** se o canal
+privado estiver habilitado. Se essa opção não estiver disponível, abra uma issue
+apenas solicitando um canal privado, sem divulgar detalhes exploráveis,
+credenciais ou dados pessoais. Não há um endereço privado de contato declarado
+nesta cópia local; o mantenedor deve definir esse canal ao preparar a publicação.
+
+Em contato privado, forneça a versão/revisão, comando e perfis envolvidos,
+impacto observado e uma reprodução com dados artificiais. O mantenedor deve
+confirmar recebimento e combinar a divulgação da correção; não há prazo de
+resposta garantido nesta fase. Problemas comuns de instalação podem usar issues
+públicas após revisão dos dados compartilhados.

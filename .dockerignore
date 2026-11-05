@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.aws
+.venv
+**/__pycache__
+**/.env
+**/.env.*
+*.log
+.test-tools
+.superpowers
+.ruff_cache
+.pytest_cache

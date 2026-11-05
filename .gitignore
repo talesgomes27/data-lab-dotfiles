@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.log
+.ipynb_checkpoints/
+.superpowers/
+.test-tools/
+
+# Caches e estado local que não pertencem à distribuição
+.ruff_cache/
+.pytest_cache/
+.agents/
+.codex/
+.aws/

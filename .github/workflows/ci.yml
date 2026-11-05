@@ -1,0 +1,60 @@
+name: Verificações
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline:
+    name: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Preparar ferramentas no runner descartável
+        env:
+          HOME: /tmp/foundry-ci
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh shellcheck shfmt bats
+          bash scripts/ci-setup.sh
+          curl --fail --location --silent --show-error --output /tmp/foundry-starship.tar.gz https://github.com/starship/starship/releases/download/v1.22.1/starship-x86_64-unknown-linux-musl.tar.gz
+          echo '62c91b5ecc7f8c8c6ea7ffea42a98bd2e6a2d29daf61562fac04daece18a6461  /tmp/foundry-starship.tar.gz' | sha256sum --check
+          tar -xOzf /tmp/foundry-starship.tar.gz starship > "$HOME/.local/bin/starship"
+          chmod 755 "$HOME/.local/bin/starship"
+      - name: Testes determinísticos sem downloads
+        env:
+          HOME: /tmp/foundry-ci
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v starship
+          bash scripts/check.sh
+  containers:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: ubuntu, adapter: apt, image: 'ubuntu:24.04'}
+          - {name: debian, adapter: apt, image: 'debian:13-slim'}
+          - {name: fedora, adapter: dnf, image: 'fedora:44'}
+          - {name: arch, adapter: pacman, image: 'archlinux:base'}
+          - {name: opensuse, adapter: zypper, image: 'opensuse/leap:16.0'}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Build com downloads explícitos
+        run: docker build -f tests/Containerfile --build-arg 'BASE_IMAGE=${{ matrix.image }}' --build-arg 'ADAPTER=${{ matrix.adapter }}' -t 'foundry-test:${{ matrix.name }}' .
+      - name: Suíte sem rede
+        run: docker run --rm --network none 'foundry-test:${{ matrix.name }}'
+  online-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Dependências no runner descartável
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zsh shellcheck shfmt bats
+      - name: Downloads e instalações em HOME temporária
+        run: bash scripts/online-smoke.sh

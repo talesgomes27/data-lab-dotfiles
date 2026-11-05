@@ -1,0 +1,2 @@
+# Os defaults do uv preservam .venv por projeto e diretórios por usuário.
+# Não defina UV_PROJECT_ENVIRONMENT globalmente nem substitua python/python3.

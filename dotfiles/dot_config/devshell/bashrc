@@ -1,0 +1,13 @@
+# shellcheck shell=bash
+# Inclusão manual em ~/.bashrc: source "${XDG_CONFIG_HOME:-$HOME/.config}/devshell/bashrc"
+[[ $- == *i* ]] || return
+[[ ${_DEVSHELL_BASH_LOADED:-0} == 1 ]] && return
+_DEVSHELL_BASH_LOADED=1
+case "${XDG_CONFIG_HOME-}" in /*) _foundry_config=$XDG_CONFIG_HOME ;; *) _foundry_config=$HOME/.config ;; esac
+# shellcheck source=dotfiles/dot_config/devshell/env.sh
+source "$_foundry_config/devshell/env.sh"
+HISTCONTROL=ignoreboth:erasedups
+shopt -s histappend checkwinsize
+if devshell_enabled starship && command -v starship >/dev/null; then eval "$(starship init bash)"; fi
+if devshell_enabled zoxide && command -v zoxide >/dev/null; then eval "$(zoxide init bash)"; fi
+if devshell_enabled direnv && command -v direnv >/dev/null; then eval "$(direnv hook bash)"; fi

@@ -1,0 +1,24 @@
+# lógico comando apt dnf pacman zypper
+bash bash bash bash bash bash
+zsh zsh zsh zsh zsh zsh
+git git git git git git
+ripgrep rg ripgrep ripgrep ripgrep ripgrep
+fd fd fd-find fd-find fd fd
+bat bat bat bat bat bat
+eza eza eza eza eza eza
+btop btop btop btop btop btop
+ncdu ncdu ncdu ncdu ncdu ncdu
+tldr tldr tealdeer tealdeer tealdeer -
+lazygit lazygit lazygit - lazygit -
+fontconfig fc-cache fontconfig fontconfig fontconfig fontconfig
+direnv direnv direnv direnv direnv direnv
+fzf fzf fzf fzf fzf fzf
+zoxide zoxide zoxide zoxide zoxide zoxide
+starship starship starship - starship starship
+nu nu - - nushell nushell
+delta delta git-delta git-delta git-delta git-delta
+shellcheck shellcheck shellcheck ShellCheck shellcheck ShellCheck
+shfmt shfmt shfmt shfmt shfmt shfmt
+bats bats bats bats bats bats
+uv uv - - - -
+chezmoi chezmoi - - chezmoi chezmoi

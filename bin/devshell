@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+((BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 4))) || {
+    echo "Requer Bash >=4.4." >&2
+    exit 3
+}
+export PYTHONDONTWRITEBYTECODE=1
+ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+export DEVSHELL_ROOT="$ROOT"
+fail() {
+    printf 'devshell: %s\n' "$1" >&2
+    exit "${2:-2}"
+}
+usage() {
+    cat <<'HELP'
+Uso: devshell COMANDO [opções]
+Comandos: setup plan apply status diff doctor update rollback install
+  --profile minimal,personal,work,science,extras   Perfis combináveis (default: minimal)
+  --dry-run       Planejar sem escrita persistente ou downloads
+  --offline       Proibir downloads (análise/configuração já são offline)
+  --json          Relatório JSON
+  --approve HASH  Aprovar exatamente o plano exibido
+  --replace-existing  Aprovar também conflitos de dotfiles preexistentes
+  --component uv|chezmoi|nu|plugins|python|firacode  Alvo de install (default: uv)
+  --help          Mostrar esta ajuda
+apply/update alteram só dotfiles. install é separado e exige aprovação.
+rollback sem --approve exibe o plano; com --approve restaura a última transação.
+setup coordena instalação e aplicação com confirmações; --dry-run apenas inspeciona.
+HELP
+}
+command=${1:-plan}
+[[ $# -eq 0 ]] || shift
+case "$command" in -h | --help | help)
+    usage
+    exit 0
+    ;;
+esac
+case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install) ;; *) fail "comando desconhecido: $command" ;; esac
+profile=minimal
+json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
+while (($#)); do
+    case "$1" in
+        --profile | --approve | --component)
+            (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail "valor ausente para $1"
+            case "$1" in --profile) profile=$2 ;; --approve) approval=$2 ;; --component)
+                component=$2
+                component_set=1
+                ;;
+            esac
+            shift 2
+            ;;
+        --json)
+            json=1
+            shift
+            ;;
+        --dry-run)
+            dry_run=1
+            shift
+            ;;
+        --offline)
+            offline=1
+            shift
+            ;;
+        --replace-existing)
+            replace=1
+            shift
+            ;;
+        --help)
+            usage
+            exit 0
+            ;;
+        *) fail "opção desconhecida: $1" ;;
+    esac
+done
+command -v python3 >/dev/null || fail 'Requer Python >=3.11 da distribuição para relatórios/transações.' 3
+python3 -c 'import sys;sys.exit(sys.version_info<(3,11))' || fail 'Requer Python >=3.11.' 3
+# shellcheck source=lib/platform.sh
+source "$ROOT/lib/platform.sh"
+# shellcheck source=lib/profiles.sh
+source "$ROOT/lib/profiles.sh"
+detect_platform
+resolve_profiles "$profile"
+export DEVSHELL_PROFILES="$profile" DEVSHELL_JSON="$json" DEVSHELL_OFFLINE="$offline"
+export DEVSHELL_APPROVAL="$approval" DEVSHELL_REPLACE="$replace" DEVSHELL_COMPONENT="$component"
+if [[ "$command" == setup ]]; then
+    [[ -z "$approval" && "$replace" == 0 && "$component_set" == 0 ]] || fail 'setup usa confirmações próprias; não aceita --approve, --replace-existing ou --component'
+    ((dry_run || json == 0)) || fail 'setup --json requer --dry-run'
+    # shellcheck source=lib/setup.sh
+    source "$ROOT/lib/setup.sh"
+    setup_environment "$dry_run"
+elif [[ "$command" == install ]]; then
+    # shellcheck source=lib/install.sh
+    source "$ROOT/lib/install.sh"
+    install_component "$dry_run"
+else
+    if ((dry_run)) && [[ "$command" == apply || "$command" == update ]]; then command=plan; fi
+    if ((dry_run)) && [[ "$command" == rollback ]]; then export DEVSHELL_APPROVAL=''; fi
+    exec python3 "$ROOT/lib/state.py" "$command"
+fi

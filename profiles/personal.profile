@@ -1,0 +1,14 @@
+nu
+starship
+fzf
+zoxide
+direnv
+ripgrep
+fd
+bat
+eza
+delta
+plugins
+fontconfig
+firacode
+terminal-shortcuts

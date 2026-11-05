@@ -1,0 +1,21 @@
+{
+  "interpreters": [
+    "3.12.12",
+    "3.13.11"
+  ],
+  "tool_python": "3.13.11",
+  "tools": [
+    {
+      "name": "ruff",
+      "version": "0.17.3"
+    },
+    {
+      "name": "pre-commit",
+      "version": "4.7.0"
+    },
+    {
+      "name": "ipython",
+      "version": "9.18.1"
+    }
+  ]
+}
