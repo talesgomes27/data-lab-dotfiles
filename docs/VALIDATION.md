@@ -151,3 +151,18 @@ A correção é integrada por PR e pelo check `checks` do GitHub Actions, usando
 o mesmo ruleset. A consulta das regras não substitui o teste de rejeição de um
 push direto. Os bloqueios de exclusão e force push são conferidos na política;
 não se deve apagar ou reescrever a main apenas para testá-los.
+
+
+### CI e proteção exercitados por PR
+
+O [PR #1](https://github.com/talesgomes27/data-lab-dotfiles/pull/1) foi usado para
+verificar o fluxo protegido. O envio direto do commit de correção à main foi
+recusado com GH013, exigindo PR e o check `checks`. Enquanto os checks estavam
+pendentes, a API retornou o PR como `BLOCKED`; nenhuma regra foi desativada.
+
+A [execução de PR aprovada](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/41949774046)
+exercitou o commit `30a9c84` no runner Ubuntu 24.04: ShellCheck, shfmt, 88 cenários
+Bats e 35 unittest passaram. Dos 93 cenários Bats, cinco foram pulados por falta
+de fzf, R, zoxide ou runtimes das linguagens; os cenários com executáveis
+simulados continuaram cobertos. Containers e smoke online são jobs manuais e
+não foram executados nesse evento. Isso não amplia a certificação multi-distro.
