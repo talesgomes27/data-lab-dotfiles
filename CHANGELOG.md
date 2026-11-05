@@ -2,6 +2,10 @@
 
 ## Não publicado
 
+- Matriz executa a suíte como usuário comum; Starship verificado também nas
+  imagens. Disparo manual prepara dependências reais dos testes opcionais e
+  recusa skips. Manual detalha os pré-requisitos por funcionalidade.
+
 - Validação de argumentos com `if` explícito para compatibilidade com o ShellCheck
   do runner Ubuntu 24.04, preservando as recusas de entradas inválidas.
 

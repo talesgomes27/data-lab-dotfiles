@@ -39,3 +39,11 @@ local, fixtures e cenários pendentes.
 
 Ao mudar um manifesto, confira a release oficial, o asset exato e seu checksum,
 e execute nova validação. Fixar versões não equivale a auditar os fornecedores.
+
+
+Dependências dos cenários opcionais no CI manual: Quarto CLI
+[v1.10.19](https://github.com/quarto-dev/quarto-cli/releases/tag/v1.10.19), com
+SHA-256 do asset oficial; renv [v1.3.1](https://github.com/rstudio/renv/releases/tag/v1.3.1),
+com SHA-256 congelado da fonte oficial obtida pela API GitHub. Os hashes estão
+no workflow. Esses downloads só preparam o runner descartável, não a máquina
+do usuário ou o instalador dos perfis.

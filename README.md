@@ -30,14 +30,17 @@ veja o [guia científico](docs/SCIENCE.md).
 ## Requisitos e plataformas
 
 Para iniciar: Linux, Bash >=4.4, Python >=3.11 e utilitários GNU básicos.
+A [lista de pré-requisitos por funcionalidade](docs/INSTALLATION.md#pré-requisitos-por-funcionalidade)
+separa o mínimo para iniciar, o terminal completo, runtimes e testes.
 O setup pode instalar componentes ausentes de usuário e apresentar pacotes da
 distribuição. Downloads exigem rede; pacotes administrativos exigem autorização.
 Chezmoi é necessário para aplicar a configuração e pode ser instalado pelo setup.
 
-Há verificação local em Ubuntu 26.04 x86_64/glibc. Os adaptadores de Debian,
-Fedora, Arch e openSUSE têm testes com fixtures, mas a matriz de instalação em
-containers ainda não foi executada. Consulte o [alcance da validação](docs/VALIDATION.md)
-antes de usar em outra plataforma. Esta é uma versão experimental.
+Há verificação local em Ubuntu 26.04 x86_64/glibc e suíte isolada em containers
+de Ubuntu 24.04, Debian 13, Fedora 44, Arch e openSUSE Leap 16.0. Essa matriz
+não comprova a instalação de todos os pacotes dos perfis em cada distribuição.
+Consulte o [alcance da validação](docs/VALIDATION.md) antes de usar em outra
+plataforma. Esta é uma versão experimental.
 
 ## Instalação rápida
 
