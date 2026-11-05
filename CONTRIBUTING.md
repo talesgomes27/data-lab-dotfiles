@@ -19,8 +19,10 @@ de aprovação, os perfis declarativos e os manifestos fixados. Consulte as
 
 As verificações exigem Python >=3.11, Bash, ShellCheck, shfmt, Bats, Chezmoi,
 Zsh e Nushell no PATH. Starship é necessário para os cenários de prompt; uma
-verificação com skips não comprova esses cenários. R/renv e fzf real permitem
-exercitar os testes opcionais correspondentes.
+verificação com skips não comprova esses cenários. Os
+[pré-requisitos dos testes opcionais](docs/INSTALLATION.md#pré-requisitos-para-reproduzir-todos-os-testes)
+incluem fzf, zoxide, R/renv, Node.js e Quarto. O disparo manual do workflow
+prepara essas dependências no runner e exige execução sem skips.
 
 Na raiz do projeto:
 

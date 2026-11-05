@@ -4,15 +4,17 @@
 
 ## Estado atual
 
-A versão é experimental. Há evidência local em Ubuntu 26.04 x86_64/glibc;
-fixtures de adaptadores não certificam instalação em outras distribuições.
+A versão é experimental. Há evidência local em Ubuntu 26.04 x86_64/glibc e
+suíte sem rede em cinco imagens x86_64/glibc. Fixtures de adaptadores e a suíte
+em containers não certificam instalação de todos os pacotes de cada distribuição.
 As execuções remotas do workflow `checks` estão disponíveis no
 [GitHub Actions](https://github.com/talesgomes27/data-lab-dotfiles/actions/workflows/ci.yml).
 O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 93 testes Bats e 35 unittest, ShellCheck e shfmt passaram na última verificação registrada de código. |
+| Suíte local | 93 testes Bats e 35 unittest, ShellCheck e shfmt passaram na última verificação registrada de código, sem skips. |
+| CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
 | Shells | Bash, Zsh e Nushell exercitados; aliases, prompt, plugins e hooks conferidos. PTY confirmou a inicialização Zsh. |
@@ -32,7 +34,7 @@ navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 | Ambiente | Evidência |
 |---|---|
 | Ubuntu 26.04, x86_64, glibc | Execução local com ferramentas reais e ambientes temporários. |
-| Ubuntu 24.04, Debian 13, Fedora 44, Arch e openSUSE Leap 16.0 | Adaptadores/fixtures e imagens declaradas; matriz de containers não executada. |
+| Ubuntu 24.04, Debian 13, Fedora 44, Arch e openSUSE Leap 16.0; x86_64/glibc | Builds e suíte offline como usuário comum aprovados no GitHub Actions: 88 Bats executados, cinco opcionais pulados e 35 unittest por imagem; ShellCheck e shfmt aprovados. |
 | aarch64 e musl | Seleção de artefatos/normalização testada; sem execução de runtime. |
 | Chezmoi aarch64 + musl | Sem artefato específico adotado; instalação manual. |
 | Outras distribuições | Diagnóstico/fallback; sem certificação. |
@@ -66,8 +68,9 @@ publicação foi feita como parte desta reorganização.
 
 ## Limitações remanescentes
 
-- A primeira matriz de containers falhou em dois testes que pressupunham usuário
-  comum, pois as imagens executavam como root; a revisão usa usuário sem privilégios.
+- A matriz não instala todos os pacotes personal/extras nem os runtimes dos
+  estudos em cada distribuição. Os cinco cenários opcionais são cobertos
+  no runner completo sem skips; cada imagem mantém esses cinco skips explícitos.
 - Sem validação de runtime musl/aarch64, GPU/PyTorch ou aplicação Shiny.
 - Sem teste visual completo do emulador/fonte ou de todas as interfaces de terminal.
 - Atualização manual de Chezmoi testada com executáveis artificiais; outros
@@ -127,10 +130,9 @@ O check é dispensado na criação inicial da branch; atualizações posteriores
 exigem aprovação do CI. Na preparação, o repositório ainda estava vazio: nenhum commit, push ou release
 havia sido feito nessa etapa. A regra efetiva foi consultada mesmo sem a branch criada.
 
-O Docker recusou acesso ao socket; containers não foram executados. Na preparação
-anterior ao primeiro envio, o CI remoto e os requisitos por PR ainda estavam
-pendentes. A alteração do workflow foi revisada; não havia parser YAML
-instalado para validação adicional. Consulte [Contribuição](../CONTRIBUTING.md#proteger-a-main)
+Na preparação local anterior ao primeiro envio, o Docker recusou acesso ao
+socket; containers e CI remoto ainda não tinham sido executados. A alteração
+do workflow foi revisada; naquela etapa não foi usado um parser YAML adicional. Consulte [Contribuição](../CONTRIBUTING.md#proteger-a-main)
 para consultar ou aplicar a política em outro destino.
 
 O Git local foi inicializado em main, com origin apontando para o repositório
@@ -180,4 +182,40 @@ A revisão prepara fzf, zoxide, R/renv, Node.js e Quarto no runner manual e recu
 qualquer skip. Starship fixado e verificado também passa a ser instalado nas
 imagens. O alcance da matriz continua sendo build, preparação das ferramentas
 de teste e suíte sem rede; não é instalação nativa de todos os perfis em cada
-distribuição. Os resultados da revisão completa serão registrados após sua execução.
+distribuição. A
+[segunda execução](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/41952069464)
+aprovou as cinco imagens e o smoke online. O smoke verificou downloads,
+instalações de usuário, configuração idempotente e rollback em HOME descartável;
+DuckDB CLI permaneceu opcional e ausente.
+
+Nessa execução, os dois cenários R/renv e a prévia fzf passaram. Os outros dois
+revelaram uma exigência indevida de função onde zoxide 0.9.3 oferece alias e
+timeout do Node pré-instalado no runner. O teste mantém todas as asserções de
+navegação, aceitando função ou alias, e o CI prioriza o Node do apt. A suíte
+local após essas correções passou com 93 Bats, 35 unittest, ShellCheck e shfmt,
+sem skips.
+
+A [execução completa corrigida](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/41952814746),
+no commit `0435098`, aprovou os sete jobs. No runner Ubuntu 24.04 passaram
+93 Bats e 35 unittest, ShellCheck e shfmt, sem skips. O passo que exige zero
+skips também passou. Os cinco cenários antes omitidos foram exercitados:
+
+| Cenário opcional | Resultado |
+|---|---|
+| Prévia fzf com aspas e substituição de comando no nome | Passou em PTY, sem executar o nome como código. |
+| Exemplo R/renv | Criou o lock em cópia temporária e recusou reinicialização. |
+| R com `.Rprofile` como symlink quebrado | Recusou sem criar o destino. |
+| `cd` integrado ao zoxide em Zsh | Navegação por consulta, caminhos com espaços, subpastas, `..`, `-`, HOME e `z` passaram. |
+| Starship com R, JavaScript, TypeScript, Quarto e Astro | Detecção com runtimes reais passou; Java/Rust/Go continuam cobertos com executáveis simulados. |
+
+Cada uma das cinco imagens aprovou ShellCheck, shfmt, 88 dos 93 Bats e os
+35 unittest, com cinco skips explícitos por ausência dos runtimes opcionais.
+O smoke online repetiu com sucesso instalação de usuário, idempotência e duas
+restaurações de rollback, sem operações administrativas durante o setup.
+
+A documentação teve 100 links/âncoras locais conferidos, o YAML foi analisado
+e os oito blocos `run` passaram em `bash -n`. As ajudas de devshell e bootstrap
+retornaram zero em HOME temporária. A revisão de segurança conferiu a permissão
+`contents: read` do workflow, downloads de CI fixados com SHA-256 e execução
+sem privilégios nas imagens. Nenhum pacote foi instalado na máquina do usuário
+nesta validação.
