@@ -13,6 +13,85 @@ Consulte a [matriz de evidências](VALIDATION.md). Pacotes mapeados podem não
 existir em todas as releases. O setup não habilita COPR, AUR ou repositórios
 extras, não atualiza índices nem instala drivers.
 
+## Pré-requisitos por funcionalidade
+
+Para habilitar todos os recursos descritos, considere as camadas abaixo. Não é
+necessário instalar todas as ferramentas antes do setup: ele instala ou verifica
+os componentes declarados. Runtimes e dependências dos estudos têm preparação
+própria; um doctor sem problemas não comprova todo projeto científico externo.
+
+| Camada | O que precisa estar disponível | Preparação |
+|---|---|---|
+| Iniciar a CLI | Linux, Bash >=4.4, Python >=3.11 com SSL e utilitários GNU (`uname`, `dirname`, `getconf`/`ldd`, `grep`) | Pacotes básicos da distribuição; use o Python do sistema para a CLI. |
+| Obter o código e baixar artefatos | Git e certificados CA; conexão HTTPS para arquivos fora do cache | Git é necessário ao clone. Instale `ca-certificates`; curl, tar e gzip são usados nos scripts de CI e downloads manuais. |
+| Aplicar dotfiles | Chezmoi >=2.62.0 e diretórios HOME/XDG graváveis pelo usuário e seguros | O setup instala Chezmoi se faltar; os hashes e backups continuam obrigatórios. |
+| Terminal personal | Zsh >=5.9, Starship, fzf, zoxide, direnv, ripgrep, fd, bat, eza, Delta e Fontconfig | Pacotes mapeados da distribuição; confira a disponibilidade da sua release. fzf >=0.48 é necessário aos atalhos integrados por `--zsh`. |
+| Complementos personal | Nushell >=0.116.1, dois plugins Zsh e FiraCode Nerd Font | O setup pode instalar os componentes de usuário. Escolha a fonte Mono no emulador; os ícones dependem dessa seleção. |
+| Ferramentas Python science | uv >=0.9.0, CPython e CLI declaradas no manifesto (Ruff, pre-commit, IPython) | uv e seus ambientes isolados são preparados pelo projeto; não instale pacotes com pip no Python do sistema. |
+| Scripts e testes science | ShellCheck, shfmt e Bats | Pacotes da distribuição. Para executar a suíte, também são necessários Zsh, Nushell e Chezmoi. |
+| Extras | btop, ncdu, tealdeer (`tldr`) e Lazygit | Perfil `extras`; nem todos os adaptadores/releases oferecem todos os pacotes. |
+| SQL local | DuckDB CLI | Opcional e externo ao instalador. Confira a origem, o PATH e as permissões da instalação. |
+
+No Debian/Ubuntu os executáveis `fd` e `bat` podem ser `fdfind` e `batcat`.
+A disponibilidade de Starship, eza, zoxide e Lazygit depende da release. O
+[manifesto de pacotes](../manifests/packages.tsv) é a referência do setup; uma
+célula `-` exige preparação manual. A presença de um nome não garante que ele
+exista nos repositórios habilitados da sua versão.
+
+### Exemplo de base em Debian ou Ubuntu
+
+Revise os pacotes e execute no seu terminal, se estiverem ausentes:
+
+```bash
+sudo apt-get update
+sudo apt-get install -- bash python3 git ca-certificates coreutils grep curl tar gzip
+python3 --version
+bash --version
+```
+
+Confirme Python >=3.11. Releases com Python mais antigo não satisfazem o
+bootstrap; não substitua `/usr/bin/python3` por um interpretador de estudo.
+Depois use o setup para os perfis escolhidos, em vez de copiar uma lista de
+pacotes de outra distribuição. Fedora, Arch e openSUSE usam seus próprios
+gerenciadores e nomes declarados no manifesto.
+
+### Runtimes e dependências dos estudos
+
+| Recurso | Pré-requisito adicional |
+|---|---|
+| Python científico e JupyterLab | `.venv` preparada com o lock do estudo. O atalho `jlab` exige o grupo `notebook` com JupyterLab; `analytics` contém DuckDB Python, Polars e PyArrow no exemplo. |
+| R e exemplo renv | R e pacote `renv` acessível na biblioteca do usuário antes de rodar `init.R`. Instale renv como usuário comum, seguindo a documentação oficial; não use sudo para instalar pacotes de estudo. |
+| Java | JDK instalado e selecionado no ambiente, com JAVA_HOME correto quando utilizado. |
+| Rust | Toolchain Rust com `rustc` e Cargo; prepare a versão exigida pelo projeto. |
+| Go | Go instalado, disponível no PATH e compatível com o `go.mod` do projeto. |
+| JavaScript, TypeScript e Astro | Node.js e o gerenciador adotado pelo projeto. TypeScript e Astro devem ser dependências do projeto quando necessários. |
+| Quarto | Quarto CLI instalado separadamente. Compilar documentos também exige os kernels e pacotes do estudo; PDF pode requerer TeX/TinyTeX, conforme o formato. |
+| GPU/PyTorch | Combinação compatível de hardware, driver, Python e wheels. O projeto não instala drivers ou CUDA. |
+
+Os módulos Starship consultam runtimes disponíveis, mas não os instalam.
+Siga o [guia científico](SCIENCE.md) e os exemplos de Python/R para criar os
+ambientes. Fontes oficiais: [renv](https://rstudio.github.io/renv/articles/renv.html),
+[Quarto](https://quarto.org/docs/get-started/), [Node.js](https://nodejs.org/en/download),
+[Java](https://dev.java/learn/getting-started/), [Rust](https://www.rust-lang.org/tools/install)
+e [Go](https://go.dev/doc/install).
+
+### Pré-requisitos para reproduzir todos os testes
+
+A suíte básica precisa das ferramentas de desenvolvimento acima. Para não pular
+os cinco cenários opcionais, disponibilize também **fzf, zoxide, R/Rscript,
+renv, Node.js e Quarto**. O disparo manual do GitHub Actions prepara essas
+ferramentas em runner descartável e recusa qualquer skip. Os testes com Java,
+Rust e Go usam executáveis simulados e não instalam seus toolchains.
+
+A matriz exige Docker acessível e rede durante o build. A suíte nas imagens é
+executada sem rede e com usuário comum; isso não comprova a instalação de todos
+os pacotes personal/extras de cada distribuição. O smoke online usa apenas uma
+HOME temporária. Não altere permissões do socket Docker para contornar recusas.
+
+Antes de considerar o ambiente pronto: abra uma nova sessão, confira a fonte,
+rode doctor com os mesmos perfis aplicados e prepare o ambiente de cada estudo.
+Veja o [alcance das verificações](VALIDATION.md) e os [erros comuns](TROUBLESHOOTING.md).
+
 ## Obter o projeto e escolher perfis
 
 Na página do repositório no GitHub, abra **Code** e copie a URL de clone, ou

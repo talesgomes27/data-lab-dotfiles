@@ -30,6 +30,8 @@ veja o [guia científico](docs/SCIENCE.md).
 ## Requisitos e plataformas
 
 Para iniciar: Linux, Bash >=4.4, Python >=3.11 e utilitários GNU básicos.
+A [lista de pré-requisitos por funcionalidade](docs/INSTALLATION.md#pré-requisitos-por-funcionalidade)
+separa o mínimo para iniciar, o terminal completo, runtimes e testes.
 O setup pode instalar componentes ausentes de usuário e apresentar pacotes da
 distribuição. Downloads exigem rede; pacotes administrativos exigem autorização.
 Chezmoi é necessário para aplicar a configuração e pode ser instalado pelo setup.

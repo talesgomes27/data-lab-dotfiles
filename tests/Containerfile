@@ -9,6 +9,8 @@ RUN case "$ADAPTER" in \
     *) exit 2 ;; esac
 WORKDIR /work
 COPY . /work
+RUN useradd --create-home --uid 10001 --home-dir /tmp/foundry-container foundry
+USER foundry
 ENV HOME=/tmp/foundry-container
 RUN bash scripts/ci-setup.sh
 CMD ["bash", "-c", "export PATH=\"$HOME/.local/bin:$PATH\"; bash scripts/check.sh"]

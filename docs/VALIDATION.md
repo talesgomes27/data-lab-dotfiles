@@ -66,7 +66,8 @@ publicação foi feita como parte desta reorganização.
 
 ## Limitações remanescentes
 
-- Containers multi-distro e smoke online remoto ainda não executados.
+- A primeira matriz de containers falhou em dois testes que pressupunham usuário
+  comum, pois as imagens executavam como root; a revisão usa usuário sem privilégios.
 - Sem validação de runtime musl/aarch64, GPU/PyTorch ou aplicação Shiny.
 - Sem teste visual completo do emulador/fonte ou de todas as interfaces de terminal.
 - Atualização manual de Chezmoi testada com executáveis artificiais; outros
@@ -166,3 +167,17 @@ Bats e 35 unittest passaram. Dos 93 cenários Bats, cinco foram pulados por falt
 de fzf, R, zoxide ou runtimes das linguagens; os cenários com executáveis
 simulados continuaram cobertos. Containers e smoke online são jobs manuais e
 não foram executados nesse evento. Isso não amplia a certificação multi-distro.
+
+
+## Matriz, smoke online e cenários opcionais
+
+A [primeira execução manual](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/41950981536)
+executou os cinco builds e o smoke online. O smoke passou; as cinco suítes
+falharam nos mesmos dois cenários de setup, por serem executadas como root.
+A correção passa a rodar a suíte como usuário comum, sem enfraquecer os testes.
+
+A revisão prepara fzf, zoxide, R/renv, Node.js e Quarto no runner manual e recusa
+qualquer skip. Starship fixado e verificado também passa a ser instalado nas
+imagens. O alcance da matriz continua sendo build, preparação das ferramentas
+de teste e suíte sem rede; não é instalação nativa de todos os perfis em cada
+distribuição. Os resultados da revisão completa serão registrados após sua execução.
