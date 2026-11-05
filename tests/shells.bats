@@ -117,7 +117,8 @@ BIN
     mkdir -p "$_ZO_DATA_DIR" "$HOME/pastas/projeto exemplo/subpasta" "$HOME/outra"
     zoxide add "$HOME/pastas/projeto exemplo"
     run zsh -ic '
-        (( $+functions[cd] && $+functions[z] && $+functions[zi] )) || exit 10
+        # zoxide 0.9.3 usa aliases; versões recentes usam funções.
+        (( ($+functions[cd] || $+aliases[cd]) && $+functions[z] && $+functions[zi] )) || exit 10
         cd "$HOME/outra" || exit 11
         cd "projeto exemplo" || exit 12
         [[ "$PWD" == "$HOME/pastas/projeto exemplo" ]] || exit 13

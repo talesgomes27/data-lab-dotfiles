@@ -42,7 +42,8 @@ jobs:
         env:
           HOME: /tmp/foundry-ci
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
+          # Priorizar o Node do apt sobre o executável pré-instalado no runner.
+          export PATH="$HOME/.local/bin:/usr/bin:$PATH"
           command -v starship
           set -o pipefail
           bash scripts/check.sh | tee /tmp/foundry-checks.log
