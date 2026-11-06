@@ -47,10 +47,21 @@ plataforma. Não é uma assinatura nem uma autorização permanente.
 
 Arquivos compartilhados: `devshell/components` contém nomes de componentes;
 Bash e Zsh compartilham `env.sh`, compatível com ambos, incluindo os aliases
-ls/la para eza no perfil personal. `~/.bash_aliases` é um bootstrap específico
-de Bash para carregar essa configuração pela convenção do Ubuntu. Nu lê a lista de
+ls/l/la/ll/lla/lt/lta para eza no perfil personal. `~/.bash_aliases` é um bootstrap
+específico de Bash para carregar essa configuração pela convenção do Ubuntu. Nu lê a lista de
 componentes e possui `env.nu`/`config.nu` próprios. Starship compartilha TOML.
 Nenhuma shell tenta interpretar o código de outra.
+
+O componente local opcional `install --component devshell` usa `lib/launcher.py`
+para gerar somente `~/.local/bin/devshell` e seu registro privado. Reaproveita
+snapshot, hash das fontes, bloqueio e escrita atômica de `lib/state.py`, sem
+Chezmoi ou downloads. O caminho do checkout é escapado com `shlex.quote`;
+o lançador executa a CLI original com `/bin/bash`, preservando argumentos e a
+resolução de ROOT. Conflitos exigem `--replace-existing`; backups e journal
+ficam separados em `launcher-backups`, sem alterar `current.json`/`latest`.
+Doctor verifica o registro quando existente, sem executar o lançador.
+Os perfis declarativos e os manifestos de artefatos permanecem independentes
+desse componente local.
 
 O perfil `science` inclui `pyinit`: o instalador de artefatos existente instala
 somente o gerador standalone em `~/.local/bin`, com commit e SHA-256 fixados.
@@ -130,6 +141,10 @@ bloqueiam a operação. Os modos anteriores ficam em registros privados de
 `permission-repairs`; falha parcial preserva o histórico e os reparos concluídos.
 Não há criação de ambientes, sincronização, autorização direnv ou restauração
 automática de permissões inseguras.
+Na confirmação interativa do reparo, a leitura consome somente uma linha sem
+buffer antecipado, preservando respostas de etapas posteriores de um chamador
+que componha esse comando por pipe. EOF, inclusive após resposta incompleta
+sem Enter, cancela o reparo.
 
 O fluxo guiado tem confirmações separadas para permissões, comando
 administrativo, componentes e aplicação. Conflitos exigem a palavra

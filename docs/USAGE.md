@@ -29,13 +29,24 @@ Bash e scripts mantêm o comportamento nativo de `cd`.
 
 ```bash
 ls                          # pastas primeiro; arquivos por extensão
-la                          # inclui arquivos ocultos
-eza --tree --level=2         # árvore de até dois níveis
+l                           # grade com ícones sempre visíveis
+la                          # grade, incluindo arquivos ocultos
+ll                          # detalhes, tamanhos legíveis, Git e datas relativas
+lla                         # detalhes, incluindo arquivos ocultos
+lt                          # árvore de até dois níveis
+lta                         # árvore, incluindo arquivos ocultos
 rg -n 'faturamento' .        # texto, arquivo e linha
 fdfind 'relatorio' .         # nomes de arquivos/pastas no Ubuntu
 batcat README.md             # conteúdo com realce de sintaxe
 command ls                  # GNU ls, sem o alias interativo
 ```
+
+`l`, `la`, `ll`, `lla`, `lt` e `lta` são compartilhados por Bash e Zsh em
+sessões interativas com o componente eza selecionado e o executável disponível.
+As listagens em grade e detalhadas agrupam pastas primeiro e ordenam arquivos
+por extensão. Os seis atalhos usam `--icons=always`; para exibir os ícones,
+selecione uma Nerd Font no terminal. `ls` mantém ícones automáticos.
+Argumentos adicionais são preservados, por exemplo `ll "pasta com espaços"`.
 
 Em outras distribuições, os executáveis podem se chamar `fd` e `bat`.
 Buscas podem respeitar regras de exclusão e ignorar ocultos por padrão.

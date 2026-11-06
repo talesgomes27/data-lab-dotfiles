@@ -2,6 +2,22 @@
 
 ## Não publicado
 
+- Componente local `install --component devshell`: lançador em `~/.local/bin`
+  para o checkout, com aprovação por hash, conflitos explícitos, backups
+  privados e diagnóstico sem execução. Funciona offline e permite ao pyinit
+  encontrar a CLI pelo PATH; a instalação continua separada dos dotfiles.
+
+- Aliases eza `l`/`la` para grade, `ll`/`lla` para detalhes com Git e datas
+  relativas e `lt`/`lta` para árvore de dois níveis, compartilhados por Bash/Zsh.
+  Ícones sempre visíveis nesses seis atalhos; `l` substitui o atalho padrão do
+  Ubuntu. O alias `ls` continua com ícones automáticos.
+
+- Reparo de permissões lê somente a própria resposta, preservando confirmações
+  posteriores quando chamado por pipe; EOF sem Enter cancela. Documentação do
+  modo de manutenção
+  `--fix-permissions [--sync] [--allow-direnv]` no template; submódulo e
+  artefato `pyinit` atualizados juntos para o commit público revisado.
+
 - Diagnóstico de `.venv` com caminhos e motivos exatos; comando `project doctor`
   e reparo explícito `project fix-permissions`, com confirmação/hash, registro
   dos modos anteriores e verificação de inodes. Sem chmod recursivo, criação
@@ -60,8 +76,6 @@
 - Inventário local distingue componentes reutilizados, gerenciados por uv e
   configurações aplicadas pelo projeto.
 
-- Aliases ls/la para eza compartilhados entre Bash e Zsh no perfil personal;
-  bootstrap bash_aliases com preservação do atalho l padrão do Ubuntu.
 
 - Expressão do parser aceita igualmente por shfmt 3.12.0 e 3.14.1.
 

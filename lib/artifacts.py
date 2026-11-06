@@ -26,7 +26,8 @@ COMPONENT = os.environ['DEVSHELL_COMPONENT']
 
 
 def health_issues():
-    issues = []
+    import launcher
+    issues = launcher.health_issues()
     manifest = json.loads((fs.ROOT / 'manifests/artifacts.json').read_text())['artifacts']
     for artifact in manifest:
         component = artifact['component']

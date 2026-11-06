@@ -127,7 +127,11 @@ def main():
             raise ValueError('resolva os bloqueios apresentados; nenhum modo foi alterado')
         if plan['permissions']:
             print('Retirar escrita de grupo/outros somente destes diretórios, incluindo os pais apresentados? [s/N] ', end='', file=sys.stderr, flush=True)
-            if sys.stdin.readline().strip().lower() not in ('s', 'sim'):
+            # Não consumir respostas das próximas etapas de um chamador via pipe.
+            answer = bytearray()
+            while (byte := os.read(sys.stdin.fileno(), 1)) not in (b'', b'\n'):
+                answer.extend(byte)
+            if byte != b'\n' or answer.decode(errors='replace').strip().lower() not in ('s', 'sim'):
                 print('Reparo cancelado; nenhum modo foi alterado.', file=sys.stderr)
                 return 1
     show(repair(plan))

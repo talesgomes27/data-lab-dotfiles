@@ -32,6 +32,14 @@ ferramentas. O lock científico, por outro lado, fixa a resolução do projeto. 
 artefatos de dependências resolvidos. Fontes oficiais e checksums reduzem o
 risco de transporte/substituição, mas não equivalem a auditoria do fornecedor.
 
+O lançador local `install --component devshell` não usa download nem altera
+manifestos de ferramentas. O hash aprovado abrange caminho do checkout,
+conteúdo proposto, modos, snapshots dos destinos e fontes da implementação.
+Conflitos exigem `--replace-existing`; symlinks, hardlinks e caminhos inseguros
+são recusados pelas mesmas guardas dos arquivos gerenciados. Ele referencia
+um checkout confiável, acompanha suas atualizações e não faz sandbox do código
+executado. Não mantenha no PATH lançadores para cópias em que não confia.
+
 ## Aplicação e caminhos
 
 `apply` exige o SHA-256 do plano atual. Arquivos existentes diferentes e não
@@ -45,6 +53,15 @@ Diretórios adicionados automaticamente ao PATH são recusados se contiverem
 O instalador uv também recusa `UV_TOOL_BIN_DIR` com `:` antes de gravar.
 
 ## Backups e recuperação
+
+A instalação do lançador tem journal próprio em `launcher-backups/UUID`, sob
+o diretório de estado do Data Lab, e registro atual em `launcher.json`. Antes
+de substituir cada arquivo, grava cópia privada dos bytes anteriores; o
+manifesto registra hashes, modos, caminhos e etapas concluídas. Falha de backup
+impede a substituição. Falha parcial posterior mantém as etapas concluídas e
+o registro `partial`: confira os backups antes de restaurar manualmente ou
+replanejar a instalação. Não restaure um modo inseguro automaticamente.
+Rollback de dotfiles preserva lançador, registro e backups da instalação.
 
 Antes da escrita, Chezmoi renderiza numa HOME temporária, a CLI confere os
 bytes e obtém um lock exclusivo. Cada arquivo existente é copiado com seus

@@ -81,10 +81,12 @@ e [Go](https://go.dev/doc/install).
 A suíte básica precisa de Python >=3.11, Bash, ShellCheck, shfmt, Bats, Chezmoi,
 Zsh, Nushell, uv e direnv no PATH. Os novos cenários de ambientes Python usam
 uv e direnv reais com HOME/XDG/cache temporários, sem downloads. Para não pular
-os cinco cenários opcionais, disponibilize também **fzf, zoxide, R/Rscript,
+os cenários opcionais, disponibilize também **eza, fzf, zoxide, R/Rscript,
 renv, Node.js e Quarto**. O disparo manual do GitHub Actions prepara essas
 ferramentas em runner descartável e recusa qualquer skip. Os testes com Java,
 Rust e Go usam executáveis simulados e não instalam seus toolchains.
+O cenário de listagem usa eza real e é pulado quando o executável está ausente;
+o runner Ubuntu do CI o instala na preparação, junto com as demais ferramentas.
 
 A matriz exige Docker acessível e rede durante o build. A suíte nas imagens é
 executada sem rede e com usuário comum; isso não comprova a instalação de todos
@@ -210,8 +212,11 @@ Bash, revise-o e inclua manualmente no seu `~/.bashrc`:
 source "${XDG_CONFIG_HOME:-$HOME/.config}/devshell/bashrc"
 ```
 
-Use XDG_CONFIG_HOME absoluto ou seu default `~/.config`. O atalho `l='ls -CF'`
-do Ubuntu é preservado com GNU ls quando o alias `ls` passa a usar eza.
+Use XDG_CONFIG_HOME absoluto ou seu default `~/.config`. Com eza selecionado e
+disponível em sessão interativa, `l` substitui o atalho `l='ls -CF'` do Ubuntu
+pela grade do eza. `la`, `ll`, `lla`, `lt` e `lta` oferecem as demais
+[formas de listagem](USAGE.md#listar-localizar-e-ler-arquivos).
+Use `command ls -CF` para executar a listagem do GNU ls diretamente.
 No Bash, o projeto não substitui `cd` por zoxide.
 
 Nushell é complementar. Inicie com `nu`; ela lê os arquivos `env.nu` e
@@ -247,6 +252,46 @@ use também `--profile science` se quiser as ferramentas CLI declaradas. Se
 `~/.local/bin` ainda não estiver no PATH, confira sua segurança e use
 `PATH="$HOME/.local/bin:$PATH" ./bin/devshell ...` nessa sessão.
 `sh bootstrap.sh` sem argumentos apenas planeja; com argumentos delega à CLI.
+
+## Disponibilizar devshell no PATH
+
+Instale opcionalmente um lançador em `~/.local/bin/devshell`, a partir da raiz
+do checkout que deseja usar. A operação é local e funciona offline:
+
+```bash
+./bin/devshell install --component devshell --offline
+# Revise checkout, conteúdo, modos, conflitos e hash exibidos:
+./bin/devshell install --component devshell --offline --approve HASH_REVISADO
+```
+
+O lançador usa `/bin/bash` para executar o `bin/devshell` original. Não copia
+as bibliotecas e não é um symlink: a CLI continua localizando suas fontes no
+checkout. Ele funciona de qualquer diretório, preservando os argumentos.
+Com `~/.local/bin` no PATH, use:
+
+```bash
+devshell --help
+devshell project doctor
+```
+
+Se o PATH ainda não contiver esse diretório, abra uma nova sessão com os
+dotfiles aplicados ou, após conferir sua segurança, acrescente-o nesta sessão
+com `export PATH="$HOME/.local/bin:$PATH"`. O instalador não edita a shell.
+
+Um arquivo diferente no destino, ou um registro divergente, exige a aprovação
+do novo plano **e** `--replace-existing`. Arquivos anteriores ficam em backups
+privados com seus modos registrados, sob
+`$XDG_STATE_HOME/devshell/launcher-backups` (default `~/.local/state/devshell`).
+O registro atual fica em `launcher.json`; doctor confere conteúdo e modos sem
+executar o lançador. Repetir uma instalação já correspondente não escreve
+arquivos, cache ou outro backup. Essa instalação é explícita e separada dos
+perfis/setup; não instala pacotes do sistema.
+
+Mantenha o checkout confiável no mesmo caminho. O lançador acompanha suas
+atualizações; não fixa os bytes desse checkout. Se mover a cópia, execute a
+instalação a partir da nova raiz, revise o plano e aprove a substituição com
+backup. Se a origem desaparecer, o lançador falha com instrução de reinstalar.
+`update` e rollback de dotfiles preservam essa instalação e seus registros.
 
 ## Atualizar configuração e versões
 

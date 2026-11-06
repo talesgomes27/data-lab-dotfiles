@@ -67,6 +67,18 @@ O [guia científico](SCIENCE.md#iniciar-e-encerrar-jupyterlab) mostra o preparo.
 | A troca só acontece no próximo comando | Hooks rodam antes do prompt. Em `cd projeto && python ...`, use `uv run` ou o caminho explícito da `.venv`. |
 | Rollback não apagou `geral`/`.venv` | Ambientes são mantidos fora da transação de dotfiles. Encerre shells abertas para descartar hooks carregados. |
 
+O [modo de manutenção do gerador](SCIENCE.md#manutenção-guiada-de-projetos-existentes)
+oferece `--fix-permissions [--sync] [--allow-direnv]`, com confirmações separadas.
+Se uma instalação antiga não reconhecer essas opções, revise a atualização
+do componente `pyinit` pelo fluxo de instalação do guia.
+Se aparecer `Data Lab CLI ausente`, confira `command -v devshell` e siga a
+[instalação do lançador](INSTALLATION.md#disponibilizar-devshell-no-path).
+Como alternativa, defina `DEVSHELL_BIN` com o caminho absoluto do executável
+no checkout. Um symlink simples desse script não substitui o lançador, pois
+a CLI localiza suas bibliotecas a partir do próprio caminho.
+Se aparecer `checkout ausente`, reinstale a partir da nova cópia, revisando
+o novo hash e aprovando conflitos com `--replace-existing` e backup.
+
 ### Demais integrações
 
 | Sintoma | Verificação e ação |

@@ -13,7 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 146 testes Bats e 40 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
+| Suíte local | 158 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui lançador local, aliases eza, ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -28,6 +28,124 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Publicação coordenada do template e dos dotfiles — 2026-11-06
+
+O [PR #2 do template](https://github.com/talesgomes27/python-template-linux/pull/2)
+publicou o commit `3a79c49eb0788f00eaf46457d9510f0be1aa44f9`.
+Seu [CI remoto](https://github.com/talesgomes27/python-template-linux/actions/runs/42163374186)
+passou nos três jobs Python 3.11, 3.12 e 3.13, incluindo conferência do runtime,
+Ruff e pytest. A revisão independente do conjunto não encontrou achados
+acionáveis e repetiu 51 Bats focais, dois unittest do lançador e 41 pytest.
+
+Gitlink, versão e URL de `pyinit` no manifesto foram atualizados para esse
+commit público. O script baixado da URL fixada coincidiu byte a byte com o
+submódulo: SHA-256
+`c28a9d5d34a7f254bf02819937100b0ca30f02da95e564ada29fff1017c85a07`.
+A suíte completa foi repetida com esse pin e passou em 158 Bats e 42 unittest,
+sem skips. A instalação offline de `pyinit` usou o download conferido em cache
+temporário; junto com o lançador instalado por hash, o gerador executou a
+manutenção por PATH sem override e confirmou `geral → .venv → geral` com uv e
+direnv reais, preservando ambiente, interpretador e lock.
+Os resultados do próprio Data Lab devem ser consultados por commit no PR e no
+[workflow checks](https://github.com/talesgomes27/data-lab-dotfiles/actions/workflows/ci.yml);
+a evidência local abaixo não substitui esse resultado remoto.
+Publicação de branches/PRs não aplica arquivos na HOME nem atualiza a cópia
+de `pyinit` instalada. Os PRs permanecem sujeitos à revisão antes do merge.
+
+## Lançador local devshell — 2026-11-06
+
+`bash scripts/check.sh` passou com 158 Bats e 42 unittest, sem skips, além de
+ShellCheck, shfmt e sintaxe Zsh/Python. Foram acrescentados oito Bats e dois
+unittest de fronteira; a revisão independente não encontrou achados acionáveis.
+As fixtures usaram HOME/XDG/cache temporários:
+
+- Plan/dry-run e aprovação inválida não criaram estado. Instalação offline
+  criou lançador `755` e registro `600`, sem cache/download; repetir o plano
+  correspondente não reescreveu arquivos nem criou outro backup.
+- Conflitos foram preservados sem `--replace-existing`; substituição aprovada
+  guardou bytes e modos anteriores em backups privados. Aprovação vencida,
+  symlink, hardlink e caminho de backup inseguro foram recusados.
+- Falha simulada na gravação de backup preservou o arquivo original; falha
+  posterior no registro manteve backup exato e journal `partial` com as etapas
+  concluídas. Os registros ficam separados das transações de dotfiles.
+- Um checkout com espaços, aspas e expressão shell literal foi instalado e
+  executado de outra pasta sem interpretar o caminho ou perder argumentos.
+  Checkout movido produziu erro com instrução de reinstalar, sem procurar
+  outra cópia. Doctor detectou arquivo divergente/removido sem executá-lo.
+
+O template standalone passou em 41 pytest (38 do gerador), Ruff check/format
+e diff; o novo teste confirma descoberta de `devshell` no PATH sem override.
+Uma integração adicional instalou o lançador em HOME temporária e executou o
+novo modo de manutenção com backend, uv e direnv reais, sem `DEVSHELL_BIN`.
+Preservou `.venv`/interpretador/configuração/lock, confirmou reparo não
+recursivo e `geral → .venv → geral`, além das recusas de sync/lock desatualizado.
+
+Ajuda, exemplos e `git diff --check` foram conferidos. A validação local não
+aplicou arquivos na HOME real nem repetiu containers. O lançador referencia
+o checkout confiável e acompanha
+suas atualizações; não é uma cópia autossuficiente nem um pin de suas fontes.
+Instalação é explícita, separada dos perfis/setup e do rollback de dotfiles.
+
+## Aliases de listagem eza — 2026-11-06
+
+`bash scripts/check.sh` passou com 150 Bats e 40 unittest, sem skips, além de
+ShellCheck, shfmt e sintaxe Zsh/Python. A revisão independente não encontrou
+achados acionáveis. Os testes pertinentes falharam antes da implementação e
+passaram após incluir os seis aliases exatos solicitados.
+
+- Bash e Zsh interativos carregaram `l`, `la`, `ll`, `lla`, `lt` e `lta` pelo
+  fragmento compartilhado, preservando argumentos com espaços. `ls` manteve
+  seus argumentos anteriores; `l` substituiu o alias padrão Ubuntu sem enviar
+  `-CF` ao eza.
+- Shells não interativas e perfil sem eza não receberam os seis atalhos.
+- Eza real 0.23.4 executou os seis atalhos nas duas shells em diretório
+  temporário, incluindo árvore e arquivos ocultos. A ausência do executável
+  provoca skip somente nesse cenário real; testes de argumentos usam fixture.
+
+O runner Ubuntu do workflow passou a preparar eza para o novo cenário. O
+[pacote Noble](https://packages.ubuntu.com/noble/utils/eza) é 0.18.2; uma consulta
+à fonte oficial confirmou `ext` como alias de `extension` no
+[parser de ordenação](https://github.com/eza-community/eza/blob/v0.18.2/src/options/filter.rs#L60)
+e o estilo `relative` na
+[declaração de opções](https://github.com/eza-community/eza/blob/v0.18.2/src/options/flags.rs#L61).
+Essa inspeção não substitui execução real no runner; consulte o CI da
+publicação coordenada. Containers não foram repetidos. Nenhuma ferramenta
+foi instalada no sistema local nem configuração aplicada na HOME real.
+Ícones dependem da fonte selecionada no emulador; não houve teste
+visual da fonte.
+
+## Orquestração do reparo pelo gerador Python — 2026-11-06
+
+`bash scripts/check.sh` passou com 148 Bats e 40 unittest, sem skips, após a
+revisão independente. Duas regressões novas falharam antes da correção e
+passaram depois: o reparo consome somente a própria linha de confirmação por
+pipe e recusa EOF após `s` sem Enter. Não foram alteradas as guardas de caminhos,
+o hash aprovado, o chmod por descritor ou os registros de reparo.
+
+O checkout standalone do template passou em 40 pytest (37 do gerador), Ruff,
+ShellCheck, shfmt e ajuda/diff. A revisão identificou também o redirecionamento
+de lock por workspace uv. Um teste com uv real offline comprova agora recusa
+antes do reparo, sem alterar o lock ancestral.
+
+A integração adicional do novo modo `--fix-permissions --sync --allow-direnv`
+usou backend real deste Data Lab, uv 0.13.5 e direnv 2.37.1 em HOME/XDG/cache
+temporários, com projeto artificial sem dependências. Comprovaram-se:
+
+- Confirmações independentes e interrupção após recusa/falha, sem autorização
+  direnv posterior; lock desatualizado não foi reescrito.
+- Reparos restritos à cadeia diagnosticada e registros privados, preservando
+  modos de filhos fora dela e inode/configuração/interpretador da `.venv`.
+- Sync limitado à `.venv` local apesar de overrides herdados apontarem para
+  outro destino artificial; `uv.lock` preservado com `--locked`.
+- Seleção `geral → .venv → geral`, incluindo PATH, por exportações reais do
+  direnv. Não foi novo teste de inicialização em PTY ou de todas as shells.
+
+A publicação coordenada atualizou submódulo e manifesto para o commit
+revisado; a correspondência de bytes/hash/gitlink é verificada pela suíte.
+Não houve aplicação na HOME real, recriação de ambientes do usuário ou nova
+matriz de containers. O sync real deste incremento
+não testou downloads de dependências dos arquétipos nem builds externos.
 
 ## Diagnóstico e reparo de permissões de projetos — 2026-11-06
 

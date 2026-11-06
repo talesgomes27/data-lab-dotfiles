@@ -21,7 +21,7 @@ jobs:
           HOME: /tmp/foundry-ci
         run: |
           sudo apt-get update
-          sudo apt-get install -y zsh shellcheck shfmt bats fzf zoxide curl direnv
+          sudo apt-get install -y zsh shellcheck shfmt bats fzf zoxide curl direnv eza
           bash scripts/ci-setup.sh
       - name: Preparar runtimes para os cinco cenários opcionais
         if: github.event_name == 'workflow_dispatch'

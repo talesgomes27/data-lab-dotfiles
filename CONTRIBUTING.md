@@ -18,7 +18,8 @@ de aprovação, os perfis declarativos e os manifestos fixados. Consulte as
 ## Preparar o ambiente de desenvolvimento
 
 As verificações exigem Python >=3.11, Bash, ShellCheck, shfmt, Bats, Chezmoi,
-Zsh, Nushell, uv e direnv no PATH. Starship é necessário para os cenários de prompt; uma
+Zsh, Nushell, uv e direnv no PATH. Eza é necessário para o cenário de listagem
+real e Starship para os cenários de prompt; uma
 verificação com skips não comprova esses cenários. Os
 [pré-requisitos dos testes opcionais](docs/INSTALLATION.md#pré-requisitos-para-reproduzir-todos-os-testes)
 incluem fzf, zoxide, R/renv, Node.js e Quarto. O disparo manual do workflow
