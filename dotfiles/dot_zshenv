@@ -1,5 +1,46 @@
-# Apenas o encaminhamento XDG; sem ferramentas, rede ou operações de disco.
+# Encaminhamento XDG e extensão pessoal opcional; sem comandos externos.
 case "${XDG_CONFIG_HOME-}" in
   /*) export ZDOTDIR="$XDG_CONFIG_HOME/zsh" ;;
   *) export ZDOTDIR="$HOME/.config/zsh" ;;
 esac
+
+if () {
+    emulate -L zsh
+    local candidate=$1 local_file=$1 system_uid
+    local -A metadata
+    [[ -e "$local_file" || -L "$local_file" ]] || return 1
+    [[ ! -e "$local_file.zwc" && ! -L "$local_file.zwc" ]] || {
+        print -u2 -- 'devshell: extensão Zsh recusada: arquivo compilado .zwc presente'
+        return 1
+    }
+    [[ "$local_file" == /* && "/$local_file/" != */../* ]] || {
+        print -u2 -- 'devshell: extensão Zsh recusada: caminho inseguro'
+        return 1
+    }
+    builtin zmodload -F zsh/stat b:zstat 2>/dev/null || {
+        print -u2 -- 'devshell: extensão Zsh recusada: zsh/stat indisponível'
+        return 1
+    }
+    builtin zstat -LH metadata -- "$local_file" || return 1
+    (( (metadata[mode] & 8#170000) == 8#100000 && metadata[nlink] == 1 && metadata[uid] == EUID )) || {
+        print -u2 -- 'devshell: extensão Zsh recusada: arquivo, links ou proprietário inseguros'
+        return 1
+    }
+    builtin zstat -LH metadata -- / || return 1
+    system_uid=$metadata[uid]
+    while (( 1 )); do
+        builtin zstat -LH metadata -- "$candidate" || return 1
+        if (( (metadata[mode] & 8#170000) == 8#120000 ||
+              (metadata[uid] != EUID && metadata[uid] != 0 && metadata[uid] != system_uid) ||
+              ((metadata[mode] & 8#22) && ! ((metadata[mode] & 8#170000) == 8#40000 &&
+                (metadata[uid] == 0 || metadata[uid] == system_uid) && (metadata[mode] & 8#1000))) )); then
+            print -u2 -- "devshell: extensão Zsh recusada: caminho inseguro: $candidate"
+            return 1
+        fi
+        [[ "$candidate" != / ]] || break
+        candidate=${candidate:h}
+    done
+} "$ZDOTDIR/.zshenv.local"; then
+    # Source fora da função para preservar variáveis declaradas com typeset.
+    builtin source "$ZDOTDIR/.zshenv.local"
+fi

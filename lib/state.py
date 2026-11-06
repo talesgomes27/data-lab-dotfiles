@@ -53,7 +53,7 @@ def path_issues(path):
             info = part.stat()
             if info.st_uid not in (0, system_uid, os.getuid()):
                 yield {'path': str(part), 'kind': 'owner', 'message': f'proprietário inesperado: {part}'}
-            if info.st_mode & 0o022 and not (info.st_uid in (0, system_uid) and info.st_mode & stat.S_ISVTX):
+            if info.st_mode & 0o022 and not (stat.S_ISDIR(info.st_mode) and info.st_uid in (0, system_uid) and info.st_mode & stat.S_ISVTX):
                 yield {'path': str(part), 'kind': 'permissions', 'message': f'permissões inseguras: {part}'}
 
 
@@ -100,6 +100,14 @@ def registry():
     return json.loads(path.read_text()) if path.exists() else {}
 
 
+def zsh_compiled_issues():
+    if 'zsh' not in COMPONENTS:
+        return []
+    sources = [HOME / '.zshenv', *(CONFIG / 'zsh' / name for name in ('.zprofile', '.zshrc', '.zshenv.local'))]
+    compiled = [Path(str(path) + '.zwc') for path in sources]
+    return [f'arquivo Zsh compilado não permitido: {path}' for path in compiled if path.exists() or path.is_symlink()]
+
+
 def dependencies(exclude=()):
     columns = {'apt': 2, 'dnf': 3, 'pacman': 4, 'zypper': 5}
     adapter = os.environ['DEVSHELL_ADAPTER']
@@ -126,6 +134,11 @@ def dependencies(exclude=()):
             'note': 'Comando administrativo para revisão; setup só executa após confirmação separada. Disponibilidade varia por versão.'}
 
 
+def source_sha256():
+    sources = [p for folder in ('bin', 'lib', 'profiles', 'manifests') for p in (ROOT / folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
+    return digest(b''.join(str(p.relative_to(ROOT)).encode() + p.read_bytes() for p in sorted(sources)))
+
+
 def build_plan():
     managed = registry()
     entries = []
@@ -142,8 +155,7 @@ def build_plan():
                            'supported_arch': os.environ['DEVSHELL_MACHINE'] in ('x86_64', 'aarch64')},
               'dependencies': dependencies()}
     # Inclui a implementação e os manifestos: uma edição invalida a aprovação.
-    sources = [p for folder in ('bin', 'lib', 'profiles', 'manifests') for p in (ROOT / folder).rglob('*') if p.is_file() and '__pycache__' not in p.parts]
-    result['source_sha256'] = digest(b''.join(str(p.relative_to(ROOT)).encode() + p.read_bytes() for p in sorted(sources)))
+    result['source_sha256'] = source_sha256()
     result['approval'] = digest(encode(result))
     return result
 
@@ -451,6 +463,12 @@ def main():
                                   if entry['managed'] and (not entry['before'] or entry['before']['sha256'] != known[entry['path']]))
             plan['issues'].extend(f'arquivo esperado não corresponde ao perfil: {entry["path"]}' for entry in plan['files']
                                   if entry['before'] and entry['action'] == 'write')
+            if 'zsh' in COMPONENTS:
+                try:
+                    snapshot(CONFIG / 'zsh/.zshenv.local')
+                except (ValueError, OSError) as exc:
+                    plan['issues'].append(f'extensão Zsh local insegura: {exc}')
+            plan['issues'].extend(zsh_compiled_issues())
             import artifacts
             plan['issues'].extend(artifacts.health_issues())
             if not plan['platform']['supported_arch']:

@@ -2,6 +2,16 @@
 
 ## Não publicado
 
+- Diagnóstico de `.venv` com caminhos e motivos exatos; comando `project doctor`
+  e reparo explícito `project fix-permissions`, com confirmação/hash, registro
+  dos modos anteriores e verificação de inodes. Sem chmod recursivo, criação
+  de ambientes, sincronização ou autorização direnv automática.
+
+- Extensão pessoal Zsh em `.zshenv.local`, com validação de caminhos, permissões
+  e proprietário. O hash integral do bootstrap continua obrigatório; doctor
+  não executa conteúdo pessoal. Recusa de `.zwc` que poderia substituir o texto
+  conferido e exceção sticky limitada a diretórios do sistema.
+
 - Template Python público fixado como submódulo. Perfil science instala seu
   gerador como `pyinit`, com aprovação própria, commit e SHA-256 verificados;
   `.envrc` criado com permissões privadas e autorização direnv manual.

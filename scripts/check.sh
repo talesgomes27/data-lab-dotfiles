@@ -11,6 +11,7 @@ done
 shellcheck -x bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} dotfiles/dot_config/direnv/lib/*.sh tests/core_setup.bash tests/*.bats
 shfmt -d -i 4 -ci bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} dotfiles/dot_config/direnv/lib/*.sh tests/core_setup.bash
 shfmt -ln bats -d -i 4 -ci tests/*.bats
+for source in dotfiles/dot_zshenv dotfiles/dot_config/zsh/*; do zsh -n -- "$source"; done
 python3 - <<'PY'
 import ast
 from pathlib import Path

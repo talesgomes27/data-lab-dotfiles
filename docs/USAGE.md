@@ -197,3 +197,60 @@ Para testar o próprio projeto, consulte [Contribuição](../CONTRIBUTING.md).
 O [diagnóstico](TROUBLESHOOTING.md) trata ausências, permissões, conflitos e
 problemas dos atalhos. Os componentes declarados estão em `profiles/` e
 `manifests/`; essa relação é diferente do inventário particular de uma máquina.
+
+## Diagnosticar e reparar permissões de uma .venv
+
+Execute a CLI na raiz do Data Lab Dotfiles, apontando para o projeto afetado.
+Os comandos `project` usam `/usr/bin/python3 >=3.11` em modo isolado (`-I -B`),
+sem iniciar o Python da `.venv` ou importar código pelo PYTHONPATH do projeto.
+O modo `-B` impede gravação de bytecode. Sem `--path`, o diretório atual é
+o projeto inspecionado.
+
+```bash
+projeto="$HOME/caminho/do/projeto"
+./bin/devshell project doctor --path "$projeto"
+./bin/devshell project fix-permissions --path "$projeto" --dry-run
+./bin/devshell project fix-permissions --path "$projeto"
+```
+
+Doctor é somente leitura e retorna 3 se houver problemas. O dry-run apresenta
+os modos atuais/propostos sem gravar estado. O reparo mostra o plano e pede sua
+confirmação; EOF ou resposta diferente de `s`/`sim` cancela. Para aprovação
+explícita por hash, após revisar o plano:
+
+```bash
+./bin/devshell project fix-permissions --path "$projeto" --dry-run --json
+./bin/devshell project fix-permissions --path "$projeto" --approve HASH_REVISADO
+```
+
+`--json` no reparo exige `--dry-run` ou `--approve`. Não existe `--yes`.
+Mudanças no código ou nas identidades/modos observados invalidam a aprovação.
+
+O escopo é somente a cadeia de diretórios até `.venv/bin`. Apenas diretórios do
+usuário sob sua HOME podem perder escrita de grupo/outros, por exemplo
+`0775 -> 0755`. Revise os pais apresentados: retirar escrita de grupo de uma
+pasta compartilhada também afeta a criação/remoção de entradas pelo grupo.
+Não há recursão ou alteração de arquivos filhos. Symlinks de diretórios,
+proprietários inesperados e estrutura de ambiente ausente/inválida exigem
+correção manual e bloqueiam todo o reparo. Links de interpretadores criados
+por uv continuam permitidos e não são alterados.
+
+Antes do primeiro chmod, os modos/identidades aprovados são registrados em
+`$XDG_STATE_HOME/devshell/permission-repairs/ID.json`, com fallback para
+`~/.local/state`. O registro privado guarda o plano, caminhos concluídos e
+status `complete` ou `partial`. O diretório do registro precisa estar seguro;
+problemas nele aparecem como bloqueio antes da confirmação. Cada chmod usa
+descritor sem seguir symlink e confere device/inode/tipo/modo/UID/GID/links.
+
+Uma falha pode preservar reparos já concluídos. Confira o registro e execute
+novamente doctor antes de retomar. Rollback de dotfiles não restaura esses
+modos nem reabilita escrita compartilhada automaticamente.
+
+O comando não cria/recria `.venv`, instala pacotes, executa `uv sync` ou autoriza
+`.envrc`. Se faltar o ambiente, prepare-o pelo processo do projeto. Depois de
+concluir um reparo de permissões:
+
+```bash
+cd "$projeto"
+direnv reload
+```

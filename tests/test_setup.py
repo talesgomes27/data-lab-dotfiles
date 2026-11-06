@@ -87,6 +87,24 @@ class PermissionReview(unittest.TestCase):
             guided.repair_permissions(issues)
         self.assertEqual(paths[0].stat().st_mode & 0o777, 0o775)
 
+    def test_descriptor_check_refuses_inode_swapped_during_open(self):
+        self.unsafe_paths()
+        target = self.home / '.config/nushell'
+        issue = next(i for i in guided.permission_review() if i['path'] == str(target))
+        real_open = os.open
+
+        def replaced_open(path, flags, *args, **kwargs):
+            if Path(path) == target:
+                target.rename(target.with_name('anterior'))
+                target.mkdir(mode=0o775)
+                target.chmod(0o775)
+            return real_open(path, flags, *args, **kwargs)
+
+        with patch.object(guided.os, 'open', side_effect=replaced_open):
+            with self.assertRaisesRegex(ValueError, 'mudou após revisão'):
+                guided.repair_permission(issue)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o775)
+
     def test_hardlinked_dotfile_is_not_a_chmod_target(self):
         target = self.home / '.zshenv'
         target.write_text('privado')

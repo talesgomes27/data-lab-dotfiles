@@ -21,6 +21,8 @@ A imagem ilustra o uso; a aparência depende da fonte e do emulador de terminal.
 - Interpretadores Python e ferramentas isoladas via uv, com exemplos científicos
   em Python e R para copiar para seus próprios projetos.
 - Planejamento, diagnóstico e recuperação de dotfiles pela CLI `devshell`.
+- Diagnóstico de `.venv` e reparo revisado de permissões com `project doctor`
+  e `project fix-permissions`; veja o [guia de uso](docs/USAGE.md#diagnosticar-e-reparar-permissões-de-uma-venv).
 
 Os indicadores de R, Java, Rust, Go, Node.js, JavaScript, TypeScript, Quarto e
 Astro no prompt reconhecem o contexto do diretório. Eles não instalam essas linguagens ou projetos.

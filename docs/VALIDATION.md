@@ -13,7 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 116 testes Bats e 35 unittest, ShellCheck e shfmt passaram, sem skips. Inclui 17 cenários novos de ambiente pessoal e seis de pyinit/setup, sem estender a evidência histórica da matriz. |
+| Suíte local | 146 testes Bats e 40 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -28,6 +28,87 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Diagnóstico e reparo de permissões de projetos — 2026-11-06
+
+`bash scripts/check.sh` passou com 146 Bats e 40 unittest, sem skips, além de
+ShellCheck, shfmt e sintaxe Zsh/Python. O incremento acrescentou 17 Bats e quatro
+unittest. As fixtures usaram HOME/XDG/cache privados e .venv criada por uv real
+com `--offline --no-python-downloads`; nenhum pacote foi sincronizado.
+
+- Doctor/dry-run relataram os caminhos e modos exatos sem criar estado. EOF,
+  resposta negativa e aprovação vencida recusaram o reparo. Confirmação guiada
+  e hash explícito funcionaram; o estado saudável não criou novo registro.
+- Somente diretórios próprios na cadeia aprovada perderam escrita de
+  grupo/outros. Filhos fora da cadeia, arquivos, inode da .venv, interpretadores
+  e autorização direnv foram preservados. Symlinks, UID inesperado, caminhos
+  fora da HOME e estrutura de ambiente ausente bloquearam a operação.
+- Substituição de inode, inclusive durante open, foi recusada por descritor.
+  O registro privado preservou modos anteriores e caminhos concluídos também
+  na falha parcial simulada. Alterar o código após revisão invalidou o hash.
+- As regressões de segurança falharam antes dos ajustes: Python ativo no PATH,
+  `sitecustomize` injetado por PYTHONPATH e bytecode persistido pelo modo isolado.
+  O comando agora usa `/usr/bin/python3 -I -B`; doctor/dry-run em cópia limpa
+  não executaram o payload nem criaram .pyc/estado. Diretório do registro sob
+  HOME insegura apareceu como bloqueio prévio. A revisão independente confirmou
+  as correções, sem novos achados concretos no delta final.
+- Na revisão para publicação, uma reprodução mostrou utilitários homônimos da
+  .venv ativa sendo executados antes do diagnóstico. O teste com dirname,
+  uname, getconf, ldd e grep falhou antes da correção. A resolução de ROOT passou
+  a usar builtins Bash e os comandos project deixaram de detectar plataforma;
+  doctor e dry-run passaram sem iniciar os stubs. A ajuda também foi conferida
+  chamando `bash devshell` a partir de bin, sem slash no nome do script.
+- A integração real do direnv apresentou as permissões e caminhos recusados,
+  com orientação para reparo explícito. A saída do helper para PATH continuou
+  limpa, com explicações somente em stderr.
+- No projeto real já corrigido manualmente, doctor e dry-run retornaram zero,
+  sem problemas ou permissões pendentes. Os dois helpers da HOME foram
+  atualizados com hash e backup transacional. As permissões do projeto,
+  .envrc/.venv existentes e personalização Zsh ficaram intactos; doctor da HOME
+  terminou sem problemas/avisos. Ajuda, 96 destinos de links locais e 42 blocos
+  shell foram conferidos.
+
+A matriz de containers não foi repetida para este incremento. O resultado do
+CI de publicação deve ser consultado no PR do commit correspondente. A verificação
+é de caminhos/metadados, não auditoria dos pacotes do ambiente ou proteção contra
+escritores do mesmo UID.
+
+## Extensão pessoal Zsh e doctor — 2026-11-05
+
+Validação local em Ubuntu 26.04.1 x86_64/glibc, Zsh 5.9 e módulo nativo
+`zsh/stat`. `bash scripts/check.sh` passou com 129 Bats, 36 unittest,
+ShellCheck, shfmt e sintaxe Zsh/Python, sem skips. Foram acrescentados 13 Bats
+e um unittest; a matriz de containers e o CI remoto não foram repetidos.
+
+- Carregamento real da extensão em Zsh não interativa, no escopo global, com
+  XDG contendo espaços e PATH sem programas externos. `typeset` e exports
+  foram preservados. Arquivo ausente não criou estado nem emitiu aviso.
+- Recusa de permissões de grupo/outros, ancestrais inseguros, symlinks,
+  hardlinks, diretório/FIFO no lugar do arquivo, componente `..` e módulo de
+  stat indisponível. A exceção sticky exige diretório do sistema; a regressão
+  de arquivo regular foi testada simulando apenas o UID raiz do filesystem,
+  sem chown ou execução privilegiada.
+- A revisão independente identificou a preferência do Zsh por bytecode `.zwc`
+  e a exceção sticky indevida para arquivo regular. As reproduções falharam
+  antes das correções e passaram depois. Bytecode real criado por `zcompile`,
+  mais novo que o texto, foi recusado inclusive por symlink. A revisão confirmou
+  também recusa de symlink quebrado e não encontrou outros problemas acionáveis.
+- Doctor/setup sinalizaram caches compilados dos quatro arquivos envolvidos.
+  Inspeções não executaram conteúdo pessoal; modificar o bootstrap gerenciado
+  continuou produzindo divergência de hash. As guardas de aprovação, conflito,
+  backup e rollback foram preservadas.
+- Migração e rollback passaram com fixtures privadas. Na aplicação local
+  autorizada, o trecho pessoal foi preservado byte a byte em arquivo modo 600;
+  o bootstrap anterior ficou no backup transacional. As exportações Zsh antigas
+  e novas foram comparadas por digest, sem registrar valores privados. Doctor
+  terminou sem problemas/avisos; plan não apontou mudanças ou conflitos, e setup
+  dry-run não encontrou permissões problemáticas ou bloqueios. Ambientes
+  existentes e o arquivo privado referenciado ficaram intactos.
+
+O código pessoal continua fora do conteúdo gerenciado; esses testes não auditam
+suas instruções nem fornecem sandbox ou proteção contra escritores do mesmo UID.
+As evidências desta seção são locais; a integração remota deve ser conferida
+no PR do commit correspondente.
 
 ## Template como submódulo e gerador science — 2026-11-05
 
