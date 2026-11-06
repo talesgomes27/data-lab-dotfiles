@@ -52,6 +52,14 @@ de Bash para carregar essa configuração pela convenção do Ubuntu. Nu lê a l
 componentes e possui `env.nu`/`config.nu` próprios. Starship compartilha TOML.
 Nenhuma shell tenta interpretar o código de outra.
 
+O perfil `science` inclui `pyinit`: o instalador de artefatos existente instala
+somente o gerador standalone em `~/.local/bin`, com commit e SHA-256 fixados.
+O submódulo `templates/python-template-linux` registra a fonte completa. Um teste
+confere a correspondência entre gitlink, manifesto e bytes do script. Não há
+atualização automática do submódulo, execução do gerador durante setup ou
+`direnv allow` implícito. Doctor verifica integridade sem executar `pyinit`;
+rollback de dotfiles não remove o script nem os projetos.
+
 O perfil `extras` oferece ferramentas de terminal por pacotes da distribuição;
 disponibilidade varia por release e `-` continua exigindo instalação manual.
 DuckDB é um componente opcional de `science`: seu status aparece no plano e no
@@ -64,6 +72,22 @@ A `.zshenv` só define ZDOTDIR. `.zprofile` prepara o ambiente de login;
 O carregamento repetido de `.zshrc` e do fragmento Bash é protegido. Bibliotecas
 Python importáveis não são plugins de shell; `.venv` é responsabilidade de cada
 projeto. Starship reconhece o ambiente virtual; uv fornece completion nativa.
+
+O ambiente pessoal opcional `geral` fica em
+`$XDG_DATA_HOME/devshell/venvs/geral`, com fallback para `~/.local/share`.
+Sua criação é manual; a seleção interativa exige componentes uv/direnv e
+diretórios seguros. `safe-path.py --venv` também confere `pyvenv.cfg` regular
+e executáveis python/python3, sem executá-los. Bash/Zsh selecionam pelo
+`env.sh`; Nushell faz a seleção em `config.nu`. Ativações herdadas são
+preservadas. O helper estático `direnv/lib/devshell-python.sh`, gerenciado
+somente com o componente direnv, implementa `use devshell_python` em `.envrc`
+autorizados. Retira o ambiente anterior do PATH antes de selecionar a `.venv`;
+se ela faltar ou for insegura, mantém a retirada e avisa. Direnv restaura o
+estado anterior ao sair, inclusive quando o terminal começa dentro do projeto.
+Conda ativo é preservado, com aviso para desativação explícita antes da troca.
+Nushell usa um hook `pre_prompt` que aplica também remoções de variáveis e
+preserva o código de saída e o hook PWD de zoxide. Nada disso instala pacotes
+ou altera ambientes durante abertura ou navegação.
 
 Perfis selecionam integrações; comandos ausentes não impedem a shell de abrir.
 `work` desativa os hooks opcionais por ausência de componentes. Nenhum perfil

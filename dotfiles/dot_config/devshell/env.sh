@@ -12,10 +12,30 @@ case "${XDG_DATA_HOME-}" in /*) _foundry_uv_bin="${XDG_DATA_HOME%/*}/bin" ;; *) 
 _foundry_uv_bin=${UV_TOOL_BIN_DIR:-${XDG_BIN_HOME:-$_foundry_uv_bin}}
 if command -v python3 >/dev/null; then
     while IFS= read -r _foundry_directory; do
-        case ":$PATH:" in *":$_foundry_directory:"*) ;; *) export PATH="$_foundry_directory:$PATH" ;; esac
+        case ":$PATH:" in
+            *":$_foundry_directory:"*) ;;
+            *)
+                if [[ -n ${VIRTUAL_ENV-} || -n ${CONDA_PREFIX-} ]]; then
+                    export PATH="$PATH:$_foundry_directory"
+                else
+                    export PATH="$_foundry_directory:$PATH"
+                fi
+                ;;
+        esac
     done < <(python3 "$_foundry_config/devshell/safe-path.py" "$HOME/.local/bin" "$_foundry_uv_bin")
 fi
 unset _foundry_uv_bin _foundry_directory
+if [[ $- == *i* ]] && devshell_enabled uv && devshell_enabled direnv &&
+    [[ -z ${VIRTUAL_ENV-} && -z ${CONDA_PREFIX-} && -z ${DIRENV_DIR-} ]] &&
+    command -v direnv >/dev/null && command -v python3 >/dev/null; then
+    case "${XDG_DATA_HOME-}" in /*) _foundry_data=$XDG_DATA_HOME ;; *) _foundry_data="$HOME/.local/share" ;; esac
+    while IFS= read -r _foundry_directory; do
+        export VIRTUAL_ENV="${_foundry_directory%/bin}"
+        export PATH="$_foundry_directory:$PATH"
+        unset PYTHONHOME
+    done < <(python3 "$_foundry_config/devshell/safe-path.py" --venv "$_foundry_data/devshell/venvs/geral/bin")
+    unset _foundry_data _foundry_directory
+fi
 export STARSHIP_CONFIG="$_foundry_config/starship.toml"
 if [[ $- == *i* ]] && devshell_enabled eza && command -v eza >/dev/null; then
     alias ls='eza --icons=auto --group-directories-first -s Extension'

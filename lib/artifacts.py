@@ -30,10 +30,12 @@ def health_issues():
     manifest = json.loads((fs.ROOT / 'manifests/artifacts.json').read_text())['artifacts']
     for artifact in manifest:
         component = artifact['component']
-        if component not in ('plugins', 'firacode') or component not in fs.COMPONENTS:
+        if component not in ('plugins', 'firacode', 'pyinit') or component not in fs.COMPONENTS:
             continue
         root = DATA / 'devshell/plugins' / artifact['name'] if component == 'plugins' else DATA / 'fonts/FiraCodeNerdFont'
         checks = artifact.get('health', {})
+        if component == 'pyinit':
+            root, checks = BIN, {'pyinit': artifact['sha256']}
         if not checks:
             issues.append(f'checksums de diagnóstico ausentes: {component}')
         for name, checksum in checks.items():
@@ -48,6 +50,8 @@ def health_issues():
                     issues.append(f'componente de usuário ausente: {path}')
                 elif current['sha256'] != checksum:
                     issues.append(f'integridade do componente divergente: {path}')
+                elif component == 'pyinit' and not current['mode'] & 0o100:
+                    issues.append(f'componente não executável: {path}')
             except (ValueError, OSError) as exc:
                 issues.append(str(exc))
     if 'python-tools' not in fs.COMPONENTS:
@@ -170,7 +174,7 @@ def python_dirs(validate=True):
 
 
 def install_plan():
-    if COMPONENT not in ('uv', 'chezmoi', 'nu', 'plugins', 'python', 'firacode'):
+    if COMPONENT not in ('uv', 'chezmoi', 'nu', 'plugins', 'python', 'firacode', 'pyinit'):
         raise ValueError('componente de instalação desconhecido')
     plan = {'operation': 'install-' + COMPONENT}
     if COMPONENT == 'python':

@@ -1,2 +1,3 @@
 # Os defaults do uv preservam .venv por projeto e diretórios por usuário.
-# Não defina UV_PROJECT_ENVIRONMENT globalmente nem substitua python/python3.
+# Não defina UV_PROJECT_ENVIRONMENT globalmente nem crie aliases/symlinks Python globais.
+# O ambiente pessoal opcional é selecionado apenas no PATH de shells interativas.

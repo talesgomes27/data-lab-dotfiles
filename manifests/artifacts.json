@@ -2,6 +2,16 @@
   "schema": 1,
   "artifacts": [
     {
+      "component": "pyinit",
+      "version": "3bb356f880d0577be535844cab879085e3801da9",
+      "arch": "any",
+      "libc": "any",
+      "url": "https://github.com/talesgomes27/python-template-linux/raw/3bb356f880d0577be535844cab879085e3801da9/scripts/init_project.sh",
+      "sha256": "7bdca761fe38add8378213987a90c4576e1cfb79575bc06f0d4340f167e696ab",
+      "format": "raw",
+      "binary": "pyinit"
+    },
+    {
       "component": "uv",
       "version": "0.13.7",
       "arch": "x86_64",

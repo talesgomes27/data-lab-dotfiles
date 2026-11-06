@@ -49,7 +49,7 @@ pelo botão **Code**, extrair e abrir a pasta que contém `bootstrap.sh`.
 Para terminal e ciência de dados:
 
 ```bash
-git clone https://github.com/talesgomes27/data-lab-dotfiles.git
+git clone --recurse-submodules https://github.com/talesgomes27/data-lab-dotfiles.git
 cd data-lab-dotfiles
 ./bin/devshell setup --profile personal,science --dry-run
 ./bin/devshell setup --profile personal,science
@@ -80,7 +80,7 @@ Todos os perfis incluem `minimal`. Os nomes podem ser combinados por vírgulas.
 |---|---|
 | `minimal` | Base: Bash, Zsh, Git, uv e Chezmoi. |
 | `personal` | Terminal: Nushell, Starship, fzf, zoxide, direnv, ripgrep, fd, bat, eza, Delta, plugins Zsh e FiraCode Nerd Font. |
-| `science` | Python gerenciado, Ruff, pre-commit, IPython, ShellCheck, shfmt e Bats. Inspeciona DuckDB CLI opcional; bibliotecas científicas ficam por projeto. |
+| `science` | Python gerenciado, gerador `pyinit`, Ruff, pre-commit, IPython, ShellCheck, shfmt e Bats. Inspeciona DuckDB CLI opcional; bibliotecas científicas ficam por projeto. |
 | `work` | Base com ripgrep e ShellCheck, sem os hooks opcionais de `personal`. |
 | `extras` | Complementos opcionais: btop, ncdu, tldr/tealdeer e Lazygit. |
 
@@ -105,6 +105,15 @@ Em uma nova sessão Zsh, depois de aplicar `personal`:
 em qualquer diretório. Siga o [exemplo científico](examples/science/README.md)
 ou consulte o [diagnóstico do jlab](docs/TROUBLESHOOTING.md#jlab-sem-grupo-notebook).
 O [manual de uso](docs/USAGE.md) apresenta exemplos e como sair das ferramentas.
+
+Opcionalmente, prepare um [ambiente Python pessoal com troca automática](docs/SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto):
+o terminal inicia em `geral`, usa a `.venv` dos projetos autorizados pelo direnv
+e restaura o ambiente anterior ao sair. O preparo é explícito; a navegação não
+instala pacotes.
+
+O [python-template-linux](https://github.com/talesgomes27/python-template-linux)
+cria novos projetos com `.venv` e `.envrc` compatíveis com esse fluxo.
+Veja [como conectar o gerador ao terminal](docs/SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto).
 
 ## Configuração, atualização e recuperação
 

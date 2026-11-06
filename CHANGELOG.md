@@ -2,6 +2,15 @@
 
 ## Não publicado
 
+- Template Python público fixado como submódulo. Perfil science instala seu
+  gerador como `pyinit`, com aprovação própria, commit e SHA-256 verificados;
+  `.envrc` criado com permissões privadas e autorização direnv manual.
+
+- Ambiente pessoal Python opcional em `devshell/venvs/geral`, com seleção
+  interativa em Bash/Zsh/Nushell e troca para `.venv` via `.envrc` autorizado.
+  Preparação explícita, validação de caminhos e retorno ao ambiente anterior;
+  sem downloads na navegação e sem remoção de ambientes no rollback.
+
 - Matriz executa a suíte como usuário comum; Starship verificado também nas
   imagens. Disparo manual prepara dependências reais dos testes opcionais e
   recusa skips. Manual detalha os pré-requisitos por funcionalidade.

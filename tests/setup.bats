@@ -13,7 +13,7 @@ prepare_setup() {
     cp -a "$FOUNDRY_ROOT/bin" "$FOUNDRY_ROOT/lib" "$FOUNDRY_ROOT/manifests" "$FOUNDRY_ROOT/profiles" "$FOUNDRY_ROOT/dotfiles" "$FOUNDRY_ROOT/.chezmoiroot" "$SETUP_REPO/"
     for utility in bash dirname uname getconf grep cat; do ln -s "$(command -v "$utility")" "$SETUP_BIN/$utility"; done
     ln -s "$original_python" "$SETUP_BIN/python3"
-    for utility in git zsh uv nu starship fzf zoxide direnv rg fdfind batcat eza delta shellcheck shfmt bats fc-cache btop ncdu tldr lazygit; do
+    for utility in git zsh uv nu starship fzf zoxide direnv rg fdfind batcat eza delta shellcheck shfmt bats fc-cache btop ncdu tldr lazygit pyinit; do
         cat >"$SETUP_BIN/$utility" <<'BIN'
 #!/usr/bin/env bash
 case ${0##*/} in
@@ -81,6 +81,7 @@ BIN
     # chmod é chamado apenas pelo mock de pacote dentro de /tmp.
     ln -s "$(command -v chmod)" "$SETUP_BIN/chmod"
     chmod +x "$SETUP_BIN/chezmoi" "$SETUP_BIN/sudo" "$SETUP_BIN/apt-get"
+    seed_artifact pyinit
     export PATH="$SETUP_BIN"
 }
 
@@ -305,10 +306,20 @@ PY
     [ "$(/usr/bin/cat "$XDG_DATA_HOME/fonts/FiraCodeNerdFont/FiraCodeNerdFontMono-Regular.ttf")" = preservar ]
 }
 
-@test 'setup science reutiliza uv compatível e instala somente Python isolado' {
+@test 'setup science exige confirmação própria antes de instalar pyinit' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\nn\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 1 ]
+    [[ "$output" == *'componente pyinit conforme este plano?'* ]]
+    [ ! -e "$HOME/.local/bin/pyinit" ]
+    [ ! -e "$HOME/.zshenv" ]
+}
+
+@test 'setup science reutiliza uv compatível e instala Python isolado e pyinit' {
+    prepare_setup
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
+    [ -x "$HOME/.local/bin/pyinit" ]
     python3 - <<'PY'
 import os
 calls=open(os.environ['SETUP_LOG']).read().splitlines()
@@ -324,7 +335,7 @@ PY
     run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert "duckdb" in p["components"];assert "duckdb" in p["dependencies"]["optional_missing"];assert not p["blockers"]'
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [[ "$output" == *'DuckDB opcional ausente'* ]]
 }
@@ -341,7 +352,7 @@ PY
 
 @test 'doctor relata ferramenta uv removida ou com versão divergente' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     /usr/bin/rm "$UV_TOOL_BIN_DIR/ruff"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
@@ -357,7 +368,7 @@ PY
 
 @test 'doctor identifica recibo inválido e binário uv de versão incorreta' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     printf '[tool]\nrequirements = ["ruff"]\n' >"$UV_TOOL_DIR/ruff/uv-receipt.toml"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
@@ -372,7 +383,7 @@ PY
 
 @test 'doctor identifica metadado de versão incorreto no interpretador uv' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     printf '#define PY_VERSION "3.1.0"\n' >"$UV_PYTHON_INSTALL_DIR/cpython-3.12.12-fixture/include/python3.12/patchlevel.h"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
@@ -382,7 +393,7 @@ PY
 
 @test 'doctor não executa ferramenta uv alterada ao verificar sua versão' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     printf '#!/bin/sh\ntouch "%s"\nprintf "0.17.3\\n"\n' "$HOME/doctor-executou" >"$UV_TOOL_BIN_DIR/ruff"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
@@ -393,7 +404,7 @@ PY
 
 @test 'doctor detecta interpretador ausente no launcher mesmo com RECORD válido' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     printf '#!/caminho/inexistente/python\n' >"$UV_TOOL_BIN_DIR/ruff"
     python3 - <<'PY'
@@ -412,7 +423,7 @@ PY
 
 @test 'doctor detecta módulo essencial ausente em ferramenta uv' {
     prepare_setup
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     /usr/bin/rm "$UV_TOOL_DIR/pre-commit/lib/python3.13/site-packages/pre_commit/main.py"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json

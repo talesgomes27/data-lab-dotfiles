@@ -15,10 +15,10 @@ import state as fs
 def target_paths():
     paths = {Path(path) for path in fs.desired_files()}
     paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions'))
-    paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu') if tool in fs.COMPONENTS)
+    paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
         paths.add(artifacts.BIN / 'uvx')
-    if any(component in fs.COMPONENTS for component in ('plugins', 'firacode')) or any(not shutil.which(tool) for tool in ('uv', 'chezmoi', 'nu') if tool in fs.COMPONENTS):
+    if any(component in fs.COMPONENTS for component in ('plugins', 'firacode', 'pyinit')) or any(not shutil.which(tool) for tool in ('uv', 'chezmoi', 'nu') if tool in fs.COMPONENTS):
         paths.add(artifacts.CACHE / 'artifact')
     if 'python-tools' in fs.COMPONENTS:
         paths.update(Path(path) for path in artifacts.python_dirs(validate=False).values())
@@ -115,6 +115,8 @@ def inspect():
         user_components.append('firacode')
     if 'python-tools' in fs.COMPONENTS:
         user_components.append('python')
+    if 'pyinit' in fs.COMPONENTS:
+        user_components.append('pyinit')
     if deps['manual_only']:
         blockers.append('componentes nativos ausentes sem pacote/adaptador definido: ' + ', '.join(deps['manual_only']))
     return {'operation': 'setup', 'profiles': os.environ['DEVSHELL_PROFILES'].split(','),

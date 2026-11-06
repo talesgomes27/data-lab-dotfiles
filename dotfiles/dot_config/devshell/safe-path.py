@@ -4,7 +4,11 @@ from pathlib import Path
 import stat
 import sys
 
-for argument in sys.argv[1:]:
+arguments = sys.argv[1:]
+venv = arguments[:1] == ['--venv']
+if venv:
+    arguments = arguments[1:]
+for argument in arguments:
     path = Path(argument)
     if not path.is_absolute() or ':' in argument or '\n' in argument or '\r' in argument:
         continue
@@ -18,6 +22,10 @@ for argument in sys.argv[1:]:
                 valid = False
             if info.st_mode & 0o022 and not (system_owner and info.st_mode & stat.S_ISVTX):
                 valid = False
+        if venv:
+            config = path.parent / 'pyvenv.cfg'
+            valid = valid and config.is_file() and not config.is_symlink()
+            valid = valid and all((path / name).is_file() and os.access(path / name, os.X_OK) for name in ('python', 'python3'))
         if valid:
             print(path)
     except OSError:

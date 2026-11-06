@@ -20,6 +20,11 @@ Links README de documentação dos plugins oficiais são ignorados, nunca extra�
 revalidado antes do uso. Uma atualização de tag cujo conteúdo mudou falha no
 checksum, em vez de executar conteúdo novo silenciosamente.
 
+O gerador `pyinit` usa o mesmo fluxo: fonte pública fixada por commit e
+SHA-256, correspondente ao submódulo versionado. Sua instalação não executa o
+script. Criar um projeto exige um comando explícito; autorizar o `.envrc`
+continua manual e exige revisar todo o conteúdo.
+
 A instalação de interpretadores/ferramentas é delegada a uv com versões
 fixadas e sem `--force`. As versões das CLI raiz são fixas; suas dependências
 transitivas são resolvidas por uv em cada instalação, sem um lock separado de
@@ -72,6 +77,8 @@ por `--version` com HOME e diretórios XDG temporários. Isso reduz efeitos
 normais de inicialização, mas não é sandbox: os binários ainda precisam ser
 confiáveis e podem acessar caminhos absolutos. Interpretadores e ferramentas
 uv de science são conferidos por arquivos e metadados, sem executá-los.
+O checksum e a permissão executável de `pyinit` também são conferidos sem
+executar o gerador.
 
 ```bash
 ./bin/devshell rollback --json
@@ -94,6 +101,7 @@ suportado é arquivo regular do usuário. Diretórios vazios podem permanecer.
 | Diretórios criados | podem permanecer vazios |
 | Binários/plugins instalados | preservar/remover manualmente os paths revistos |
 | uv Python/tools/cache | manutenção manual por uv; sem remoção automática |
+| Ambiente pessoal `geral` | criação/manutenção explícita por uv; fora do rollback dos dotfiles |
 | Pacotes do sistema via setup | comando exibido e confirmado separadamente; recuperação manual |
 | Drivers e login shell | nunca alterados pela CLI |
 | Projetos e .venv externos | fora do escopo, nunca removidos |
@@ -126,6 +134,20 @@ Histórico das shells é local; começar uma linha com espaço evita registro no
 Zsh/Bash configurados. Isso não deve ser usado como controle para segredos:
 use entrada interativa ou armazenamento apropriado. direnv só carrega `.envrc`
 após autorização individual; o projeto nunca a concede automaticamente.
+
+`use devshell_python` seleciona uma `.venv` existente por PATH/VIRTUAL_ENV,
+sem executar `activate` nem sincronizar dependências. A seleção confere
+diretórios e ancestrais, recusa symlinks nos diretórios e exige pyvenv.cfg
+regular e python/python3 executáveis. Isso não autentica os executáveis ou os
+pacotes: autorize somente repositórios confiáveis. Symlinks dos próprios
+executáveis Python são normais em venvs e podem apontar ao interpretador uv.
+Sem `.venv` válida, o helper retira o ambiente anterior do PATH e avisa,
+retornando sucesso para o direnv aplicar essa retirada. `.envrc` não autorizado
+continua bloqueado e não provoca troca. Em projetos ainda não preparados,
+`uv pip install` pode atingir o ambiente pessoal que permaneceu ativo; prefira
+os comandos de projeto ou um destino explícito.
+Conda ativo é uma exceção: o helper avisa e o preserva integralmente até sua
+desativação explícita, sem tentar reconstituir seu estado de shell.
 
 
 ## Relatar uma vulnerabilidade

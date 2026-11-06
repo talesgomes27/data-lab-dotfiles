@@ -18,11 +18,14 @@ de aprovação, os perfis declarativos e os manifestos fixados. Consulte as
 ## Preparar o ambiente de desenvolvimento
 
 As verificações exigem Python >=3.11, Bash, ShellCheck, shfmt, Bats, Chezmoi,
-Zsh e Nushell no PATH. Starship é necessário para os cenários de prompt; uma
+Zsh, Nushell, uv e direnv no PATH. Starship é necessário para os cenários de prompt; uma
 verificação com skips não comprova esses cenários. Os
 [pré-requisitos dos testes opcionais](docs/INSTALLATION.md#pré-requisitos-para-reproduzir-todos-os-testes)
 incluem fzf, zoxide, R/renv, Node.js e Quarto. O disparo manual do workflow
 prepara essas dependências no runner e exige execução sem skips.
+
+Clone com `--recurse-submodules`; em uma cópia existente, execute
+`git submodule update --init --recursive` antes dos testes.
 
 Na raiz do projeto:
 
@@ -59,6 +62,17 @@ validação; não há consulta automática a latest. Dependências das ferrament
 e o lock científico têm escopos distintos. Atualize o changelog para mudanças
 perceptíveis ao usuário. Preserve as atribuições da licença MIT e as licenças
 dos componentes externos.
+
+## Atualizar o template Python
+
+O submódulo `templates/python-template-linux` fixa o repositório público em um
+commit revisado. Não use `git submodule update --remote` no setup. Para atualizar,
+revise primeiro o PR do template, selecione o commit no submódulo e atualize
+juntos o gitlink, a versão, a URL e o SHA-256 de `pyinit` em
+`manifests/artifacts.json`. Confira o hash do download e dos bytes do submódulo;
+`tests/pyinit.bats` exige que correspondam. Execute a suíte e revise o diff antes
+de publicar o PR dos dotfiles. Preserve a licença do template no submódulo.
+Atualizar apenas os dotfiles com `devshell update` não reinstala `pyinit`.
 
 ## Preparar a primeira publicação
 

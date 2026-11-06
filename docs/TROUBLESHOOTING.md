@@ -54,6 +54,21 @@ O [guia científico](SCIENCE.md#iniciar-e-encerrar-jupyterlab) mostra o preparo.
 
 ## Terminal, fonte e caminhos
 
+### Ambiente Python pessoal ou do projeto
+
+| Sintoma | Verificação e ação |
+|---|---|
+| `geral` não aparece | Confira perfil personal, direnv e o [preparo explícito](SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto). O diretório precisa conter pyvenv.cfg regular e bin/python e bin/python3 executáveis; caminhos/ancestrais inseguros ou com symlinks são recusados. |
+| Outra ativação continua ativa | VIRTUAL_ENV e CONDA_PREFIX herdados são preservados. Abra um terminal sem essa ativação para selecionar o ambiente pessoal. |
+| Aviso de Conda ativo no projeto | Execute a desativação pelo próprio Conda antes de usar a troca uv. O helper conserva o estado Conda em vez de tentar desativá-lo parcialmente. |
+| Repositório continua em `geral` | Confira `.envrc` com `use devshell_python` e a autorização individual. Só ter pyproject.toml ou `.venv` não habilita a troca. |
+| Aviso de `.venv` ausente ou insegura | Prepare o ambiente pelo processo do projeto; para uv, revise manifesto/lock e execute `uv sync --locked`. Revise donos/permissões sem chmod recursivo. Depois, `direnv reload`. |
+| `python` usa a distribuição após o aviso | O helper retirou o ambiente anterior para evitar instalar dependências em `geral`. Prepare a `.venv` antes de trabalhar; `uv pip` sem ambiente ativo não é um substituto para essa preparação. |
+| A troca só acontece no próximo comando | Hooks rodam antes do prompt. Em `cd projeto && python ...`, use `uv run` ou o caminho explícito da `.venv`. |
+| Rollback não apagou `geral`/`.venv` | Ambientes são mantidos fora da transação de dotfiles. Encerre shells abertas para descartar hooks carregados. |
+
+### Demais integrações
+
 | Sintoma | Verificação e ação |
 |---|---|
 | `.zshrc` não está na HOME | A configuração fica em `~/.config/zsh/.zshrc`, indicada por `ZDOTDIR` em `~/.zshenv`. Não crie uma segunda cópia sem revisar a migração. |
