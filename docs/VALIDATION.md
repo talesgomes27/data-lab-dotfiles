@@ -49,6 +49,11 @@ interpretador de cada job; permanece aberto, sem merge.
   somente `use devshell_python`, com modo 600; `.venv` tinha modo 700. Git ficou
   sem HEAD, stage ou remotos. Direnv continuou bloqueado; nenhum `allow` foi
   executado. O teste não alterou a HOME real.
+- O primeiro CI de PR expôs interferência do `compinit` global do Ubuntu no
+  teste PTY. A falha foi reproduzida localmente com uma completion insegura
+  artificial. O teste passou após usar `zsh -d -i`, carregando o rc gerenciado
+  sem o rc global da distribuição. A guarda `compinit -i` permaneceu intacta;
+  nenhum diretório do sistema ou da HOME real teve permissões alteradas.
 - A revisão independente não encontrou problemas acionáveis no incremento.
   Containers e smoke online completo não foram repetidos para esta mudança;
   a matriz histórica abaixo corresponde ao código da execução indicada.

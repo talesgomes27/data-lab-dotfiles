@@ -210,9 +210,15 @@ config = Path(os.environ['XDG_CONFIG_HOME'])
 project = Path(os.environ['TEST_PROJECT'])
 other = Path(os.environ['TEST_OTHER'])
 general = os.environ['TEST_GENERAL']
+shared = home / 'completion-inseguro'
+shared.mkdir()
+shared.chmod(0o777)
+(shared / '_fixture').write_text('#compdef fixture\n')
+zsh_fpath = subprocess.check_output(['zsh', '-dfc', 'print -r -- "${(j.:.)fpath}"'], text=True).strip()
 shells = {
     'bash': ['bash', '--noprofile', '--rcfile', str(config / 'devshell/bashrc'), '-i'],
-    'zsh': ['zsh', '-i'],
+    # Carregar o rc gerenciado sem o compinit global da distribuição.
+    'zsh': ['zsh', '-d', '-i'],
     'nu': ['nu', '--env-config', str(config / 'nushell/env.nu'), '--config', str(config / 'nushell/config.nu'), '-i'],
 }
 for name, command in shells.items():
@@ -222,8 +228,11 @@ for name, command in shells.items():
         def controlling_tty():
             os.setsid()
             fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+        environment = os.environ.copy()
+        if name == 'zsh':
+            environment['FPATH'] = str(shared) + ':' + zsh_fpath
         process = subprocess.Popen(command, cwd=start, stdin=slave, stdout=slave, stderr=slave,
-                                   preexec_fn=controlling_tty, env=os.environ.copy())
+                                   preexec_fn=controlling_tty, env=environment)
         os.close(slave)
         transcript = bytearray()
         query_tail = b''
