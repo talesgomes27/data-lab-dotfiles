@@ -164,6 +164,35 @@ Zsh lê `~/.config/zsh/.zshrc` por meio de `ZDOTDIR` em `~/.zshenv`; por isso n�
 é necessário criar outra cópia de `.zshrc` na HOME. Antes de aprovar `.zshenv`,
 revise como migrar uma configuração Zsh anterior, pois não há mesclagem automática.
 
+### Personalização da .zshenv
+
+Mantenha `~/.zshenv` com o conteúdo gerenciado. Para exports e inicialização
+pessoais que também precisam de shells não interativas, use
+`$ZDOTDIR/.zshenv.local` (`~/.config/zsh/.zshenv.local` no default). Esse arquivo
+é opcional, pertence ao usuário e não é criado nem sobrescrito pelo instalador.
+Use modo 600 e diretórios sem escrita por grupo/outros; symlinks e hardlinks
+não são aceitos. O carregamento exige o módulo nativo `zsh/stat`, verificado no Zsh local; sua ausência recusa
+a extensão.
+
+Revise o conteúdo antes de carregá-lo. Por exemplo, o arquivo pessoal pode
+conter apenas:
+
+```zsh
+export MINHA_PREFERENCIA='valor pessoal'
+```
+
+Ao migrar uma `.zshenv` já personalizada, guarde uma cópia privada e mova apenas
+as suas linhas para a extensão, preservando o conteúdo que já existir nela.
+Revise o plano e o conflito antes de aplicar o bootstrap gerenciado com backup.
+Não altere o registro de hashes para ocultar divergências. O rollback recupera
+a `.zshenv` anterior e deixa a extensão pessoal intacta.
+
+Doctor continua detectando qualquer alteração da `.zshenv` gerenciada e verifica
+a segurança da extensão sem executar seu conteúdo. Não compile esses arquivos
+com `zcompile`: os `.zwc` correspondentes não são suportados. Se um deles
+existir, revise e remova ou mova somente esse cache para um backup privado antes
+de repetir doctor/setup; nenhum cache é removido automaticamente.
+
 A troca da shell de login é opcional e manual. Confira o caminho de Zsh em
 `/etc/shells`; se `/usr/bin/zsh` for o caminho válido da máquina, execute
 `chsh -s /usr/bin/zsh` e autentique-se no seu terminal. Encerre e reabra a sessão

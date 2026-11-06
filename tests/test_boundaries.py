@@ -153,6 +153,28 @@ class ArtifactBoundary(unittest.TestCase):
 
 
 class TransactionBoundary(unittest.TestCase):
+    def test_sticky_exception_allows_only_system_owned_directories(self):
+        from types import SimpleNamespace
+        directory = self.home / 'system-sticky'
+        directory.mkdir()
+        directory.chmod(0o1777)
+        target = directory / 'regular'
+        target.write_text('unsafe\n')
+        target.chmod(0o1666)
+        real_stat = Path.stat
+
+        def mapped_root(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            if path == Path('/'):
+                return SimpleNamespace(st_uid=os.getuid(), st_mode=info.st_mode)
+            return info
+
+        # Simular o UID raiz do filesystem sem exigir chown ou executar como root.
+        with patch.object(Path, 'stat', mapped_root):
+            issues = list(state.path_issues(target))
+        self.assertTrue(any(i['kind'] == 'permissions' and i['path'] == str(target) for i in issues))
+        self.assertFalse(any(i['path'] == str(directory) for i in issues))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

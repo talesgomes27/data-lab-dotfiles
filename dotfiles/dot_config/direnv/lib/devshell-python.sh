@@ -20,13 +20,13 @@ use_devshell_python() {
     unset VIRTUAL_ENV PYTHONHOME
     watch_file "$PWD/.venv/pyvenv.cfg" "$PWD/.venv/bin/python" "$PWD/.venv/bin/python3"
     if command -v python3 >/dev/null && [[ -r $config/devshell/safe-path.py ]]; then
-        safe_bin=$(python3 "$config/devshell/safe-path.py" --venv "$PWD/.venv/bin")
+        safe_bin=$(python3 "$config/devshell/safe-path.py" --venv --explain "$PWD/.venv/bin")
     fi
     if [[ -n $safe_bin ]]; then
         export VIRTUAL_ENV="$PWD/.venv"
         PATH_add "$safe_bin"
     else
-        log_error '.venv ausente ou insegura; prepare o ambiente do projeto explicitamente (uv sync em projetos uv).'
+        log_error '.venv não ativada; corrija os motivos acima e execute direnv reload. A CLI Data Lab oferece project doctor e project fix-permissions.'
     fi
     # Retornar erro descartaria também a retirada do ambiente pessoal pelo direnv.
     return 0

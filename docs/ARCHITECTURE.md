@@ -67,7 +67,24 @@ doctor sem provocar instalação administrativa. Bibliotecas DuckDB, Polars e
 PyArrow ficam no grupo opcional `analytics` do exemplo científico, com lock
 próprio; JupyterLab fica no grupo `notebook` e pytest no grupo de desenvolvimento.
 
-A `.zshenv` só define ZDOTDIR. `.zprofile` prepara o ambiente de login;
+A `.zshenv` define ZDOTDIR e pode carregar a extensão pessoal
+`$ZDOTDIR/.zshenv.local`. O bootstrap usa somente builtins Zsh e `zsh/stat`,
+sem Python, comandos externos, rede ou criação de diretórios. Valida arquivo
+regular do usuário, link único, proprietários e permissões dos ancestrais;
+symlinks, caminhos com `..` e escrita por grupo/outros são recusados. A exceção
+sticky se limita a diretórios do sistema. A extensão é carregada no escopo global,
+inclusive em shells não interativas, preservando `typeset` e exports pessoais.
+
+O bootstrap gerenciado continua verificado integralmente por hash. O conteúdo
+da extensão é particular, não gerenciado; doctor confere sua segurança sem
+executá-la, setup apresenta problemas de permissões e rollback a preserva.
+Arquivos `.zwc` correspondentes a `.zshenv`, `.zprofile`, `.zshrc` e à extensão
+são sinalizados por doctor e bloqueiam setup: código compilado poderia
+substituir o texto conferido. O bootstrap recusa carregar a extensão enquanto
+houver seu `.zwc`, inclusive symlink quebrado. Isso não é uma sandbox para o
+código pessoal nem proteção contra outro processo do mesmo UID.
+
+`.zprofile` prepara o ambiente de login;
 `.zshrc` faz completion, histórico local, prompt, plugins e hooks interativos.
 O carregamento repetido de `.zshrc` e do fragmento Bash é protegido. Bibliotecas
 Python importáveis não são plugins de shell; `.venv` é responsabilidade de cada
@@ -98,6 +115,21 @@ executa `direnv allow` ou configura whitelist de diretórios.
 checagens de caminhos, hashes e transações. As permissões são enumeradas sem
 seguir symlinks; reparos aprovados conferem device/inode/tipo/modo/UID/GID antes
 de chmod via descritor, sem recursão. Não há modo de aprovação irrestrita.
+
+`project doctor` e `project fix-permissions` usam a inspeção pura do mesmo
+`safe-path.py` instalado nas shells, sem executar o projeto. `--venv --explain`
+conserva stdout reservado ao PATH e emite os motivos em stderr. Direnv mostra
+os caminhos recusados, mantendo navegação sem instalações ou reparos.
+
+`lib/project.py` usa o Python da distribuição em modo isolado e importa apenas
+a lib conhecida da CLI. Reaproveita o fingerprint das fontes e o chmod por
+descritor de setup. A aprovação inclui o validador, os motivos e as identidades
+observadas. Somente diretórios próprios dentro da HOME são reparáveis, sem
+recursão. Symlinks, estrutura inválida e problemas no diretório do registro
+bloqueiam a operação. Os modos anteriores ficam em registros privados de
+`permission-repairs`; falha parcial preserva o histórico e os reparos concluídos.
+Não há criação de ambientes, sincronização, autorização direnv ou restauração
+automática de permissões inseguras.
 
 O fluxo guiado tem confirmações separadas para permissões, comando
 administrativo, componentes e aplicação. Conflitos exigem a palavra

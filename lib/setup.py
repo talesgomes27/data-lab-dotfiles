@@ -14,6 +14,8 @@ import state as fs
 
 def target_paths():
     paths = {Path(path) for path in fs.desired_files()}
+    if 'zsh' in fs.COMPONENTS:
+        paths.add(fs.CONFIG / 'zsh/.zshenv.local')
     paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions'))
     paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
@@ -73,27 +75,33 @@ def repair_permissions(review):
     if permission_review() != review:
         raise ValueError('o ambiente mudou após a revisão das permissões; execute setup novamente')
     for issue in review:
-        path = Path(issue['path'])
-        fs.safe_path(path.parent)
-        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-        if stat.S_ISDIR(issue['identity']['mode']):
-            flags |= os.O_DIRECTORY
-        fd = os.open(path, flags)
-        try:
-            info = os.fstat(fd)
-            current = {'device': info.st_dev, 'inode': info.st_ino, 'mode': info.st_mode,
-                       'uid': info.st_uid, 'gid': info.st_gid, 'links': info.st_nlink}
-            if current != issue['identity']:
-                raise ValueError(f'caminho mudou após revisão: {path}')
-            os.fchmod(fd, stat.S_IMODE(info.st_mode) & ~0o022)
-        finally:
-            os.close(fd)
+        repair_permission(issue)
+
+
+def repair_permission(issue):
+    if not issue['repairable']:
+        raise ValueError('caminho exige correção manual')
+    path = Path(issue['path'])
+    fs.safe_path(path.parent)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
+    if stat.S_ISDIR(issue['identity']['mode']):
+        flags |= os.O_DIRECTORY
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        current = {'device': info.st_dev, 'inode': info.st_ino, 'mode': info.st_mode,
+                   'uid': info.st_uid, 'gid': info.st_gid, 'links': info.st_nlink}
+        if current != issue['identity']:
+            raise ValueError(f'caminho mudou após revisão: {path}')
+        os.fchmod(fd, stat.S_IMODE(info.st_mode) & ~0o022)
+    finally:
+        os.close(fd)
 
 
 def inspect():
     permissions = permission_review()
     deps = fs.dependencies(exclude=('uv', 'chezmoi', 'nu'))
-    versions, blockers, user_components = {}, [], []
+    versions, blockers, user_components = {}, fs.zsh_compiled_issues(), []
     if not permissions:
         for tool, floor in fs.VERSION_FLOORS.items():
             if tool not in fs.COMPONENTS or not shutil.which(tool):

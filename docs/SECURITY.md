@@ -67,6 +67,38 @@ novamente imediatamente antes de sua restauração; edição detectada interromp
 a operação. O lock coordena processos devshell, não impede escritores externos.
 Backups ausentes ou com hash incorreto são recusados com diagnóstico específico.
 
+O reparo `project fix-permissions` exige revisão e confirmação ou hash explícito,
+limita-se a diretórios próprios sob HOME na cadeia até `.venv/bin` e remove
+somente bits de escrita de grupo/outros. O Python é `/usr/bin/python3 -I -B`,
+isolando PYTHONPATH, PYTHONHOME e site de usuário. Inspeção não importa código do
+projeto, executa seu interpretador nem lê conteúdo de `.envrc`/pacotes.
+
+Antes de alterar modos, a CLI valida o caminho seguro do registro, revalida o
+plano e grava metadados privados dos modos anteriores. Os reparos compartilham
+as guardas por descritor do setup. O registro permanece disponível mesmo se uma
+etapa posterior falhar; arquivos não são copiados, alterados ou removidos.
+O reparo não segue symlinks, não é recursivo e não modifica interpretadores
+externos. Seus modos não entram no rollback de dotfiles. Root e escritores do
+mesmo UID continuam fora da garantia contra alterações concorrentes.
+
+Personalizações Zsh ficam no arquivo opcional `zsh/.zshenv.local` do XDG_CONFIG_HOME.
+O bootstrap `.zshenv` permanece integralmente gerenciado, sem ignorar trechos ou
+aceitar hashes de modificações locais automaticamente. Antes de carregar a
+extensão, Zsh confere por builtins o arquivo regular, proprietário atual, link
+único, ausência de symlinks e escrita por grupo/outros em todo o caminho. Apenas
+diretórios sticky do sistema recebem a exceção de escrita compartilhada.
+Doctor reutiliza as guardas de caminhos/metadados sem executar o código pessoal;
+setup inclui o arquivo na revisão de permissões. Seu conteúdo não é auditado,
+versionado ou alterado pelo Data Lab: pode executar código e deve ser confiável.
+
+Zsh pode preferir um `.zwc` mais novo ao texto. O bootstrap recusa a extensão se
+seu `.zwc` estiver presente, inclusive symlink quebrado. Doctor e setup sinalizam
+os compilados correspondentes a `.zshenv`, `.zprofile`, `.zshrc` e à extensão;
+a inspeção nunca os executa. Um compilado da própria `.zshenv` pode impedir o
+carregamento do bootstrap antes que ele se proteja: mantenha esses caches ausentes
+e use doctor para detectá-los. Essas verificações não impedem alterações
+concorrentes por root ou processos do mesmo UID. Rollback preserva a extensão.
+
 O `doctor` verifica arquivos esperados, presença e hashes de arquivos essenciais
 dos plugins e da fonte, e metadados/RECORD de ferramentas uv. Para CPython,
 verifica caminho executável e a versão declarada no cabeçalho instalado: isso

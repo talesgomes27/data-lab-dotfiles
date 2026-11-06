@@ -6,7 +6,9 @@ umask 077
     exit 3
 }
 export PYTHONDONTWRITEBYTECODE=1
-ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+source_dir=${BASH_SOURCE[0]%/*}
+[[ "$source_dir" != "${BASH_SOURCE[0]}" ]] || source_dir=.
+ROOT=$(builtin cd -- "$source_dir/.." && builtin pwd -P)
 export DEVSHELL_ROOT="$ROOT"
 fail() {
     printf 'devshell: %s\n' "$1" >&2
@@ -15,7 +17,9 @@ fail() {
 usage() {
     cat <<'HELP'
 Uso: devshell COMANDO [opções]
-Comandos: setup plan apply status diff doctor update rollback install
+Comandos: setup plan apply status diff doctor update rollback install project
+  project doctor|fix-permissions  Diagnosticar .venv ou revisar seu reparo
+  --path CAMINHO  Diretório do projeto (project; default: diretório atual)
   --profile minimal,personal,work,science,extras   Perfis combináveis (default: minimal)
   --dry-run       Planejar sem escrita persistente ou downloads
   --offline       Proibir downloads (análise/configuração já são offline)
@@ -36,18 +40,30 @@ case "$command" in -h | --help | help)
     exit 0
     ;;
 esac
-case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install) ;; *) fail "comando desconhecido: $command" ;; esac
+case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install | project) ;; *) fail "comando desconhecido: $command" ;; esac
+project_action=doctor project_path=$PWD project_path_set=0
+if [[ "$command" == project && $# -gt 0 && $1 != --* ]]; then
+    project_action=$1
+    shift
+fi
+if [[ "$command" == project ]]; then
+    case "$project_action" in doctor | fix-permissions) ;; *) fail "ação project desconhecida: $project_action" ;; esac
+fi
 profile=minimal
 json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
 while (($#)); do
     case "$1" in
-        --profile | --approve | --component)
+        --profile | --approve | --component | --path)
             if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
                 fail "valor ausente para $1"
             fi
             case "$1" in --profile) profile=$2 ;; --approve) approval=$2 ;; --component)
                 component=$2
                 component_set=1
+                ;;
+            --path)
+                project_path=$2
+                project_path_set=1
                 ;;
             esac
             shift 2
@@ -75,17 +91,27 @@ while (($#)); do
         *) fail "opção desconhecida: $1" ;;
     esac
 done
-command -v python3 >/dev/null || fail 'Requer Python >=3.11 da distribuição para relatórios/transações.' 3
-python3 -c 'import sys;sys.exit(sys.version_info<(3,11))' || fail 'Requer Python >=3.11.' 3
-# shellcheck source=lib/platform.sh
-source "$ROOT/lib/platform.sh"
+[[ "$command" == project || "$project_path_set" == 0 ]] || fail '--path só é aceito por project'
+python_command=(python3)
+# O reparo não deve iniciar o interpretador do projeto que está inspecionando.
+[[ "$command" != project ]] || python_command=(/usr/bin/python3 -I -B)
+command -v "${python_command[0]}" >/dev/null || fail 'Requer Python >=3.11 da distribuição para relatórios/transações.' 3
+"${python_command[@]}" -c 'import sys;sys.exit(sys.version_info<(3,11))' || fail 'Requer Python >=3.11.' 3
+if [[ "$command" != project ]]; then
+    # shellcheck source=lib/platform.sh
+    source "$ROOT/lib/platform.sh"
+    detect_platform
+fi
 # shellcheck source=lib/profiles.sh
 source "$ROOT/lib/profiles.sh"
-detect_platform
 resolve_profiles "$profile"
 export DEVSHELL_PROFILES="$profile" DEVSHELL_JSON="$json" DEVSHELL_OFFLINE="$offline"
 export DEVSHELL_APPROVAL="$approval" DEVSHELL_REPLACE="$replace" DEVSHELL_COMPONENT="$component"
-if [[ "$command" == setup ]]; then
+if [[ "$command" == project ]]; then
+    [[ "$replace" == 0 && "$component_set" == 0 && "$profile" == minimal ]] || fail 'project não aceita --replace-existing, --component ou perfis adicionais'
+    export DEVSHELL_PROJECT_PATH="$project_path" DEVSHELL_DRY_RUN="$dry_run"
+    exec "${python_command[@]}" "$ROOT/lib/project.py" "$project_action"
+elif [[ "$command" == setup ]]; then
     [[ -z "$approval" && "$replace" == 0 && "$component_set" == 0 ]] || fail 'setup usa confirmações próprias; não aceita --approve, --replace-existing ou --component'
     ((dry_run || json == 0)) || fail 'setup --json requer --dry-run'
     # shellcheck source=lib/setup.sh
