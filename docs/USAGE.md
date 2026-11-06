@@ -159,6 +159,14 @@ direnv deny
 Mudanças no `.envrc` exigem nova revisão. Não versione senhas. O projeto carrega
 o hook de direnv, mas não concede autorizações por conta própria.
 
+Para ter um ambiente Python pessoal ao abrir o terminal e selecionar a `.venv`
+ao entrar nos projetos, siga o [preparo do ambiente pessoal e do `.envrc`](SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto).
+O conteúdo `use devshell_python` usa somente a `.venv` existente. Ao sair,
+direnv restaura o ambiente anterior; abrir o terminal ou navegar não cria
+ambientes nem instala dependências. A troca ocorre antes do próximo prompt:
+em scripts ou em uma linha como `cd projeto && python ...`, use `uv run` ou
+um caminho explícito para o interpretador.
+
 ## Conferir código e configuração
 
 No projeto Python, use as ferramentas declaradas no ambiente do estudo. As CLI

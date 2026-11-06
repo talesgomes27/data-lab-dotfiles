@@ -28,6 +28,7 @@ própria; um doctor sem problemas não comprova todo projeto científico externo
 | Terminal personal | Zsh >=5.9, Starship, fzf, zoxide, direnv, ripgrep, fd, bat, eza, Delta e Fontconfig | Pacotes mapeados da distribuição; confira a disponibilidade da sua release. fzf >=0.48 é necessário aos atalhos integrados por `--zsh`. |
 | Complementos personal | Nushell >=0.116.1, dois plugins Zsh e FiraCode Nerd Font | O setup pode instalar os componentes de usuário. Escolha a fonte Mono no emulador; os ícones dependem dessa seleção. |
 | Ferramentas Python science | uv >=0.9.0, CPython e CLI declaradas no manifesto (Ruff, pre-commit, IPython) | uv e seus ambientes isolados são preparados pelo projeto; não instale pacotes com pip no Python do sistema. |
+| Gerador de projetos science | `pyinit` (python-template-linux) | Script fixado por commit e SHA-256, instalado em `~/.local/bin` após confirmação; `direnv allow` permanece manual. |
 | Scripts e testes science | ShellCheck, shfmt e Bats | Pacotes da distribuição. Para executar a suíte, também são necessários Zsh, Nushell e Chezmoi. |
 | Extras | btop, ncdu, tealdeer (`tldr`) e Lazygit | Perfil `extras`; nem todos os adaptadores/releases oferecem todos os pacotes. |
 | SQL local | DuckDB CLI | Opcional e externo ao instalador. Confira a origem, o PATH e as permissões da instalação. |
@@ -77,7 +78,9 @@ e [Go](https://go.dev/doc/install).
 
 ### Pré-requisitos para reproduzir todos os testes
 
-A suíte básica precisa das ferramentas de desenvolvimento acima. Para não pular
+A suíte básica precisa de Python >=3.11, Bash, ShellCheck, shfmt, Bats, Chezmoi,
+Zsh, Nushell, uv e direnv no PATH. Os novos cenários de ambientes Python usam
+uv e direnv reais com HOME/XDG/cache temporários, sem downloads. Para não pular
 os cinco cenários opcionais, disponibilize também **fzf, zoxide, R/Rscript,
 renv, Node.js e Quarto**. O disparo manual do GitHub Actions prepara essas
 ferramentas em runner descartável e recusa qualquer skip. Os testes com Java,
@@ -97,6 +100,11 @@ Veja o [alcance das verificações](VALIDATION.md) e os [erros comuns](TROUBLESH
 Na página do repositório no GitHub, abra **Code** e copie a URL de clone, ou
 baixe o ZIP e extraia. Abra um terminal na pasta que contém `bootstrap.sh`.
 Não execute comandos de uma cópia cujo conteúdo você não revisou.
+
+Use `git clone --recurse-submodules` para incluir a fonte do template Python.
+Em clones existentes, `git submodule update --init --recursive` obtém a revisão
+fixada. O ZIP do GitHub não inclui o conteúdo dos submódulos; instalar `pyinit`
+continua possível pelo manifesto, mas os testes exigem a fonte do template.
 
 A [tabela de perfis](../README.md#perfis) descreve as combinações. Os exemplos
 abaixo usam `personal,science`. Se escolher `personal,science,extras`, use essa
@@ -205,7 +213,7 @@ Se Chezmoi ou uv faltarem, planeje cada instalação e repita com o hash revisad
 ./bin/devshell install --component chezmoi --approve HASH_DA_INSTALACAO
 ```
 
-O mesmo fluxo atende `uv`, `nu`, `plugins`, `firacode` e `python`. Para Python,
+O mesmo fluxo atende `uv`, `nu`, `plugins`, `firacode`, `pyinit` e `python`. Para Python,
 use também `--profile science` se quiser as ferramentas CLI declaradas. Se
 `~/.local/bin` ainda não estiver no PATH, confira sua segurança e use
 `PATH="$HOME/.local/bin:$PATH" ./bin/devshell ...` nessa sessão.

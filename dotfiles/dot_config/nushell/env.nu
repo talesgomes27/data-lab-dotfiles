@@ -6,5 +6,9 @@ let uv_default = if (($env.XDG_DATA_HOME? | default '' | str starts-with '/')) {
 let uv_bin = ($env.UV_TOOL_BIN_DIR? | default ($env.XDG_BIN_HOME? | default $uv_default))
 if (which python3 | is-not-empty) {
     let safe_paths = (^python3 ($config_dir | path join 'devshell' 'safe-path.py') $user_bin $uv_bin | lines)
-    $env.PATH = ($safe_paths | append $env.PATH | uniq)
+    if (($env.VIRTUAL_ENV? | default '') != '') or (($env.CONDA_PREFIX? | default '') != '') {
+        $env.PATH = ($env.PATH | append $safe_paths | uniq)
+    } else {
+        $env.PATH = ($safe_paths | append $env.PATH | uniq)
+    }
 }

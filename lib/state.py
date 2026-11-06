@@ -84,7 +84,7 @@ def desired_files(all_components=False):
         parts = ['.' + p[4:] if p.startswith('dot_') else p for p in rel.parts]
         if rel.parts[0] == 'dot_config':
             target = CONFIG.joinpath(*parts[1:])
-            feature = {'nushell': 'nu', 'starship.toml': 'starship', 'uv': 'uv'}.get(parts[1])
+            feature = {'nushell': 'nu', 'starship.toml': 'starship', 'uv': 'uv', 'direnv': 'direnv'}.get(parts[1])
         else:
             target = HOME / parts[0]
             feature = 'bash' if rel.parts[0] == 'dot_bash_aliases' else 'zsh'

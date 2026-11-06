@@ -2,14 +2,14 @@
 set -euo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 export PYTHONDONTWRITEBYTECODE=1
-for tool in python3 bash shellcheck shfmt bats chezmoi zsh nu; do
+for tool in python3 bash shellcheck shfmt bats chezmoi zsh nu uv direnv; do
     command -v "$tool" >/dev/null || {
         printf 'Pré-requisito de teste ausente: %s\n' "$tool" >&2
         exit 3
     }
 done
-shellcheck -x bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} tests/core_setup.bash tests/*.bats
-shfmt -d -i 4 -ci bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} tests/core_setup.bash
+shellcheck -x bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} dotfiles/dot_config/direnv/lib/*.sh tests/core_setup.bash tests/*.bats
+shfmt -d -i 4 -ci bin/devshell bootstrap.sh lib/*.sh scripts/*.sh dotfiles/dot_bash_aliases dotfiles/dot_config/devshell/{env.sh,bashrc} dotfiles/dot_config/direnv/lib/*.sh tests/core_setup.bash
 shfmt -ln bats -d -i 4 -ci tests/*.bats
 python3 - <<'PY'
 import ast

@@ -13,7 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 93 testes Bats e 35 unittest, ShellCheck e shfmt passaram na última verificação registrada de código, sem skips. |
+| Suíte local | 116 testes Bats e 35 unittest, ShellCheck e shfmt passaram, sem skips. Inclui 17 cenários novos de ambiente pessoal e seis de pyinit/setup, sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -28,6 +28,104 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Template como submódulo e gerador science — 2026-11-05
+
+O submódulo `templates/python-template-linux` e o manifesto `pyinit` fixam o
+commit `3bb356f880d0577be535844cab879085e3801da9`. O SHA-256 do script obtido
+pela URL pública corresponde aos bytes do submódulo. O
+[PR do template](https://github.com/talesgomes27/python-template-linux/pull/1)
+passou no CI com Python 3.11, 3.12 e 3.13, com conferência explícita do
+interpretador de cada job; permanece aberto, sem merge.
+
+- `bash scripts/check.sh`: 116 Bats e 35 unittest, ShellCheck, shfmt e sintaxe
+  Python, sem skips. Os testes novos cobrem seleção por perfil, leitura sem
+  escrita, correspondência manifesto/gitlink/bytes, aprovação, cache corrompido,
+  destino divergente/symlink, idempotência, diagnóstico sem execução e
+  confirmação própria do setup antes de instalar o gerador.
+- Instalação real pela URL fixada, com HOME/XDG/cache temporários: checksum
+  conferido e executável instalado com modo 755. `pyinit --help` funcionou.
+- O comando instalado criou um projeto universal com uv real. `.envrc` continha
+  somente `use devshell_python`, com modo 600; `.venv` tinha modo 700. Git ficou
+  sem HEAD, stage ou remotos. Direnv continuou bloqueado; nenhum `allow` foi
+  executado. O teste não alterou a HOME real.
+- A revisão independente não encontrou problemas acionáveis no incremento.
+  Containers e smoke online completo não foram repetidos para esta mudança;
+  a matriz histórica abaixo corresponde ao código da execução indicada.
+
+## Ambiente pessoal e direnv — 2026-11-05
+
+Validação local em Ubuntu 26.04.1 x86_64/glibc, com uv 0.13.5, direnv 2.37.1,
+Zsh 5.9 e Nushell 0.116.1. Os manifestos Python e as versões dos componentes existentes foram preservados.
+`bash scripts/check.sh` passou: 110 testes Bats (17 novos), 35 unittest,
+ShellCheck, shfmt e sintaxe Python; nenhum skip. Os ambientes dos novos testes
+foram criados por uv real com `--offline --no-python-downloads` e o Python já
+instalado, em HOME/XDG/cache temporários.
+
+- Bash, Zsh e Nushell selecionaram `geral` em sessões interativas; a prioridade
+  do interpretador de ativações herdadas foi preservada. Shells não interativas
+  não ganharam ativação e o perfil work não recebeu a integração direnv.
+- PTYs reais nas três shells verificaram abertura fora/dentro do projeto,
+  subpastas, troca direta entre dois projetos e retorno ao ambiente pessoal.
+  A navegação por zoxide foi exercitada no Zsh local.
+- `.envrc` não autorizado permaneceu bloqueado. Em projetos autorizados,
+  `activate` não foi executado; `.venv` ausente/insegura retirou o ambiente
+  anterior e emitiu aviso. Conda ativo foi preservado com orientação de
+  desativação explícita, sem simular a troca de estado de outro gerenciador.
+- As guardas recusaram symlinks de diretórios/configuração e diretórios no
+  lugar de executáveis. Nomes com espaços/metacaracteres no XDG funcionaram.
+  Nushell aplicou remoções de variáveis, manteve PATH como lista e preservou
+  o status anterior, inclusive ao receber recusa de autorização do direnv.
+- Plan/diff/status/doctor e dry-run de apply/update/setup mantiveram hashes,
+  modos e caminhos dos arquivos de configuração, ambientes e cache preparados.
+  Rollback removeu o helper gerenciado, preservando `geral` e `.venv`.
+- A revisão independente encontrou a aceitação indevida de diretórios como
+  executáveis e levantou a borda Conda. Ambos receberam testes que falharam
+  antes da correção; a suite completa passou após os ajustes.
+- A ajuda da CLI foi conferida em HOME temporária; 100 links/âncoras locais
+  e 36 blocos shell em 15 arquivos Markdown passaram nas verificações de
+  destino/âncora e `bash -n`. Isso não executa a instalação dos exemplos.
+
+Na etapa de implementação, nenhuma configuração foi aplicada à HOME real e
+nenhum ambiente pessoal real foi criado. Na aplicação posteriormente autorizada,
+os seis arquivos da integração foram aplicados com hash e backup, preservando
+uma extensão privada preexistente na `.zshenv`. A inicialização Bash passou a
+usar o fragmento devshell, com backup próprio, preservando o ambiente antigo.
+O ambiente `geral` foi criado com CPython 3.13.11 já instalado, sem downloads.
+
+A suíte foi repetida antes da aplicação: 110 Bats e 35 unittest, sem skips.
+Na HOME aplicada, seis sessões PTY reais (Bash, Zsh e Nushell, iniciadas fora
+e dentro do projeto) passaram em 30 verificações de interpretador, VIRTUAL_ENV,
+versão, subpastas e retorno ao ambiente pessoal. O repositório Python de teste
+foi criado em diretório temporário, autorizado individualmente e removido após
+revogação da autorização; o teste não gravou histórico de comandos. O doctor
+reportou somente a divergência preexistente e intencional na `.zshenv` privada,
+que não foi sobrescrita nem teve seu registro de integridade alterado.
+
+Não houve commit, push ou publicação. Outros repositórios continuam exigindo
+preparo explícito e autorização individual. CI e Containerfile receberam o
+pré-requisito direnv, mas a matriz, o CI remoto e o smoke online não foram
+reexecutados para esta alteração.
+A evidência de outras distribuições abaixo pertence à versão anteriormente
+executada; não certifica os novos hooks nessas plataformas.
+
+Uma verificação posterior em dois repositórios existentes reproduziu a recusa
+de `.venv` por diretórios `0775`, incluindo um ancestral compartilhado. Foram
+ajustados somente sete diretórios enumerados para `0755`, com conferência de
+device/inode/dono/modo por descritor e registro dos modos anteriores, sem chmod
+recursivo. Um `.envrc` contendo apenas `use devshell_python` foi criado e
+autorizado no repositório que ainda não o possuía; o outro foi preservado.
+As guardas existentes passaram a aceitar ambos os ambientes sem alteração de
+código ou relaxamento de permissões exigidas pela integração.
+
+As três shells passaram em 21 verificações de seleção, subpasta, troca direta
+entre os projetos e retorno a `geral`: CPython 3.12.15 e 3.14.10 nas `.venv`
+existentes e 3.13.11 em `geral`. Identidades dos diretórios, links dos
+interpretadores e hashes de pyvenv.cfg, manifestos e locks foram preservados;
+nenhuma `.venv` foi recriada ou sincronizada. No template Python, Ruff check,
+Ruff format --check (17 arquivos) e três pytest passaram via `uv run` offline
+com `--no-sync`, usando caches temporários. Nenhum dado de aplicação ou segredo
+foi usado como fixture; não houve commit ou push.
 
 ## Plataformas
 

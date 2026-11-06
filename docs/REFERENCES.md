@@ -13,6 +13,8 @@ local, fixtures e cenários pendentes.
 | [uv: CLI](https://docs.astral.sh/uv/reference/cli/) | Interpretadores, ferramentas, execução e offline. |
 | [uv: armazenamento](https://docs.astral.sh/uv/reference/storage/) | XDG e variáveis UV_*. |
 | [uv: configuração](https://docs.astral.sh/uv/concepts/configuration-files/) | Configuração do usuário e do projeto. |
+| [uv: ambientes](https://docs.astral.sh/uv/pip/environments/) | Ativação e precedência de VIRTUAL_ENV na interface pip. |
+| [uv: ambiente do projeto](https://docs.astral.sh/uv/concepts/projects/config/#project-environment-path) | `.venv`, UV_PROJECT_ENVIRONMENT e operações de projeto. |
 | [uv: lock e sincronização](https://docs.astral.sh/uv/concepts/projects/sync/) | Dependências e ambientes por projeto. |
 | [uv: Jupyter](https://docs.astral.sh/uv/guides/integration/jupyter/) | Interface Jupyter e kernels. |
 | [uv: PyTorch](https://docs.astral.sh/uv/guides/integration/pytorch/) | Índices e diferenças CPU/CUDA. |
@@ -21,6 +23,7 @@ local, fixtures e cenários pendentes.
 | [Zsh: inicialização](https://zsh.sourceforge.io/Doc/Release/Files.html) | zshenv, zprofile e zshrc. |
 | [Bash: manual](https://www.gnu.org/software/bash/manual/) | Shell, scripts e source. |
 | [Nushell: configuração](https://www.nushell.sh/book/configuration.html) | env.nu e config.nu. |
+| [Nushell: direnv](https://www.nushell.sh/cookbook/direnv.html) | Conversão de PATH e integração por hooks. |
 | [XDG Base Directory](https://specifications.freedesktop.org/basedir/latest/) | Configuração, dados, cache e estado. |
 | [Starship: configuração](https://starship.rs/config/) | Módulos e prompt. |
 | [Starship: configuração avançada](https://starship.rs/advanced-config/) | Integrações de shell. |

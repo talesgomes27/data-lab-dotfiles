@@ -25,6 +25,124 @@ e o lock adotados. Não aponte UV_PROJECT_ENVIRONMENT de vários estudos para o
 mesmo ambiente. Use `uv python list --only-installed` e `uv tool list` para
 consultar os recursos disponíveis.
 
+## Ambiente pessoal e troca automática por projeto
+
+Este recurso é opcional e exige o perfil `personal` (componentes uv e direnv),
+direnv instalado e a configuração aplicada pelo fluxo normal de revisão e
+backup. Em Bash, carregue o fragmento documentado na [instalação](INSTALLATION.md#bash-e-nushell).
+Bash, Zsh e Nushell fazem a troca em sessões interativas, antes do próximo
+prompt. Scripts não recebem ativação automática; subprocessos herdam o ambiente
+que já estiver ativo.
+
+## Criar projetos com o template integrado
+
+O perfil `science` instala `~/.local/bin/pyinit`, o gerador do
+[python-template-linux](https://github.com/talesgomes27/python-template-linux),
+fixado por commit e SHA-256. O código completo permanece como submódulo em
+`templates/python-template-linux`; o instalador baixa apenas o script verificado,
+sem depender do caminho da cópia local. O setup pede confirmação própria para
+esse componente. Para instalá-lo separadamente, revise o plano e aprove seu hash:
+
+```bash
+./bin/devshell install --component pyinit
+# Copie o hash exibido após revisar o plano:
+./bin/devshell install --component pyinit --approve HASH_REVISADO
+```
+
+Em um novo terminal, com `~/.local/bin` no PATH:
+
+```bash
+pyinit --help
+pyinit ../meu-projeto --archetype ds
+# Outros arquétipos: universal, api e cli.
+```
+
+O gerador prepara a `.venv`, cria `.envrc` com `use devshell_python` e usa
+permissões privadas para novas criações. Runtime e dependências podem ser
+baixados durante esse preparo explícito. Ele preserva `.envrc` e permissões já
+existentes, não concede autorização direnv e não faz stage, commit ou push.
+O perfil `science` oferece o gerador; a troca automática exige também `personal`,
+direnv e a configuração do terminal descrita nesta página. Depois de revisar o
+arquivo completo, execute manualmente `direnv allow .` na raiz do novo projeto.
+Rollback dos dotfiles preserva o gerador e os ambientes criados.
+
+## Preparar o ambiente pessoal
+
+Prepare uma vez o ambiente pessoal. O CPython 3.13.11 do
+[manifesto](../manifests/python.json) precisa estar instalado pelo fluxo
+aprovado de `install --component python`. O comando abaixo é uma operação
+manual de criação de ambiente, fora da transação de dotfiles; não baixa Python
+nem instala bibliotecas e recusa um destino já existente, inclusive symlink:
+
+```bash
+case "${XDG_DATA_HOME-}" in
+    /*) devshell_data=$XDG_DATA_HOME ;;
+    *) devshell_data="$HOME/.local/share" ;;
+esac
+general="$devshell_data/devshell/venvs/geral"
+test ! -e "$general" && test ! -L "$general" &&
+    (umask 077; uv --no-config venv --no-project --managed-python \
+        --no-python-downloads --python 3.13.11 "$general")
+```
+
+Abra um novo terminal. Se não houver outra ativação manual ou Conda, `python`
+e `python3` apontarão para `geral`. A existência desse diretório habilita o
+recurso; nenhum pacote científico é incluído automaticamente. Para conferir:
+
+```bash
+python -c 'import sys; print(sys.executable); print(sys.prefix)'
+uv pip list
+```
+
+Em cada projeto uv, prepare sua `.venv` com `uv sync --locked` após revisar
+manifesto e lock. Essa preparação explícita pode baixar dependências. Preserve
+o gerenciador e o processo próprios de projetos Poetry, Conda ou outros.
+Crie um `.envrc` na raiz com o conteúdo abaixo; se ele já existir, revise-o e
+acrescente a linha sem sobrescrever seu conteúdo:
+
+```bash
+use devshell_python
+```
+
+Depois de ler o arquivo completo, autorize-o:
+
+```bash
+cat .envrc
+direnv allow .
+```
+
+| Navegação | Ambiente selecionado |
+|---|---|
+| Fora de projeto autorizado | `geral`, se preparado e seguro. |
+| Projeto autorizado e suas subpastas | `.venv` da raiz que contém o `.envrc`. |
+| Outro projeto autorizado | `.venv` do outro projeto. |
+| Saída do projeto | Ambiente anterior, normalmente `geral`. |
+| Projeto autorizado sem `.venv` válida | Sem o ambiente anterior no PATH; aviso para preparar/revisar a `.venv`. |
+| Projeto sem `.envrc` autorizado | Sem troca; direnv bloqueia arquivos não autorizados. |
+| Conda ativo | Preservado, com aviso para desativá-lo explicitamente antes da troca uv. |
+
+O helper só seleciona a `.venv` existente. Ele não executa seu `activate`,
+`uv sync` ou instaladores. Evite `layout uv` se deseja manter essa ausência de
+sincronização automática. Depois de criar ou reparar a `.venv`, `direnv reload`
+permite repetir a seleção sem sair da pasta. Mudanças no `.envrc` exigem nova
+revisão e autorização.
+
+O helper não simula `conda deactivate`: Conda tem estado próprio de shell.
+Desative-o explicitamente antes de usar a troca por `.venv`; durante uma sessão
+Conda, o helper apenas avisa e conserva o ambiente.
+
+`uv pip install` usa primeiro o ambiente ativo. Em repositórios ainda não
+configurados, `geral` pode continuar ativo: prefira `uv add`, `uv sync` e
+`uv run`, ou indique explicitamente `--python` para operações no destino
+pretendido. Não exporte `UV_PROJECT_ENVIRONMENT` globalmente nem use `--active`
+para fazer projetos compartilharem `geral`. O ambiente pessoal não recebe
+automaticamente as dependências de nenhum projeto.
+
+Para desabilitar o ambiente pessoal, renomeie seu diretório conscientemente e
+abra um novo terminal. Para revogar um projeto, use `direnv deny .`. Rollback
+dos dotfiles não remove nenhum desses ambientes; shells abertas precisam ser
+encerradas para descartar a configuração já carregada.
+
 ## Experimentar o exemplo Python
 
 O [exemplo science](../examples/science/README.md) contém `.python-version`,

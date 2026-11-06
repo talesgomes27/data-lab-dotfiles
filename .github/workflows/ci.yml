@@ -14,12 +14,14 @@ jobs:
       R_LIBS_USER: /tmp/foundry-ci/r-library
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
       - name: Preparar ferramentas no runner descartável
         env:
           HOME: /tmp/foundry-ci
         run: |
           sudo apt-get update
-          sudo apt-get install -y zsh shellcheck shfmt bats fzf zoxide curl
+          sudo apt-get install -y zsh shellcheck shfmt bats fzf zoxide curl direnv
           bash scripts/ci-setup.sh
       - name: Preparar runtimes para os cinco cenários opcionais
         if: github.event_name == 'workflow_dispatch'
@@ -69,6 +71,8 @@ jobs:
           - {name: opensuse, adapter: zypper, image: 'opensuse/leap:16.0'}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
       - name: Build com downloads explícitos
         run: docker build -f tests/Containerfile --build-arg 'BASE_IMAGE=${{ matrix.image }}' --build-arg 'ADAPTER=${{ matrix.adapter }}' -t 'foundry-test:${{ matrix.name }}' .
       - name: Suíte sem rede
@@ -79,6 +83,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
       - name: Dependências no runner descartável
         run: |
           sudo apt-get update
