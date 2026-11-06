@@ -171,6 +171,19 @@ o terminal inicia em `geral`, usa a `.venv` dos projetos autorizados pelo direnv
 e restaura o ambiente anterior ao sair. O preparo é explícito; a navegação não
 instala pacotes.
 
+Para migrar um projeto legado, a nova versão do gerador oferece diagnóstico
+sem escrita e execução com plano, confirmação e backup:
+
+```bash
+pyinit /caminho/absoluto/projeto --migrate --dry-run
+pyinit /caminho/absoluto/projeto --migrate --python 3.13.11
+```
+
+Reconhece requirements/pip-tools, Conda, Poetry, Pipenv, setuptools estático e
+PEP 621/uv. Casos ambíguos bloqueiam; `direnv allow .` continua manual.
+Confira os [formatos e limites](docs/SCIENCE.md#migrar-projetos-legados) e
+`pyinit --help`: atualizar dotfiles não reinstala o gerador.
+
 ## Configuração, atualização e recuperação
 
 As fontes ficam em `dotfiles/`. Zsh usa `~/.config/zsh` por meio de `~/.zshenv`;

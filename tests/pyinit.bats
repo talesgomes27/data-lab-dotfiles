@@ -16,6 +16,20 @@ artifact=next(a for a in json.loads((root/'manifests/artifacts.json').read_text(
 PY
 }
 
+pyinit_home_snapshot() {
+    python3 - "$HOME" <<'PY'
+import hashlib,json,sys
+from pathlib import Path
+root=Path(sys.argv[1])
+items=[]
+for path in sorted(root.rglob('*')):
+    info=path.lstat()
+    items.append([str(path.relative_to(root)),info.st_ino,info.st_mode,info.st_mtime_ns,
+                  hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None])
+print(json.dumps(items))
+PY
+}
+
 @test 'science seleciona pyinit e dry-run não escreve na HOME' {
     run "$FOUNDRY_ROOT/bin/devshell" plan --profile science --json
     [ "$status" -eq 0 ]
@@ -94,4 +108,19 @@ PY
     run "$FOUNDRY_ROOT/bin/devshell" install --component pyinit --approve "$hash" --offline
     [ "$status" -eq 2 ]
     [ ! -e "$HOME/outro" ]
+}
+
+@test 'pyinit instalado diagnostica migracao sem criar estado nem autorizar direnv' {
+    seed_pyinit
+    hash=$(pyinit_plan | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    run "$FOUNDRY_ROOT/bin/devshell" install --component pyinit --approve "$hash" --offline
+    [ "$status" -eq 0 ]
+    mkdir -m 700 "$HOME/projeto-legado"
+    printf 'requests>=2\n' >"$HOME/projeto-legado/requirements.txt"
+    before=$(pyinit_home_snapshot)
+    run "$HOME/.local/bin/pyinit" "$HOME/projeto-legado" --migrate --dry-run --python 3.13.11
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["format"]=="requirements" and not p["blockers"] and p["dependencies"]==["requests>=2"]'
+    after=$(pyinit_home_snapshot)
+    [ "$before" = "$after" ]
 }

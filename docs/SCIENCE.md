@@ -111,6 +111,47 @@ etapas já concluídas não são desfeitas. O caminho deve respeitar a guarda do
 backend, sem componentes `..`. O comando direto equivalente para o reparo
 continua sendo `devshell project fix-permissions`.
 
+### Migrar projetos legados
+
+A versão fixada do `python-template-linux` oferece
+`--migrate [--dry-run] [--python VERSAO]`, com detecção de requirements/pip-tools,
+Conda, Poetry, Pipenv, setuptools estático e PEP 621/uv. O fluxo mostra um plano,
+faz backup privado e prepara uma nova `.venv`; formatos ambíguos e semânticas
+não suportadas bloqueiam antes da escrita. Código, dados e configuração de IDEs
+são preservados. `direnv allow .` permanece manual.
+
+Depois de instalar esta versão do componente `pyinit`, comece pelo diagnóstico:
+
+```bash
+pyinit /caminho/absoluto/projeto --migrate --dry-run
+# Revise o plano antes de executar:
+pyinit /caminho/absoluto/projeto --migrate --python 3.13.11
+```
+
+O diagnóstico não chama uv nem cria estado. A aplicação pede confirmação e
+confere novamente os hashes/identidades; usa CPython gerenciado já instalado,
+sem baixar interpretadores. Pode baixar pacotes e executar builds. A versão
+padrão vem dos metadados do ambiente `geral`, com fallback 3.12, e precisa ser
+compatível com as restrições do projeto.
+
+Cada execução mantém os originais e a `.venv` anterior em
+`.pyinit-backups/ID`, com permissões privadas e proteção no `.gitignore` antes
+da primeira cópia sensível. Falha no sync restaura os arquivos gerenciados e o
+ambiente anterior, mantendo o backup, a regra de exclusão e reparos seguros de
+permissões. Um `.envrc` ausente recebe `use devshell_python`; o preexistente é
+preservado e precisa ser revisado antes da autorização manual.
+
+Conda nativo, declarações dinâmicas, workspaces e origens não suportadas exigem
+revisão explícita; locks de outros gerenciadores não são apagados, e a nova
+resolução pode selecionar versões diferentes. Um `uv.lock` existente é
+preservado com `--locked`. A migração não altera Conda externo ou Python do
+sistema e não executa stage, commit ou push.
+
+Confira `pyinit --help`: atualizar o clone ou aplicar dotfiles não reinstala o
+script. Use o instalador do componente e revise o plano/hash para atualizar uma
+instalação anterior, conforme a seção de manutenção acima. O contrato completo
+está no [guia de migração do template](https://github.com/talesgomes27/python-template-linux/blob/ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4/docs/migration-recipe-for-agents.md).
+
 ## Preparar o ambiente pessoal
 
 Prepare uma vez o ambiente pessoal. O CPython 3.13.11 do

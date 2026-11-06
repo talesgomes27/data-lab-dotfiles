@@ -13,7 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 158 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui lançador local, aliases eza, ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
+| Suíte local | 159 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui lançador local, aliases eza, ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -28,6 +28,42 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Pin de pyinit --migrate — 2026-11-06
+
+O submódulo e o artefato fixam o commit
+`ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4`, publicado no
+[PR #3 do template](https://github.com/talesgomes27/python-template-linux/pull/3).
+A URL usa esse SHA completo. O SHA-256
+`a97b02ca983094b937d196499719f9228cd40b69065b5cbca876e6737780af1d`
+foi conferido nos bytes do submódulo, no checkout do template e no download
+público real de 57.761 bytes. As outras entradas do manifesto não foram alteradas.
+
+O template passou localmente 125 pytest, incluindo sete integrações uv reais
+offline com projetos e HOME/XDG/cache temporários. Cobrem requirements, Conda,
+Poetry, Pipenv, setuptools, PEP 621 e uv fixado; uma wheel artificial foi
+instalada e importada sem PyPI. A revisão para publicação corrigiu fontes dev
+concorrentes, extras setuptools em string, pedidos de Python sem patch e a
+resolução relativa do executável uv, com regressões RED→GREEN.
+
+Neste Data Lab, `bash scripts/check.sh` passou 159 Bats e 42 unittest,
+ShellCheck, shfmt e sintaxe Zsh/Python, sem skips. A nova regressão instala o
+artefato em HOME temporária e confirma que `--migrate --dry-run` produz o plano
+sem alterar nenhum arquivo/diretório da HOME artificial, criar ambiente ou
+autorizar direnv. Ela falhou com o pin anterior e passou com o novo. Os checks
+existentes continuam conferindo gitlink, versão, URL, checksum, aprovação e
+recusa de artefatos divergentes/corrompidos.
+
+O [CI remoto do template](https://github.com/talesgomes27/python-template-linux/actions/runs/42215180717)
+passou nos três jobs Python 3.11, 3.12 e 3.13 para esse commit, incluindo Ruff e
+pytest. O resultado não representa instalação nativa em outras distribuições.
+
+O `pyinit` instalado e as configurações da HOME real não foram atualizados.
+Instalar a nova versão exige uma operação aprovada separada do componente;
+`devshell update` não reinstala o gerador. Não foram migrados projetos reais
+nem executados containers ou novo teste em PTY. Os resultados de CI remoto
+devem ser conferidos nos PRs de cada repositório; os checks locais não ampliam
+a evidência de distribuições ou de equivalência científica.
 
 ## Publicação coordenada do template e dos dotfiles — 2026-11-06
 
