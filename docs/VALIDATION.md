@@ -31,6 +31,15 @@ navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
 ## Publicação coordenada do template e dos dotfiles — 2026-11-06
 
+Os PRs [#2 do template](https://github.com/talesgomes27/python-template-linux/pull/2)
+e [#5 dos dotfiles](https://github.com/talesgomes27/data-lab-dotfiles/pull/5)
+foram integrados, nessa ordem. As mains locais foram sincronizadas por
+fast-forward, preservando o submódulo no commit revisado `3a79c49`.
+A atualização posterior da README documenta lançador, aliases, criação e
+manutenção de projetos e os limites da evidência de plataformas. Seus links
+internos, âncoras, exemplos de ajuda e `git diff --check` foram conferidos;
+não altera comportamento, versões ou arquivos da HOME do usuário.
+
 O [PR #2 do template](https://github.com/talesgomes27/python-template-linux/pull/2)
 publicou o commit `3a79c49eb0788f00eaf46457d9510f0be1aa44f9`.
 Seu [CI remoto](https://github.com/talesgomes27/python-template-linux/actions/runs/42163374186)
@@ -50,8 +59,8 @@ direnv reais, preservando ambiente, interpretador e lock.
 Os resultados do próprio Data Lab devem ser consultados por commit no PR e no
 [workflow checks](https://github.com/talesgomes27/data-lab-dotfiles/actions/workflows/ci.yml);
 a evidência local abaixo não substitui esse resultado remoto.
-Publicação de branches/PRs não aplica arquivos na HOME nem atualiza a cópia
-de `pyinit` instalada. Os PRs permanecem sujeitos à revisão antes do merge.
+Publicação e merge de branches/PRs não aplicam arquivos na HOME nem atualizam
+a cópia de `pyinit` instalada; instalações continuam exigindo aprovação própria.
 
 ## Lançador local devshell — 2026-11-06
 

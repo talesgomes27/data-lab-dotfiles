@@ -11,7 +11,7 @@ ambientes próprios de cada projeto.
 A imagem ilustra o uso; a aparência depende da fonte e do emulador de terminal.
 
 [Instalação rápida](#instalação-rápida) · [Perfis](#perfis) ·
-[Primeiros comandos](#primeiros-comandos) · [Glossário](#glossário-rápido) ·
+[Primeiros comandos](#primeiros-comandos) · [Projetos Python](#projetos-python) · [Glossário](#glossário-rápido) ·
 [Manuais](#manuais) · [Licença](#licença)
 
 ## O que você recebe
@@ -21,6 +21,9 @@ A imagem ilustra o uso; a aparência depende da fonte e do emulador de terminal.
 - Interpretadores Python e ferramentas isoladas via uv, com exemplos científicos
   em Python e R para copiar para seus próprios projetos.
 - Planejamento, diagnóstico e recuperação de dotfiles pela CLI `devshell`.
+- Lançador opcional `devshell` no PATH, com instalação local, revisão e backup.
+- Gerador `pyinit` para criar projetos e manter os existentes, com sincronização
+  e autorização direnv solicitadas explicitamente.
 - Diagnóstico de `.venv` e reparo revisado de permissões com `project doctor`
   e `project fix-permissions`; veja o [guia de uso](docs/USAGE.md#diagnosticar-e-reparar-permissões-de-uma-venv).
 
@@ -38,9 +41,10 @@ O setup pode instalar componentes ausentes de usuário e apresentar pacotes da
 distribuição. Downloads exigem rede; pacotes administrativos exigem autorização.
 Chezmoi é necessário para aplicar a configuração e pode ser instalado pelo setup.
 
-Há verificação local em Ubuntu 26.04 x86_64/glibc e suíte isolada em containers
-de Ubuntu 24.04, Debian 13, Fedora 44, Arch e openSUSE Leap 16.0. Essa matriz
-não comprova a instalação de todos os pacotes dos perfis em cada distribuição.
+Há verificação local em Ubuntu 26.04 x86_64/glibc. A matriz histórica de
+containers cobre Ubuntu 24.04, Debian 13, Fedora 44, Arch e openSUSE Leap 16.0;
+ela não foi repetida para as últimas alterações nem comprova a instalação de
+todos os pacotes dos perfis em cada distribuição.
 Consulte o [alcance da validação](docs/VALIDATION.md) antes de usar em outra
 plataforma. Esta é uma versão experimental.
 
@@ -93,8 +97,18 @@ anteriores não são desinstalados ao mudar a seleção.
 
 Para chamar a CLI de qualquer pasta, instale opcionalmente o
 [lançador local `devshell`](docs/INSTALLATION.md#disponibilizar-devshell-no-path)
-em `~/.local/bin`, com revisão, aprovação e backup. Ele aponta para o checkout;
-o `pyinit` pode encontrá-lo pelo PATH sem `DEVSHELL_BIN`.
+em `~/.local/bin`. Na raiz do checkout:
+
+```bash
+./bin/devshell install --component devshell --offline
+# Revise o plano e substitua HASH_REVISADO pelo hash exibido:
+./bin/devshell install --component devshell --offline --approve HASH_REVISADO
+```
+
+Esse componente é instalado separadamente do setup e dos perfis, sem downloads.
+Com `~/.local/bin` no PATH, `devshell` funciona de qualquer pasta e `pyinit`
+encontra a CLI sem `DEVSHELL_BIN`. O lançador aponta para o checkout original;
+mantenha essa cópia no mesmo caminho ou revise sua reinstalação após movê-la.
 
 Em uma nova sessão Zsh, depois de aplicar `personal`:
 
@@ -110,26 +124,66 @@ Em uma nova sessão Zsh, depois de aplicar `personal`:
 | Consultar Git, dentro de um repositório | `gst` / `gl` |
 | Ver o espaço usado até um nível | `du1` |
 
+Os seis aliases de listagem também estão disponíveis no Bash pelo fragmento
+compartilhado. Eles exibem ícones sempre; `ls` mantém ícones automáticos.
+`l` passa a usar eza no lugar do atalho padrão do Ubuntu.
+
 `jlab` exige um projeto uv com lock válido e grupo `notebook`; ele não funciona
 em qualquer diretório. Siga o [exemplo científico](examples/science/README.md)
 ou consulte o [diagnóstico do jlab](docs/TROUBLESHOOTING.md#jlab-sem-grupo-notebook).
 O [manual de uso](docs/USAGE.md) apresenta exemplos e como sair das ferramentas.
 
-Opcionalmente, prepare um [ambiente Python pessoal com troca automática](docs/SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto):
+## Projetos Python
+
+O perfil `science` instala o gerador
+[python-template-linux](https://github.com/talesgomes27/python-template-linux)
+como `pyinit`, com commit e SHA-256 fixados no manifesto. Ele cria a `.venv`
+e um `.envrc` compatível com Data Lab + direnv. Exemplo:
+
+```bash
+pyinit ../meu-projeto --archetype ds
+```
+
+Os arquétipos disponíveis são `universal`, `ds`, `api` e `cli`. Criar um
+projeto pode baixar Python e dependências. O `.envrc` exige revisão e
+autorização individual; o gerador não faz stage, commit ou push.
+
+Para um projeto existente com `.venv`, entre na raiz e escolha a operação:
+
+```bash
+devshell project doctor
+pyinit --fix-permissions
+# Para acrescentar sync e autorização guiados:
+pyinit --fix-permissions --sync --allow-direnv
+```
+
+O reparo apresenta os caminhos e modos antes de pedir confirmação e não usa
+chmod recursivo. O sync pede confirmação própria, usa `--locked` quando há
+lock e fica restrito à `.venv` local. A autorização mostra o `.envrc` completo,
+pede outra confirmação e recusa arquivo inseguro ou alterado após a revisão.
+Recusa ou falha impede as etapas seguintes. Esse modo não reinicializa o
+projeto nem acrescenta dependências ao `pyproject.toml`. Consulte os
+[pré-requisitos e limites da manutenção](docs/SCIENCE.md#manutenção-guiada-de-projetos-existentes).
+
+A troca automática exige também a configuração do perfil `personal` e direnv.
+Opcionalmente, prepare um [ambiente Python pessoal](docs/SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto):
 o terminal inicia em `geral`, usa a `.venv` dos projetos autorizados pelo direnv
 e restaura o ambiente anterior ao sair. O preparo é explícito; a navegação não
 instala pacotes.
 
-O [python-template-linux](https://github.com/talesgomes27/python-template-linux)
-cria novos projetos com `.venv` e `.envrc` compatíveis com esse fluxo.
-Veja [como conectar o gerador ao terminal](docs/SCIENCE.md#ambiente-pessoal-e-troca-automática-por-projeto).
-
 ## Configuração, atualização e recuperação
 
 As fontes ficam em `dotfiles/`. Zsh usa `~/.config/zsh` por meio de `~/.zshenv`;
-Bash e Nushell têm integrações próprias. [Veja os caminhos e a arquitetura](docs/ARCHITECTURE.md).
+Bash e Nushell têm integrações próprias. Personalizações particulares da
+inicialização Zsh ficam na
+[extensão `.zshenv.local`](docs/INSTALLATION.md#personalização-da-zshenv),
+preservada fora dos arquivos gerenciados. [Veja os caminhos e a arquitetura](docs/ARCHITECTURE.md).
 Para mudar a configuração, edite as fontes, confira `plan` e `diff` e use o setup
 ou a aplicação manual aprovada. `update` atualiza somente configuração.
+O gerador `pyinit` e o lançador têm instalações separadas: atualizar o clone
+ou aplicar dotfiles não reinstala o `pyinit`. Siga o
+[fluxo de atualização de ferramentas](docs/INSTALLATION.md#atualizar-configuração-e-versões)
+para preservar instalações anteriores e revisar o novo plano.
 
 Backups ficam em `~/.local/state/devshell/transactions` por padrão. `rollback`
 restaura a última transação de dotfiles e recusa alterações posteriores; ele não
