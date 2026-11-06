@@ -71,6 +71,21 @@ project_hash() {
     [[ "$output" == *'0775 -> 0755'* ]]
 }
 
+@test 'project fix lê somente a própria resposta e preserva a próxima etapa' {
+    prepare_project
+    run bash -c 'printf "s\nproxima-etapa\n" | { "$FOUNDRY_ROOT/bin/devshell" project fix-permissions --path "$TEST_PROJECT" && IFS= read -r resposta && printf "Restante: %s\n" "$resposta"; }'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'Restante: proxima-etapa'* ]]
+}
+
+@test 'project fix recusa EOF após resposta incompleta sem Enter' {
+    prepare_project
+    run bash -c 'printf s | "$FOUNDRY_ROOT/bin/devshell" project fix-permissions --path "$TEST_PROJECT"'
+    [ "$status" -eq 1 ]
+    [ "$(stat -c %a "$TEST_PROJECT")" = 775 ]
+    [ ! -e "$XDG_STATE_HOME/devshell" ]
+}
+
 @test 'project fix recusa aprovação vencida e inode substituído' {
     prepare_project
     hash=$(project_hash)

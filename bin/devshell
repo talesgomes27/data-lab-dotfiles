@@ -26,9 +26,10 @@ Comandos: setup plan apply status diff doctor update rollback install project
   --json          Relatório JSON
   --approve HASH  Aprovar exatamente o plano exibido
   --replace-existing  Aprovar também conflitos de dotfiles preexistentes
-  --component uv|chezmoi|nu|plugins|python|firacode|pyinit  Alvo de install (default: uv)
+  --component devshell|uv|chezmoi|nu|plugins|python|firacode|pyinit  Alvo de install (default: uv)
   --help          Mostrar esta ajuda
 apply/update alteram só dotfiles. install é separado e exige aprovação.
+install --component devshell instala um lançador local para este checkout, sem downloads.
 rollback sem --approve exibe o plano; com --approve restaura a última transação.
 setup coordena instalação e aplicação com confirmações; --dry-run apenas inspeciona.
 HELP

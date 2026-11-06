@@ -8,7 +8,3 @@ if [[ -r "$_foundry_env" ]]; then
     source "$_foundry_env"
 fi
 unset _foundry_env
-# O -C do alias padrão do Ubuntu pertence ao GNU ls, não ao eza.
-if [[ ${BASH_ALIASES[ls]-} == eza\ * && "$(alias l 2>/dev/null)" == "alias l='ls -CF'" ]]; then
-    alias l='command ls -CF'
-fi

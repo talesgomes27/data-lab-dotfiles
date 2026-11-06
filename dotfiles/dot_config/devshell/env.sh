@@ -39,7 +39,12 @@ fi
 export STARSHIP_CONFIG="$_foundry_config/starship.toml"
 if [[ $- == *i* ]] && devshell_enabled eza && command -v eza >/dev/null; then
     alias ls='eza --icons=auto --group-directories-first -s Extension'
-    alias la='eza --icons=auto --group-directories-first -s Extension -a'
+    alias l='eza --group-directories-first --sort=ext --icons=always'
+    alias la='eza -a --group-directories-first --sort=ext --icons=always'
+    alias ll='eza -lh --group-directories-first --sort=ext --icons=always --git --time-style=relative'
+    alias lla='eza -lah --group-directories-first --sort=ext --icons=always --git --time-style=relative'
+    alias lt='eza --tree --level=2 --icons=always --group-directories-first'
+    alias lta='eza -a --tree --level=2 --icons=always --group-directories-first'
 fi
 if [[ $- == *i* ]] && devshell_enabled terminal-shortcuts; then
     command -v gst >/dev/null 2>&1 || alias gst='git status --short --branch'

@@ -91,11 +91,18 @@ anteriores não são desinstalados ao mudar a seleção.
 
 ## Primeiros comandos
 
+Para chamar a CLI de qualquer pasta, instale opcionalmente o
+[lançador local `devshell`](docs/INSTALLATION.md#disponibilizar-devshell-no-path)
+em `~/.local/bin`, com revisão, aprovação e backup. Ele aponta para o checkout;
+o `pyinit` pode encontrá-lo pelo PATH sem `DEVSHELL_BIN`.
+
 Em uma nova sessão Zsh, depois de aplicar `personal`:
 
 | Tarefa | Comando ou atalho |
 |---|---|
-| Listar arquivos / incluir ocultos | `ls` / `la` |
+| Listar em grade / incluir ocultos | `l` / `la` |
+| Listar detalhes / incluir ocultos | `ll` / `lla` |
+| Ver árvore de dois níveis / incluir ocultos | `lt` / `lta` |
 | Retornar a uma pasta já visitada | `cd parte-do-nome` |
 | Escolher uma pasta interativamente | `cdi parte-do-nome` |
 | Procurar um comando anterior | Ctrl+R |

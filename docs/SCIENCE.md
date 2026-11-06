@@ -66,6 +66,51 @@ direnv e a configuração do terminal descrita nesta página. Depois de revisar 
 arquivo completo, execute manualmente `direnv allow .` na raiz do novo projeto.
 Rollback dos dotfiles preserva o gerador e os ambientes criados.
 
+### Manutenção guiada de projetos existentes
+
+A versão fixada de `python-template-linux` oferece `--fix-permissions`, com as
+opções independentes `--sync` e `--allow-direnv`. Para atualizar uma instalação
+anterior de `pyinit`, use o instalador do componente e revise o novo plano;
+`devshell update` atualiza somente os dotfiles. A manutenção do pin atualiza
+juntos gitlink, versão, URL e SHA-256, conforme
+[CONTRIBUTING](../CONTRIBUTING.md#atualizar-o-template-python). O instalador
+preserva arquivos divergentes: se encontrar uma versão anterior, mantenha-a
+em backup privado, retire somente esse arquivo do destino e revise um novo
+plano antes de instalar; não use `--replace-existing` para contornar a guarda
+dos artefatos.
+
+Primeiro disponibilize o Data Lab no PATH com a
+[instalação local do lançador](INSTALLATION.md#disponibilizar-devshell-no-path).
+Depois, com a versão fixada do gerador instalada:
+
+```bash
+devshell project doctor --path /caminho/absoluto/projeto
+pyinit \
+    /caminho/absoluto/projeto --fix-permissions --sync --allow-direnv
+```
+
+O gerador encontra `devshell` pelo PATH. `DEVSHELL_BIN` continua como override
+opcional para quem prefere indicar diretamente o executável de outro checkout.
+
+O modo exige `.venv` existente e reutiliza o backend de reparo existente, sem
+repetir a criação do projeto. O reparo mantém sua própria confirmação/registro;
+`--sync` pede outra confirmação e usa `--locked` quando há `uv.lock`.
+O sync fica restrito à `.venv` local, usando seu interpretador existente, sem
+download de Python. Dependências podem ser instaladas/removidas e builds
+executados; sem lock, ele pode ser criado. A autorização mostra o `.envrc`
+completo, pede confirmação específica e recusa conteúdo/metadados alterados
+desde a revisão. Arquivo ausente, symlink, hardlink ou permissões inseguras
+exigem preparo manual. Não configura whitelist nem autoriza ao navegar.
+Antes do reparo, a opção de sync consulta `uv workspace dir` sem cache/rede e
+recusa uma raiz externa ao alvo; membros de workspace exigem administração
+explícita do lock na raiz. Essa opção requer uv com esse subcomando.
+
+Use apenas `--fix-permissions` para reparar sem sync/direnv, ou acrescente
+somente a etapa desejada. Recusa, EOF ou falha impedem as etapas seguintes;
+etapas já concluídas não são desfeitas. O caminho deve respeitar a guarda do
+backend, sem componentes `..`. O comando direto equivalente para o reparo
+continua sendo `devshell project fix-permissions`.
+
 ## Preparar o ambiente pessoal
 
 Prepare uma vez o ambiente pessoal. O CPython 3.13.11 do

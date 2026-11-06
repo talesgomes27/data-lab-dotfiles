@@ -98,7 +98,7 @@ BIN
     run bash --noprofile -ic 'ls "pasta com espaços"; la'
     [ "$status" -eq 0 ]
     [[ "$output" == *$'<--icons=auto>\n<--group-directories-first>\n<-s>\n<Extension>\n<pasta com espaços>'* ]]
-    [[ "$output" == *$'<--icons=auto>\n<--group-directories-first>\n<-s>\n<Extension>\n<-a>'* ]]
+    [[ "$output" == *$'<-a>\n<--group-directories-first>\n<--sort=ext>\n<--icons=always>'* ]]
 }
 
 @test 'Zsh carrega ls e la a partir da mesma configuração compartilhada' {
@@ -107,7 +107,58 @@ BIN
     run zsh -ic 'ls "pasta com espaços"; la'
     [ "$status" -eq 0 ]
     [[ "$output" == *$'<--icons=auto>\n<--group-directories-first>\n<-s>\n<Extension>\n<pasta com espaços>'* ]]
-    [[ "$output" == *$'<--icons=auto>\n<--group-directories-first>\n<-s>\n<Extension>\n<-a>'* ]]
+    [[ "$output" == *$'<-a>\n<--group-directories-first>\n<--sort=ext>\n<--icons=always>'* ]]
+}
+
+@test 'Bash e Zsh oferecem os seis aliases eza com argumentos preservados' {
+    configure
+    mock_eza
+    # shellcheck disable=SC2016 # Código literal da fixture Ubuntu.
+    printf 'alias l="ls -CF"\nsource "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
+    for shell in bash zsh; do
+        if [[ $shell == bash ]]; then options=(--noprofile -ic); else options=(-ic); fi
+        run "$shell" "${options[@]}" '
+            set -e
+            l "pasta com espaços"
+            la "pasta com espaços"
+            ll "pasta com espaços"
+            lla "pasta com espaços"
+            lt "pasta com espaços"
+            lta "pasta com espaços"
+        '
+        [ "$status" -eq 0 ]
+        [[ "$output" == *$'<--group-directories-first>\n<--sort=ext>\n<--icons=always>\n<pasta com espaços>'* ]]
+        [[ "$output" == *$'<-a>\n<--group-directories-first>\n<--sort=ext>\n<--icons=always>\n<pasta com espaços>'* ]]
+        [[ "$output" == *$'<-lh>\n<--group-directories-first>\n<--sort=ext>\n<--icons=always>\n<--git>\n<--time-style=relative>\n<pasta com espaços>'* ]]
+        [[ "$output" == *$'<-lah>\n<--group-directories-first>\n<--sort=ext>\n<--icons=always>\n<--git>\n<--time-style=relative>\n<pasta com espaços>'* ]]
+        [[ "$output" == *$'<--tree>\n<--level=2>\n<--icons=always>\n<--group-directories-first>\n<pasta com espaços>'* ]]
+        [[ "$output" == *$'<-a>\n<--tree>\n<--level=2>\n<--icons=always>\n<--group-directories-first>\n<pasta com espaços>'* ]]
+        [[ "$output" != *'<-CF>'* ]]
+    done
+}
+
+@test 'eza real aceita os seis aliases em Bash e Zsh' {
+    command -v eza >/dev/null || skip 'eza não disponível'
+    configure
+    mkdir -p "$HOME/arquivos com espaços/pasta/subpasta"
+    touch "$HOME/arquivos com espaços/exemplo.py" "$HOME/arquivos com espaços/.oculto"
+    # shellcheck disable=SC2016 # Código literal do bashrc da fixture.
+    printf 'source "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
+    for shell in bash zsh; do
+        if [[ $shell == bash ]]; then options=(--noprofile -ic); else options=(-ic); fi
+        # shellcheck disable=SC2016 # HOME é expandido pela shell filha.
+        run "$shell" "${options[@]}" '
+            set -e
+            l "$HOME/arquivos com espaços"
+            la "$HOME/arquivos com espaços"
+            ll "$HOME/arquivos com espaços"
+            lla "$HOME/arquivos com espaços"
+            lt "$HOME/arquivos com espaços"
+            lta "$HOME/arquivos com espaços"
+        '
+        [ "$status" -eq 0 ]
+        [[ "$output" == *'exemplo.py'* && "$output" == *'.oculto'* ]]
+    done
 }
 
 @test 'Zsh usa zoxide em cd e preserva navegação e comandos z existentes' {
@@ -143,7 +194,7 @@ BIN
     [ "$status" -eq 0 ]
 }
 
-@test 'Bash mantém o alias l padrão compatível com GNU ls' {
+@test 'Bash substitui o alias l padrão do Ubuntu sem repassar opções GNU ao eza' {
     configure
     mock_eza
     printf '#!/bin/sh\nprintf "GNU_LS_ARGS=%%s\\n" "$*"\n' >"$HOME/.local/bin/ls"
@@ -152,7 +203,8 @@ BIN
     printf 'alias ls="ls --color=auto"\nalias l="ls -CF"\nsource "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
     run bash --noprofile -ic 'l'
     [ "$status" -eq 0 ]
-    [[ "$output" == *'GNU_LS_ARGS=-CF'* ]]
+    [[ "$output" == *$'<--group-directories-first>\n<--sort=ext>\n<--icons=always>'* ]]
+    [[ "$output" != *'GNU_LS_ARGS='* && "$output" != *'<-CF>'* ]]
 }
 
 @test 'aliases eza exigem shell interativa e componente selecionado' {
@@ -160,10 +212,16 @@ BIN
     mock_eza
     run bash --noprofile --norc -c 'source "$XDG_CONFIG_HOME/devshell/env.sh"; alias ls >/dev/null 2>&1'
     [ "$status" -eq 1 ]
+    for shell in bash zsh; do
+        if [[ $shell == bash ]]; then options=(--noprofile --norc -c); else options=(-fc); fi
+        # shellcheck disable=SC2016 # Código literal executado pela shell filha.
+        run "$shell" "${options[@]}" 'source "$XDG_CONFIG_HOME/devshell/env.sh"; for shortcut in l la ll lla lt lta; do alias "$shortcut" >/dev/null 2>&1 && exit 9; done; exit 0'
+        [ "$status" -eq 0 ]
+    done
     printf 'bash zsh git uv chezmoi\n' >"$XDG_CONFIG_HOME/devshell/components"
     # shellcheck disable=SC2016 # Código literal do bashrc da fixture.
-    printf 'alias ls="ls --color=auto"\nsource "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
-    run bash --noprofile -ic '[[ ${BASH_ALIASES[ls]} == "ls --color=auto" ]]'
+    printf 'alias ls="ls --color=auto"\nalias l="ls -CF"\nsource "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
+    run bash --noprofile -ic '[[ ${BASH_ALIASES[ls]} == "ls --color=auto" && ${BASH_ALIASES[l]} == "ls -CF" ]] || exit 10; for shortcut in la ll lla lt lta; do alias "$shortcut" >/dev/null 2>&1 && exit 9; done; exit 0'
     [ "$status" -eq 0 ]
 }
 

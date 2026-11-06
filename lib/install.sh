@@ -1,6 +1,14 @@
 # shellcheck shell=bash
 install_component() {
     local dry_run=$1
+    if [[ "$DEVSHELL_COMPONENT" == devshell ]]; then
+        if ((dry_run)) || [[ -z "$DEVSHELL_APPROVAL" ]]; then
+            python3 "$ROOT/lib/launcher.py" plan
+        else
+            python3 "$ROOT/lib/launcher.py" apply
+        fi
+        return
+    fi
     if ((dry_run)) || [[ -z "$DEVSHELL_APPROVAL" ]]; then
         python3 "$ROOT/lib/artifacts.py" plan
         return
