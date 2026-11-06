@@ -2,6 +2,11 @@
 
 ## Não publicado
 
+- `pyinit --migrate` para projetos legados: detecção conservadora, dry-run sem
+  estado, backup/rollback e autorização direnv manual. O submódulo e o artefato
+  são atualizados juntos por commit, URL e SHA-256; a instalação continua
+  exigindo aprovação separada, sem alteração automática da HOME.
+
 - Componente local `install --component devshell`: lançador em `~/.local/bin`
   para o checkout, com aprovação por hash, conflitos explícitos, backups
   privados e diagnóstico sem execução. Funciona offline e permite ao pyinit
