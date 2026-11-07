@@ -2,6 +2,12 @@
 
 ## Não publicado
 
+- Pin de `pyinit` atualizado para as correções A1–A6/A2-LF-01 e F1/P3:
+  preservação de configurações, criação isolada, composição Ruff/pytest,
+  seleção minor na migração, inferência do alvo Ruff e JupyterLab no grupo
+  `notebook` do arquétipo `ds`. Gitlink, URL e checksum avançam juntos;
+  a reinstalação do gerador continua explícita e separada dos dotfiles.
+
 - `pyinit --migrate` para projetos legados: detecção conservadora, dry-run sem
   estado, backup/rollback e autorização direnv manual. O submódulo e o artefato
   são atualizados juntos por commit, URL e SHA-256; a instalação continua

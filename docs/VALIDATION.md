@@ -13,7 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
-| Suíte local | 159 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui lançador local, aliases eza, ambiente pessoal, pyinit/setup, extensão Zsh e reparo explícito de permissões de projetos; sem estender a evidência histórica da matriz. |
+| Suíte local da candidata de pin | 160 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui o novo smoke de recusa de configuração IDE vinculada pelo pyinit distribuído; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -29,9 +29,67 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Candidata de pin A1–A6/F1 — 2026-11-06
+
+Preparada em cópias Git independentes da base Data Lab
+`75c53abf7a8bb902798b0a6f0c34766933cf3765`. Somente gitlink, entrada `pyinit`
+do manifesto, teste de distribuição, guia de ciência, changelog e este registro
+mudam. O checkout original não recebeu a candidata.
+
+O pin proposto é `1d9e14154edac1c290409e6e41f36f1aa7330db4`, merge do
+[PR #8 do template](https://github.com/talesgomes27/python-template-linux/pull/8),
+incluindo A1–A6/A2-LF-01 e F1/P3. Gitlink, versão e URL usam esse SHA completo.
+O script tem **66.910 bytes** e SHA-256
+`ba8cba6b9ca32ada2c8101385120abcd846e073ce746df6c343f0cb91e36bd51`.
+O conteúdo público retornado pelo conector GitHub para a URL fixada e pela API
+de conteúdo coincide byte a byte com o checkout independente e o submódulo
+da candidata. As demais entradas de `manifests/artifacts.json` são idênticas.
+
+Validação local atual, em Ubuntu 26.04.1 LTS x86_64/glibc:
+
+- A base congelada passou 159 Bats e 42 unittest, sem skips.
+- A regressão nova instala o artefato somente em HOME temporária e apresenta
+  uma configuração `.vscode/settings.json` por symlink para uma sentinela
+  artificial. Com o pin antigo, o gerador anunciou sucesso em vez da recusa;
+  com o novo, retorna 2 antes de chamar uv, preservando integralmente a HOME
+  artificial. uv e Git do gerador são simulados nesse caso: nenhum runtime,
+  pacote científico ou commit é criado pela regressão.
+- `bash scripts/check.sh` passou **160 Bats e 42 unittest**, sem skips,
+  incluindo ShellCheck, shfmt e sintaxe Zsh/Python. Os casos existentes cobrem
+  hash aprovado, cache corrompido, destino divergente, idempotência, ajuda,
+  diagnóstico sem execução do script e migração dry-run sem estado.
+- HOME, XDG, cache e TMPDIR foram descartáveis. O runner usou Python 3.13.11,
+  uv 0.13.5, Bats 1.13.0, ShellCheck 0.11.0 e shfmt 3.12.0; o Python em
+  `/usr/bin/python3` é 3.14.4. Nenhuma ferramenta foi instalada para os checks.
+
+Evidência anterior reaproveitada: a
+[CI #16 do merge real do template](https://github.com/talesgomes27/python-template-linux/actions/runs/42311484199)
+executou 246 testes em cada CPython 3.11.18, 3.12.16 e 3.13.18, com Ruff
+0.17.1 e uv 0.13.7. O evento foi `push` em `main`, com head e checkout
+`1d9e14154edac1c290409e6e41f36f1aa7330db4`. Esses testes não foram repetidos
+nesta etapa e não constituem CI dos novos bytes do Data Lab.
+
+O instalador foi testado offline com cache semeado; seu transporte HTTPS não
+foi exercitado online nesta etapa. Não foram executados containers, CI desta
+candidata, instalação na HOME real, servidor/navegador ou fluxo de JupyterLab
+real. A wheel artificial das regressões do template comprova grupo, lock e
+encaminhamento, sem homologar o aplicativo real ou equivalência científica.
+Os resultados não ampliam suporte a outras distribuições ou arquiteturas.
+
+O patch incremental inclui o gitlink. Sua reaplicação é conferida apenas em
+outra cópia da base, com seleção explícita do novo commit no submódulo isolado.
+Git não transporta todos os modos POSIX; a conferência de bytes, tipos, links
+e bits executáveis é separada da preservação dos modos dos arquivos.
+
+Os repositórios originais, seus índices, o `.envrc` pessoal e os binários
+instalados são preservados. Não houve commit, push ou instalação na HOME real;
+o `pyinit` instalado e a versão consumida pelo Data Lab continuam anteriores.
+Aplicar o pin, publicar e reinstalar exigem etapas autorizadas separadamente.
+Nenhum lançador, perfil, instalador ou comportamento de `project doctor` mudou.
+
 ## Pin de pyinit --migrate — 2026-11-06
 
-O submódulo e o artefato fixam o commit
+Na etapa anterior, o submódulo e o artefato foram fixados no commit
 `ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4`, publicado no
 [PR #3 do template](https://github.com/talesgomes27/python-template-linux/pull/3).
 A URL usa esse SHA completo. O SHA-256

@@ -124,3 +124,29 @@ PY
     after=$(pyinit_home_snapshot)
     [ "$before" = "$after" ]
 }
+
+@test 'pyinit distribuido recusa configuracao IDE vinculada antes de chamar uv' {
+    seed_pyinit
+    hash=$(pyinit_plan | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    run "$FOUNDRY_ROOT/bin/devshell" install --component pyinit --approve "$hash" --offline
+    [ "$status" -eq 0 ]
+    project="$HOME/projeto com espacos"
+    mkdir -p "$project/.vscode" "$project/.git" "$HOME/mocks"
+    printf 'sentinela externa\n' >"$HOME/configuracao-externa"
+    ln -s "$HOME/configuracao-externa" "$project/.vscode/settings.json"
+    cat >"$HOME/mocks/uv" <<'MOCK'
+#!/bin/sh
+printf '%s\n' "$*" >>"$TEST_UV_LOG"
+MOCK
+    printf '#!/bin/sh\nexit 0\n' >"$HOME/mocks/git"
+    chmod 700 "$HOME/mocks/uv" "$HOME/mocks/git"
+    before=$(pyinit_home_snapshot)
+    run env UV_BIN="$HOME/mocks/uv" PATH="$HOME/mocks:$PATH" TEST_UV_LOG="$HOME/uv-chamado" \
+        "$HOME/.local/bin/pyinit" "$project"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'.vscode/settings.json'* ]]
+    [ ! -e "$HOME/uv-chamado" ]
+    [ "$(cat "$HOME/configuracao-externa")" = 'sentinela externa' ]
+    after=$(pyinit_home_snapshot)
+    [ "$before" = "$after" ]
+}
