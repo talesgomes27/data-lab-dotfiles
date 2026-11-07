@@ -3,11 +3,11 @@
   "artifacts": [
     {
       "component": "pyinit",
-      "version": "ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4",
+      "version": "1d9e14154edac1c290409e6e41f36f1aa7330db4",
       "arch": "any",
       "libc": "any",
-      "url": "https://github.com/talesgomes27/python-template-linux/raw/ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4/scripts/init_project.sh",
-      "sha256": "a97b02ca983094b937d196499719f9228cd40b69065b5cbca876e6737780af1d",
+      "url": "https://github.com/talesgomes27/python-template-linux/raw/1d9e14154edac1c290409e6e41f36f1aa7330db4/scripts/init_project.sh",
+      "sha256": "ba8cba6b9ca32ada2c8101385120abcd846e073ce746df6c343f0cb91e36bd51",
       "format": "raw",
       "binary": "pyinit"
     },

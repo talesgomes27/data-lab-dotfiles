@@ -57,6 +57,31 @@ pyinit ../meu-projeto --archetype ds
 # Outros arquétipos: universal, api e cli.
 ```
 
+O gerador fixado exige Bash, uv e `/usr/bin/python3` >=3.11 com `tomllib`.
+Na criação, preserva configurações IDE/R regulares de vínculo único, recusa
+vínculos nesses destinos e caminhos físicos terminados em LF e mantém uv na
+`.venv` local. As configurações Ruff/pytest existentes são preservadas;
+somente famílias ausentes recebem padrões. O alvo Ruff é inferido pelas
+regras da própria ferramenta a partir de `requires-python`, com os limites
+documentados no
+[template fixado](https://github.com/talesgomes27/python-template-linux/blob/1d9e14154edac1c290409e6e41f36f1aa7330db4/README.md).
+
+O arquétipo `ds` declara JupyterLab no grupo `notebook`, mantendo
+Polars/DuckDB/PyArrow nas dependências do projeto e ipykernel em `dev`.
+Depois de criar o projeto:
+
+```bash
+cd ../meu-projeto
+jlab --no-browser
+# Equivalente sem o atalho:
+# uv run --locked --group notebook jupyter lab --no-browser
+```
+
+O sync final padrão não seleciona `notebook`; a inicialização com esse grupo
+pode sincronizar a `.venv` e baixar suas dependências. O gerador não abre
+servidor ou navegador. Projetos anteriores não são alterados e podem precisar
+do preparo explícito descrito em [JupyterLab](#iniciar-e-encerrar-jupyterlab).
+
 O gerador prepara a `.venv`, cria `.envrc` com `use devshell_python` e usa
 permissões privadas para novas criações. Runtime e dependências podem ser
 baixados durante esse preparo explícito. Ele preserva `.envrc` e permissões já
@@ -78,6 +103,9 @@ preserva arquivos divergentes: se encontrar uma versão anterior, mantenha-a
 em backup privado, retire somente esse arquivo do destino e revise um novo
 plano antes de instalar; não use `--replace-existing` para contornar a guarda
 dos artefatos.
+Se o pin avançar e o executável antigo permanecer instalado, `doctor --profile
+science` apontará divergência de integridade até que seus bytes correspondam
+ao novo hash. A atualização do checkout não substitui esse arquivo.
 
 Primeiro disponibilize o Data Lab no PATH com a
 [instalação local do lançador](INSTALLATION.md#disponibilizar-devshell-no-path).
@@ -133,6 +161,9 @@ confere novamente os hashes/identidades; usa CPython gerenciado já instalado,
 sem baixar interpretadores. Pode baixar pacotes e executar builds. A versão
 padrão vem dos metadados do ambiente `geral`, com fallback 3.12, e precisa ser
 compatível com as restrições do projeto.
+Pedidos minor, como `--python 3.12`, representam a faixa de patches e permitem
+selecionar um CPython gerenciado já instalado que satisfaça os requisitos;
+não significam somente o patch zero nem ampliam a sintaxe aceita.
 
 Cada execução mantém os originais e a `.venv` anterior em
 `.pyinit-backups/ID`, com permissões privadas e proteção no `.gitignore` antes
@@ -150,7 +181,7 @@ sistema e não executa stage, commit ou push.
 Confira `pyinit --help`: atualizar o clone ou aplicar dotfiles não reinstala o
 script. Use o instalador do componente e revise o plano/hash para atualizar uma
 instalação anterior, conforme a seção de manutenção acima. O contrato completo
-está no [guia de migração do template](https://github.com/talesgomes27/python-template-linux/blob/ee8cf5a0a0be0963c3ee4fbaf1d10181e6c2cdd4/docs/migration-recipe-for-agents.md).
+está no [guia de migração do template](https://github.com/talesgomes27/python-template-linux/blob/1d9e14154edac1c290409e6e41f36f1aa7330db4/docs/migration-recipe-for-agents.md).
 
 ## Preparar o ambiente pessoal
 
