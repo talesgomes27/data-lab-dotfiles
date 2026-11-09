@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC2016,SC2030,SC2031 # Scripts Python entre aspas simples; run em helpers do Bats preenche status e output.
+# shellcheck disable=SC2016,SC2030,SC2031,SC2154 # Scripts Python entre aspas simples; run do Bats preenche status, output e stderr.
 bats_require_minimum_version 1.5.0
 # R-040: perfis lembrados, precedência e restauração, em HOME temporária.
 load core_setup
