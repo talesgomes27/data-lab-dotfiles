@@ -161,6 +161,14 @@ administrativo, componentes e aplicação. Conflitos exigem a palavra
 `substituir`. Uma aprovação de arquivos é usada como foi apresentada; a
 orquestração não gera outro hash para contornar alteração concorrente.
 
+O histórico de transações é lido por uma enumeração única em `lib/state.py`,
+que classifica cada entrada sem lançar exceção: `rollback --list` mostra as
+inválidas, e `rollback --prune` as recusa. A cadeia segue `previous_latest` a
+partir de `latest`. A poda renomeia cada transação para `pruning/` antes de
+apagá-la (descritor de diretório, sem seguir symlinks), de modo que o journal
+só contém transações inteiras. O rollback só move `latest` para a transação
+anterior se ela tiver manifesto legível.
+
 Códigos de saída: 0 sucesso/plano; 2 entrada inválida, conflito ou operação
 recusada; 3 pré-requisito ausente ou problemas em doctor. Ferramentas uv e gerenciadores de pacotes podem
 propagar seu próprio código de falha. Cancelamento do setup retorna 1. JSON vai para stdout; erros/progresso para

@@ -26,6 +26,9 @@ Comandos: setup plan apply status diff doctor update rollback install project
   --json          Relatório JSON
   --approve HASH  Aprovar exatamente o plano exibido
   --replace-existing  Aprovar também conflitos de dotfiles preexistentes
+  --list          rollback: listar transações, sem alterar estado
+  --prune --keep N  rollback: planejar a remoção irreversível dos backups,
+                  mantendo a transação atual e N-1 anteriores (com --approve)
   --component devshell|uv|chezmoi|nu|plugins|python|firacode|pyinit  Alvo de install (default: uv)
   --help          Mostrar esta ajuda
 apply/update alteram só dotfiles. install é separado e exige aprovação.
@@ -52,9 +55,10 @@ if [[ "$command" == project ]]; then
 fi
 profile=minimal
 json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
+rollback_list=0 rollback_prune=0 keep=''
 while (($#)); do
     case "$1" in
-        --profile | --approve | --component | --path)
+        --profile | --approve | --component | --path | --keep)
             if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
                 fail "valor ausente para $1"
             fi
@@ -66,6 +70,7 @@ while (($#)); do
                 project_path=$2
                 project_path_set=1
                 ;;
+            --keep) keep=$2 ;;
             esac
             shift 2
             ;;
@@ -85,6 +90,14 @@ while (($#)); do
             replace=1
             shift
             ;;
+        --list)
+            rollback_list=1
+            shift
+            ;;
+        --prune)
+            rollback_prune=1
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -93,6 +106,16 @@ while (($#)); do
     esac
 done
 [[ "$command" == project || "$project_path_set" == 0 ]] || fail '--path só é aceito por project'
+if [[ "$command" != rollback && ($rollback_list == 1 || $rollback_prune == 1 || -n "$keep") ]]; then
+    fail '--list, --prune e --keep só são aceitos por rollback'
+fi
+if [[ $rollback_list == 1 && ($rollback_prune == 1 || -n "$keep" || -n "$approval") ]]; then
+    fail 'rollback --list não aceita --prune, --keep ou --approve'
+fi
+if ((rollback_prune)) || [[ -n "$keep" ]]; then
+    ((rollback_prune)) || fail '--keep requer --prune'
+    [[ "$keep" =~ ^[1-9][0-9]*$ ]] || fail 'rollback --prune requer --keep N, com N inteiro >= 1'
+fi
 # Python da distribuição isolado: .venv ativa, .pth ou PYTHONPATH de projeto não entram na CLI.
 python_command=(/usr/bin/python3 -I -B)
 devshell_python() { "${python_command[@]}" "$@"; }
@@ -125,5 +148,9 @@ elif [[ "$command" == install ]]; then
 else
     if ((dry_run)) && [[ "$command" == apply || "$command" == update ]]; then command=plan; fi
     if ((dry_run)) && [[ "$command" == rollback ]]; then export DEVSHELL_APPROVAL=''; fi
+    rollback_mode=''
+    ((rollback_list == 0)) || rollback_mode=list
+    ((rollback_prune == 0)) || rollback_mode=prune
+    export DEVSHELL_ROLLBACK_MODE="$rollback_mode" DEVSHELL_KEEP="$keep"
     exec "${python_command[@]}" "$ROOT/lib/state.py" "$command"
 fi

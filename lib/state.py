@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Relatórios e fronteira de escrita de arquivos; somente biblioteca padrão."""
 import contextlib
+from datetime import UTC, datetime
 import difflib
 import fcntl
 import hashlib
@@ -187,6 +188,21 @@ def report(data):
         print('Diagnóstico:', issue)
     for warning in data.get('warnings', []):
         print('Aviso:', warning)
+    for row in data.get('transactions', []):
+        details = [row.get('status'), f"cadeia {row['chain']}" if row.get('chain') is not None else 'fora da cadeia']
+        if row.get('action'):
+            details.insert(0, row['action'])
+        if row.get('files') is not None and not isinstance(row.get('files'), list):
+            details.append(f"{row['files']} arquivo(s)")
+        if row.get('created'):
+            details.append(row['created'])
+        if row.get('reason'):
+            details.append(row['reason'])
+        print(f"  {row['id']}: " + ', '.join(details))
+    for row in data.get('cleanup', []):
+        print(f"  {row['id']}: resto de poda interrompida em pruning/" + (' (será removido)' if 'items' in row else ''))
+    if 'bytes' in data:
+        print('Bytes a remover:', data['bytes'])
     for key in ('transaction', 'changed', 'restored', 'message'):
         if key in data:
             print(f'{key}: {data[key]}')
@@ -320,7 +336,8 @@ def apply_configuration():
         directory = STATE / 'transactions' / name
         directory.mkdir(parents=True, mode=0o700)
         tx = {'status': 'pending', 'files': changed, 'previous_registry': registry(),
-              'previous_latest': old_dir.name if old_dir else None}
+              'previous_latest': old_dir.name if old_dir else None,
+              'created': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
         contents = desired_files()
         for index, entry in enumerate(changed):
             entry['backup'] = str(index)
@@ -401,13 +418,206 @@ def rollback():
             if current != entry['before']:
                 restore_entry(directory, entry)
         atomic(STATE / 'current.json', encode(tx['previous_registry']))
-        if tx['previous_latest']:
-            atomic(STATE / 'latest', tx['previous_latest'].encode())
+        # D-004: a transação anterior pode ter sido podada; latest nunca aponta para ela.
+        previous = tx['previous_latest'] if isinstance(tx['previous_latest'], str) and TRANSACTION_ID.fullmatch(tx['previous_latest']) else None
+        warnings = []
+        if previous and readable_manifest(STATE / 'transactions' / previous):
+            atomic(STATE / 'latest', previous.encode())
         else:
             (STATE / 'latest').unlink()
+            if tx['previous_latest'] and (STATE / 'transactions' / str(tx['previous_latest'])).exists():
+                warnings.append(f"transação anterior {tx['previous_latest']} ilegível: latest removido; veja rollback --list")
         tx['status'] = 'rolled-back'
         atomic(directory / 'manifest.json', encode(tx))
-    report({'operation': 'rollback', 'restored': len(tx['files'])})
+    report({'operation': 'rollback', 'restored': len(tx['files']), 'warnings': warnings})
+
+
+TRANSACTION_ID = re.compile(r'[0-9a-f]{32}')
+TRANSACTION_ITEM = re.compile(r'manifest\.json|[0-9]+')
+PRUNABLE = ('committed', 'rolled-back', 'failed-restored')
+RECOVERY_HINT = 'consulte "Backups e recuperação" em docs/SECURITY.md'
+
+
+def readable_manifest(directory):
+    try:
+        safe_path(directory / 'manifest.json')
+        data = json.loads((directory / 'manifest.json').read_text())
+    except (OSError, ValueError):
+        return None
+    optional_text = all(isinstance(data.get(key), (str, type(None))) for key in ('previous_latest', 'created')) if isinstance(data, dict) else False
+    return data if optional_text and isinstance(data.get('status'), str) and isinstance(data.get('files'), list) else None
+
+
+def transaction_entry(directory):
+    """Classifica uma entrada de transactions/ sem seguir symlinks e sem lançar exceção."""
+    entry = {'id': directory.name, 'status': 'invalida', 'files': None, 'created': None,
+             'previous_latest': None, 'reason': None, 'items': [], 'originals': []}
+    try:
+        if not TRANSACTION_ID.fullmatch(directory.name):
+            entry['reason'] = 'nome fora do padrão de 32 hexadecimais'
+        elif directory.is_symlink() or not directory.is_dir():
+            entry['reason'] = 'não é diretório regular'
+        else:
+            safe_path(directory)
+            for item in sorted(directory.iterdir()):
+                info = item.lstat()
+                if not TRANSACTION_ITEM.fullmatch(item.name) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+                    entry['reason'] = f'item inesperado: {item.name}'
+                    break
+                entry['items'].append([item.name, digest(item.read_bytes()), info.st_size])
+            manifest = readable_manifest(directory) if not entry['reason'] else None
+            if not entry['reason'] and not manifest:
+                entry['reason'] = 'manifest.json ausente ou ilegível'
+            elif manifest:
+                entry |= {'status': manifest['status'], 'files': len(manifest['files']),
+                          'created': manifest.get('created'), 'previous_latest': manifest.get('previous_latest'),
+                          # Arquivo preexistente não gerenciado: o original só existe nesta transação.
+                          'originals': sorted(item['path'] for item in manifest['files']
+                                              if isinstance(item, dict) and item.get('conflict') and item.get('before'))}
+    except (OSError, ValueError) as exc:
+        entry['reason'] = str(exc)
+    return entry
+
+
+def transaction_entries():
+    root = STATE / 'transactions'
+    safe_path(root)
+    if not root.is_dir():
+        return []
+    return [transaction_entry(path) for path in sorted(root.iterdir())]
+
+
+def latest_name():
+    pointer = STATE / 'latest'
+    safe_path(pointer)
+    return pointer.read_text().strip() if pointer.exists() else None
+
+
+def transaction_chain(entries, latest):
+    known = {entry['id']: entry for entry in entries if entry['status'] != 'invalida'}
+    chain, name = [], latest
+    while name in known and name not in chain:
+        chain.append(name)
+        name = known[name]['previous_latest']
+    return chain
+
+
+def history():
+    entries, latest = transaction_entries(), latest_name()
+    chain = transaction_chain(entries, latest)
+    rows = [{key: entry[key] for key in ('id', 'status', 'files', 'created', 'reason')}
+            | {'chain': chain.index(entry['id']) if entry['id'] in chain else None} for entry in entries]
+    rows.sort(key=lambda row: (row['chain'] is None, row['chain'] or 0, row['created'] or '', row['id']))
+    leftovers = []
+    try:
+        safe_path(STATE / 'pruning')
+        if (STATE / 'pruning').is_dir():
+            leftovers = [{'id': path.name} for path in sorted((STATE / 'pruning').iterdir())]
+    except (OSError, ValueError) as exc:
+        leftovers = [{'id': 'pruning', 'reason': str(exc)}]
+    return {'operation': 'rollback-list', 'latest': latest, 'transactions': rows, 'cleanup': leftovers}
+
+
+def pruning_leftovers():
+    root = STATE / 'pruning'
+    safe_path(root)
+    if not root.is_dir():
+        return []
+    leftovers = []
+    for path in sorted(root.iterdir()):
+        entry = transaction_entry(path)
+        # Uma poda interrompida pode ter removido o manifesto antes do diretório.
+        if not TRANSACTION_ID.fullmatch(path.name) or path.is_symlink() or not path.is_dir() or (
+                entry['reason'] and not entry['reason'].startswith('manifest.json')):
+            raise ValueError(f'resto de poda inesperado: {path}; {RECOVERY_HINT}')
+        leftovers.append({'id': path.name, 'items': entry['items']})
+    return leftovers
+
+
+def prune_plan(keep):
+    entries, latest = transaction_entries(), latest_name()
+    for entry in entries:
+        if entry['status'] == 'invalida':
+            raise ValueError(f"transação inválida {entry['id']}: {entry['reason']}; {RECOVERY_HINT}")
+        if entry['status'] in ('pending', 'rolling-back'):
+            where = ('é a atual: conclua com rollback' if entry['id'] == latest
+                     else 'está na cadeia, mas não é a atual' if entry['id'] in transaction_chain(entries, latest)
+                     else 'está fora da cadeia: rollback não a alcança')
+            raise ValueError(f"transação {entry['id']} interrompida ({entry['status']}) {where}; {RECOVERY_HINT}")
+        if entry['status'] not in PRUNABLE:
+            raise ValueError(f"transação {entry['id']} com status desconhecido {entry['status']}; {RECOVERY_HINT}")
+    if latest is not None and latest not in {entry['id'] for entry in entries}:
+        raise ValueError(f'latest aponta para transação inexistente; {RECOVERY_HINT}')
+    chain = transaction_chain(entries, latest)
+    kept = chain[:keep]
+    rows, warnings = [], []
+    if latest is None and entries:
+        warnings.append('não há transação atual: todas as transações listadas serão removidas')
+    for entry in entries:
+        action = 'keep' if entry['id'] in kept else 'delete'
+        if action == 'delete' and entry['previous_latest'] is None:
+            warnings.append(f"remove a primeira transação ({entry['id']}), que guarda os dotfiles de antes do primeiro apply")
+        elif action == 'delete' and entry['originals']:
+            warnings.append(f"remove a transação {entry['id']}, única cópia dos originais substituídos: {', '.join(entry['originals'])}")
+        rows.append({'id': entry['id'], 'status': entry['status'], 'action': action, 'items': entry['items'],
+                     'chain': chain.index(entry['id']) if entry['id'] in chain else None})
+    rows.sort(key=lambda row: (row['chain'] is None, row['chain'] or 0, row['id']))
+    leftovers = pruning_leftovers()
+    total = sum(item[2] for row in rows if row['action'] == 'delete' for item in row['items'])
+    total += sum(item[2] for row in leftovers for item in row['items'])
+    data = {'operation': 'rollback-prune', 'keep': keep, 'latest': latest, 'transactions': rows,
+            'cleanup': leftovers, 'bytes': total, 'warnings': warnings,
+            'message': 'Remoção irreversível: os backups removidos não podem ser restaurados.'}
+    data['approval'] = digest(encode(data))
+    return data
+
+
+def remove_private_dir(path):
+    """Apaga um diretório de arquivos regulares sem seguir symlinks."""
+    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            for name in os.listdir(descriptor):
+                if not stat.S_ISREG(os.stat(name, dir_fd=descriptor, follow_symlinks=False).st_mode):
+                    raise ValueError(f'item não regular em {path}: {name}')
+                os.unlink(name, dir_fd=descriptor)
+        finally:
+            os.close(descriptor)
+        os.rmdir(path.name, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
+def prune(keep):
+    plan = prune_plan(keep)
+    if not os.environ['DEVSHELL_APPROVAL']:
+        report(plan)
+        return
+    if os.environ['DEVSHELL_APPROVAL'] != plan['approval']:
+        raise ValueError('aprovação de poda inválida; execute rollback --prune --keep N sem aprovação primeiro')
+    removed = []
+    with locked():
+        if prune_plan(keep)['approval'] != plan['approval']:
+            raise RuntimeError('estado mudou antes da poda; planeje novamente')
+        staging = STATE / 'pruning'
+        # Fora da cadeia primeiro; depois a cadeia da mais antiga para a mais nova.
+        doomed = [row for row in plan['transactions'] if row['action'] == 'delete']
+        doomed.sort(key=lambda row: (row['chain'] is not None, -(row['chain'] or 0)))
+        if doomed or plan['cleanup']:
+            staging.mkdir(mode=0o700, exist_ok=True)
+            safe_path(staging)
+        try:
+            for row in plan['cleanup']:
+                remove_private_dir(staging / row['id'])
+            for row in doomed:
+                # D-009: a transação sai do journal num passo atômico antes de ser esvaziada.
+                os.rename(STATE / 'transactions' / row['id'], staging / row['id'])
+                remove_private_dir(staging / row['id'])
+                removed.append(row['id'])
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(f"poda incompleta; removidas: {', '.join(removed) or 'nenhuma'}; restos em {staging}: {exc}") from exc
+    report({'operation': 'rollback-prune', 'changed': len(removed), 'message': 'Backups removidos de forma irreversível.'})
 
 
 VERSION_FLOORS = {'uv': (0, 9, 0), 'chezmoi': (2, 62, 0), 'zsh': (5, 9, 0), 'nu': (0, 116, 1)}
@@ -504,7 +714,13 @@ def main():
             raise ValueError('use plan e depois --approve HASH para aplicar')
         apply_configuration()
     elif command == 'rollback':
-        rollback()
+        mode = os.environ.get('DEVSHELL_ROLLBACK_MODE', '')
+        if mode == 'list':
+            report(history())
+        elif mode == 'prune':
+            prune(int(os.environ['DEVSHELL_KEEP']))
+        else:
+            rollback()
     return 0
 
 

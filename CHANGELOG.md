@@ -2,6 +2,14 @@
 
 ## Não publicado
 
+- `rollback --list` mostra o histórico de transações com status, posição na
+  cadeia e data de criação, que passa a ser gravada nas transações novas.
+  `rollback --prune --keep N` remove backups antigos com plano, hash aprovado,
+  lock e renomeação para `pruning/` antes da remoção; recusa transações
+  interrompidas ou inválidas e avisa ao remover os backups anteriores ao
+  primeiro `apply`. O rollback da transação mais antiga mantida deixa de
+  apontar `latest` para uma transação podada.
+
 - `scripts/check.sh` roda Ruff com regras de defeitos fixadas em `ruff.toml`
   (pyflakes, erros de sintaxe/importação, bugbear e `subprocess.run` sem
   `check`), sem regras de estilo. A versão exigida é a de `manifests/python.json`;

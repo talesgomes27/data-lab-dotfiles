@@ -143,10 +143,53 @@ A restauração recupera conteúdo, modo, UID/GID e timestamps do backup. Não h
 garantia de preservar ACLs/capabilities/xattrs em todos os filesystems; o escopo
 suportado é arquivo regular do usuário. Diretórios vazios podem permanecer.
 
+### Histórico e poda de backups
+
+`rollback --list` mostra cada transação com status, posição na cadeia
+(`cadeia 0` é a atual) e data de criação, sem gravar nada. Transações criadas
+antes desta versão não têm data. Entradas inválidas aparecem com o motivo.
+
+```bash
+./bin/devshell rollback --list
+./bin/devshell rollback --prune --keep 2 --json
+# Revise ids, bytes e avisos, então:
+./bin/devshell rollback --prune --keep 2 --approve HASH_DA_PODA
+```
+
+A poda mantém a transação atual e as N-1 anteriores da cadeia e remove as
+demais, inclusive as que ficaram fora da cadeia depois de um rollback. A
+remoção é irreversível. O plano avisa quando remove a primeira transação da
+cadeia, que guarda os dotfiles de antes do primeiro `apply`, e quando remove
+uma transação que substituiu com `--replace-existing` um arquivo que você
+tinha editado: nos dois casos ela guarda a única cópia do original. Copie esses
+backups para um local privado antes, se quiser conservá-los. Depois da poda, o
+rollback só volta até a transação mais antiga mantida; desfeita essa, não há
+transação para restaurar. Sem transação atual (depois de desfazer todas), não
+há o que manter: o plano avisa que remove todas as listadas.
+
+A aprovação cobre `latest`, N e o hash de cada arquivo; qualquer mudança exige
+novo plano. Sob o lock, cada transação sai de `transactions/` por renomeação
+para `pruning/` antes de ser apagada, sem seguir symlinks. Uma interrupção
+deixa resto apenas em `pruning/`, e a poda seguinte o remove.
+
+A poda recusa o histórico inteiro quando encontra:
+
+| Situação | O que fazer |
+|---|---|
+| Transação `pending` ou `rolling-back` que é a atual | Execute `rollback` e conclua a recuperação antes de podar. |
+| Transação `pending` ou `rolling-back` fora da cadeia (interrupção depois de mover `latest`) | `rollback` não a alcança e desfaria outra transação. Confira com `rollback --list` e `diff` se os dotfiles estão como esperado, preserve os backups dela num local privado e mova o diretório para fora do estado. |
+| Diretório sem `manifest.json` ou com manifesto ilegível (interrupção entre a criação e o journal) | Confira em `rollback --list` que não é `latest`; revise e mova o diretório para um local privado fora do estado. |
+| Arquivo `.devshell-*` dentro de uma transação (gravação interrompida) | Com o manifesto legível, o arquivo é temporário: remova só ele. |
+| Nome fora do padrão, symlink ou item inesperado | Não foi criado pela CLI: revise e mova para fora de `transactions/`. |
+| Status desconhecido | Não edite o manifesto; preserve o diretório e abra uma issue. |
+| `latest` aponta para transação inexistente | Não crie a transação: confira `rollback --list`, preserve o estado e abra uma issue. |
+| Resto inesperado em `pruning/` | O conteúdo não veio de uma poda: revise e mova para fora do estado. |
+
 | Alteração | Recuperação |
 |---|---|
 | Dotfile preexistente aplicado | rollback do backup, se não houve edição posterior |
 | Dotfile criado pela transação | remoção pelo rollback, se ainda corresponde ao aplicado |
+| Transação removida pela poda | irreversível; rollback só alcança as transações mantidas |
 | Diretórios criados | podem permanecer vazios |
 | Binários/plugins instalados | preservar/remover manualmente os paths revistos |
 | uv Python/tools/cache | manutenção manual por uv; sem remoção automática |

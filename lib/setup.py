@@ -18,7 +18,7 @@ def target_paths():
     paths = {Path(path) for path in fs.desired_files()}
     if 'zsh' in fs.COMPONENTS:
         paths.add(fs.CONFIG / 'zsh/.zshenv.local')
-    paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions'))
+    paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions', 'pruning'))
     paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
         paths.add(artifacts.BIN / 'uvx')

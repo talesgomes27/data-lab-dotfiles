@@ -56,6 +56,13 @@ class PermissionReview(unittest.TestCase):
         self.assertTrue(all(issue['repairable'] for issue in issues))
         self.assertTrue(all(path.stat().st_mode & 0o777 == 0o775 for path in paths))
 
+    def test_insecure_pruning_directory_is_reviewed(self):
+        pruning = state.STATE / 'pruning'
+        pruning.mkdir(parents=True)
+        pruning.chmod(0o775)
+        issues = guided.permission_review()
+        self.assertIn(str(pruning), {issue['path'] for issue in issues})
+
     def test_repair_changes_only_reviewed_paths_without_recursion(self):
         paths = self.unsafe_paths()
         unrelated = self.home / '.local/unrelated'

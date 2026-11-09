@@ -13,6 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
+| Suíte local com histórico e poda | 180 testes Bats e 56 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local após guarda estática e Python isolado | 164 testes Bats e 45 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local da candidata de pin | 160 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui o novo smoke de recusa de configuração IDE vinculada pelo pyinit distribuído; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
@@ -29,6 +30,60 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Histórico e poda de transações — 2026-11-09
+
+Bloco A do [plano](plan.md) (R-001 a R-006). Testes escritos antes do código:
+os 10 casos iniciais de `tests/history.bats` falharam em 9 (o de opções
+inválidas já saía com 2) e os 3 de `TransactionHistory` falharam. Os 6 casos
+Bats e 8 unitários acrescentados depois das três revisões independentes
+cobrem comportamento já implementado e não foram vistos falhando antes. Nada
+foi commitado entre teste e código, então essa ordem não está no histórico do
+Git. Depois da implementação,
+`bash scripts/check.sh` em HOME/XDG temporários saiu com 0: 180 Bats, 56
+unittest, Ruff limpo, sem skips (já com os casos pedidos pela revisão
+independente).
+
+- Listagem: cadeia, status `rolled-back` fora da cadeia, entradas inválidas
+  com motivo (diretório sem manifesto, symlink, nome `nao-hex`, temporário
+  `.devshell-*`), manifestos antigos sem `created` também no `doctor`, e
+  árvore de estado idêntica antes e depois (hash de todos os arquivos).
+- Poda: plano sem escrita, inclusive com `--dry-run` e com `--dry-run
+  --approve`; aviso quando não há transação atual; recusa, com remissão ao
+  SECURITY e árvore inalterada, de `pending`, `rolling-back` e status
+  desconhecido, de `pending` fora da cadeia (sem sugerir rollback), de
+  diretório sem manifesto, manifesto com JSON inválido, temporário
+  `.devshell-*`, symlink e nome fora do padrão; aprovação vencida ou com N
+  diferente; remoção só do plano com `latest`, `current.json` e transações
+  mantidas byte a byte iguais.
+- Falha injetada no segundo esvaziamento: `transactions/` ficou só com
+  transações inteiras; rollback, apply e nova poda funcionaram, e a poda
+  seguinte limpou `pruning/`. Um symlink dentro da transação bloqueia o plano e
+  o arquivo apontado fica intacto.
+- Rollback depois de `--keep 1` remove `latest`; o seguinte responde "Nenhuma
+  transação para restaurar." e um novo `apply` funciona. O caminho de falha do
+  `apply` não precisou mudar: ele só restaura um `latest` que existia sob o
+  mesmo lock que a poda usa.
+- Os exemplos da USAGE são a saída de uma HOME de teste com três transações,
+  com ids, hash e datas substituídos por marcadores.
+- Três revisões independentes (relatórios na conversa, não versionados), sem
+  P0/P1. Entraram: orientação específica para transação interrompida dentro e
+  fora da cadeia, aviso sem transação atual, restos de `pruning/` visíveis na
+  listagem e no plano, tipos do manifesto validados, `rmdir` pelo descritor do
+  diretório pai, `pruning/` na revisão de permissões do setup, e testes de
+  resto sem manifesto, resto inesperado, estado alterado sob o lock e ids
+  removidos na mensagem de falha. A terceira revisão acrescentou: aviso ao
+  podar a única cópia de um original substituído com `--replace-existing`,
+  `previous_latest` validado como id antes do rollback usá-lo, aviso quando o
+  rollback remove `latest` por manifesto anterior ilegível, ordem de remoção
+  testada pela falha injetada (a primeira removida é a mais antiga), recusa de
+  symlink trocado dentro de `pruning/` em `remove_private_dir`, e `pruning/` só
+  criado quando há o que remover. Fica para decisão do usuário: D-004 trata
+  igual manifesto anterior ausente e ilegível (agora com aviso); o usuário
+  decidiu manter assim em 2026-11-09.
+
+Limites: a poda não cobre `launcher-backups`, `permission-repairs` e outros
+diretórios de estado (N-001). Matriz de containers não executada.
 
 ## Ruff no check — 2026-11-09
 

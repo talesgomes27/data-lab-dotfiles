@@ -1,4 +1,5 @@
 """Fixtures artificiais; testes offline da fronteira de escrita e de arquivos tar."""
+import contextlib
 import io
 import json
 import os
@@ -387,6 +388,165 @@ class TransactionBoundary(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'regular independente'):
             state.build_plan()
         self.assertEqual(original.read_text(), 'preservar')
+
+
+class TransactionHistory(unittest.TestCase):
+    """R-004, R-005 e R-006 nas falhas que só um teste unitário consegue injetar."""
+
+    setUp = TransactionBoundary.setUp
+    apply = TransactionBoundary.apply
+
+    def make_transactions(self, count):
+        for index in range(count):
+            (self.root / 'dotfiles/dot_zshenv').write_text(f'versão {index}\n')
+            self.apply()
+
+    def prune(self, keep):
+        os.environ['DEVSHELL_APPROVAL'] = state.prune_plan(keep)['approval']
+        state.prune(keep)
+
+    def transaction_ids(self):
+        return sorted(path.name for path in (state.STATE / 'transactions').iterdir())
+
+    def test_r005_interrupted_prune_leaves_only_whole_transactions(self):
+        self.make_transactions(4)
+        removed = state.remove_private_dir
+        calls = []
+
+        def fail_on_second(path):
+            calls.append(path)
+            if len(calls) == 2:
+                raise OSError('falha injetada')
+            removed(path)
+
+        with patch.object(state, 'remove_private_dir', side_effect=fail_on_second):
+            oldest = next(name for name in self.transaction_ids()
+                          if json.loads((state.STATE / 'transactions' / name / 'manifest.json').read_text())['previous_latest'] is None)
+            with self.assertRaisesRegex(RuntimeError, f'poda incompleta; removidas: {oldest};'):
+                self.prune(1)
+        for name in self.transaction_ids():
+            self.assertTrue((state.STATE / 'transactions' / name / 'manifest.json').is_file())
+        self.assertTrue(any((state.STATE / 'pruning').iterdir()))
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        (self.root / 'dotfiles/dot_zshenv').write_text('após falha\n')
+        self.apply()
+        self.prune(1)
+        self.assertEqual(list((state.STATE / 'pruning').iterdir()), [])
+        self.assertEqual(len(self.transaction_ids()), 1)
+
+    def test_r005_leftover_without_manifest_is_cleaned_and_unexpected_is_refused(self):
+        self.make_transactions(2)
+        leftover = state.STATE / 'pruning' / ('a' * 32)
+        leftover.mkdir(parents=True, mode=0o700)
+        (leftover / '0').write_text('backup restante')
+        listing = state.history()
+        self.assertEqual([row['id'] for row in listing['cleanup']], ['a' * 32])
+        plan = state.prune_plan(1)
+        self.assertEqual([row['id'] for row in plan['cleanup']], ['a' * 32])
+        self.prune(1)
+        self.assertEqual(list((state.STATE / 'pruning').iterdir()), [])
+        for name in ('nao-hex', 'b' * 32):
+            path = state.STATE / 'pruning' / name
+            if name == 'nao-hex':
+                path.mkdir(mode=0o700)
+            else:
+                path.symlink_to(self.home)
+            before = sorted(str(item) for item in state.STATE.rglob('*'))
+            with self.assertRaisesRegex(ValueError, 'SECURITY'):
+                state.prune_plan(1)
+            self.assertEqual(sorted(str(item) for item in state.STATE.rglob('*')), before)
+            path.unlink() if path.is_symlink() else path.rmdir()
+
+    def test_r005_state_changed_under_lock_removes_nothing(self):
+        self.make_transactions(3)
+        real_locked = state.locked
+        latest = state.latest_name()
+
+        @contextlib.contextmanager
+        def locked_after_change():
+            with real_locked():
+                manifest = state.STATE / 'transactions' / latest / 'manifest.json'
+                data = json.loads(manifest.read_text())
+                manifest.write_text(json.dumps(data | {'created': '2000-01-01T00:00:00Z'}))
+                yield
+
+        os.environ['DEVSHELL_APPROVAL'] = state.prune_plan(1)['approval']
+        before = self.transaction_ids()
+        with patch.object(state, 'locked', locked_after_change):
+            with self.assertRaisesRegex(RuntimeError, 'estado mudou'):
+                state.prune(1)
+        self.assertEqual(self.transaction_ids(), before)
+
+    def test_r001_wrong_types_in_manifest_become_invalid_entries(self):
+        self.make_transactions(2)
+        oldest = next(name for name in self.transaction_ids() if name != state.latest_name())
+        manifest = state.STATE / 'transactions' / oldest / 'manifest.json'
+        for field, value in (('previous_latest', ['x']), ('created', 7)):
+            data = json.loads(manifest.read_text())
+            original = data.get(field)
+            manifest.write_text(json.dumps(data | {field: value}))
+            rows = {row['id']: row for row in state.history()['transactions']}
+            self.assertEqual(rows[oldest]['status'], 'invalida')
+            manifest.write_text(json.dumps(data | {field: original}))
+
+    def test_r004_interrupted_inside_chain_has_specific_message(self):
+        self.make_transactions(2)
+        oldest = next(name for name in self.transaction_ids() if name != state.latest_name())
+        manifest = state.STATE / 'transactions' / oldest / 'manifest.json'
+        manifest.write_text(json.dumps(json.loads(manifest.read_text()) | {'status': 'pending'}))
+        with self.assertRaisesRegex(ValueError, 'na cadeia, mas não é a atual'):
+            state.prune_plan(1)
+
+    def test_r003_warns_when_deleting_only_copy_of_replaced_original(self):
+        self.make_transactions(1)
+        (self.home / '.zshenv').write_text('editado à mão\n')
+        (self.root / 'dotfiles/dot_zshenv').write_text('substitui o editado\n')
+        self.apply()
+        replaced = state.latest_name()
+        self.make_transactions(1)
+        warnings = state.prune_plan(1)['warnings']
+        self.assertTrue(any(replaced in w and str(self.home / '.zshenv') in w for w in warnings), warnings)
+
+    def test_r006_rollback_ignores_previous_latest_outside_transactions(self):
+        self.make_transactions(1)
+        directory, _ = state.latest_transaction()
+        manifest = directory / 'manifest.json'
+        manifest.write_text(json.dumps(json.loads(manifest.read_text()) | {'previous_latest': '../..'}))
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertFalse((state.STATE / 'latest').exists())
+
+    def test_r005_removal_refuses_symlink_swapped_after_plan(self):
+        outside = self.home / 'fora'
+        outside.write_text('preservar')
+        doomed = self.home / 'pruning' / ('c' * 32)
+        doomed.mkdir(parents=True)
+        (doomed / '0').symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'não regular'):
+            state.remove_private_dir(doomed)
+        self.assertEqual(outside.read_text(), 'preservar')
+        self.assertTrue((doomed / '0').is_symlink())
+
+    def test_r004_pruning_never_follows_symlink_inside_transaction(self):
+        self.make_transactions(2)
+        outside = self.home / 'fora'
+        outside.write_text('preservar')
+        oldest = next(name for name in self.transaction_ids()
+                      if json.loads((state.STATE / 'transactions' / name / 'manifest.json').read_text())['previous_latest'] is None)
+        (state.STATE / 'transactions' / oldest / '9').symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, 'SECURITY'):
+            state.prune_plan(1)
+        self.assertEqual(outside.read_text(), 'preservar')
+
+    def test_r006_rollback_does_not_point_latest_to_unreadable_manifest(self):
+        self.make_transactions(2)
+        directory, transaction = state.latest_transaction()
+        (state.STATE / 'transactions' / transaction['previous_latest'] / 'manifest.json').unlink()
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertFalse((state.STATE / 'latest').exists())
+        self.assertEqual(state.latest_transaction(), (None, None))
 
 
 class StaticChezmoiSource(unittest.TestCase):
