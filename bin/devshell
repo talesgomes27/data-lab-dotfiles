@@ -106,11 +106,11 @@ while (($#)); do
     esac
 done
 [[ "$command" == project || "$project_path_set" == 0 ]] || fail '--path só é aceito por project'
-if [[ "$command" != rollback ]]; then
-    ((rollback_list == 0 && rollback_prune == 0)) && [[ -z "$keep" ]] || fail '--list, --prune e --keep só são aceitos por rollback'
+if [[ "$command" != rollback && ($rollback_list == 1 || $rollback_prune == 1 || -n "$keep") ]]; then
+    fail '--list, --prune e --keep só são aceitos por rollback'
 fi
-if ((rollback_list)); then
-    ((rollback_prune == 0)) && [[ -z "$keep" && -z "$approval" ]] || fail 'rollback --list não aceita --prune, --keep ou --approve'
+if [[ $rollback_list == 1 && ($rollback_prune == 1 || -n "$keep" || -n "$approval") ]]; then
+    fail 'rollback --list não aceita --prune, --keep ou --approve'
 fi
 if ((rollback_prune)) || [[ -n "$keep" ]]; then
     ((rollback_prune)) || fail '--keep requer --prune'
