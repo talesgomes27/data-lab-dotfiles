@@ -10,3 +10,13 @@ with open(os.environ['FOUNDRY_UV_LOG'], 'a') as stream:
     stream.write(json.dumps({'args': sys.argv[1:], 'dirs': {key: os.environ.get(key) for key in ['UV_PYTHON_INSTALL_DIR', 'UV_TOOL_DIR', 'UV_TOOL_BIN_DIR', 'UV_CACHE_DIR']}}) + '\n')
 if os.environ.get('FOUNDRY_UV_FAIL'):
     sys.exit(7)
+args = sys.argv[1:]
+if 'venv' in args:
+    from pathlib import Path
+    (Path(args[-1]) / 'bin').mkdir(parents=True, exist_ok=True)
+elif 'pip' in args and 'install' in args:
+    from pathlib import Path
+    venv = Path(args[args.index('--python') + 1]).parent.parent
+    executable = venv / 'bin' / Path(args[args.index('-r') + 1]).stem
+    executable.write_text('#!/bin/sh\n')
+    executable.chmod(0o755)

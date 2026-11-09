@@ -108,7 +108,7 @@ o novo hash e aprovando conflitos com `--replace-existing` e backup.
 | Sem artefato para arquitetura/libc | Use instalação manual oficial; não troque por binário de outra arquitetura. |
 | Checksum divergente | Não execute o arquivo; confira release, manifesto e caminho do cache informado. Preserve a cópia para inspeção. |
 | Offline sem cache | Prepare os arquivos oficiais exatos e o cache uv, ou retome em modo online. |
-| Ferramenta uv em outra versão | Confira `uv tool list`; o projeto não força substituição. |
+| Ferramenta Python em conflito, divergente ou com link órfão | Leia a mensagem do `doctor`: `uv tool uninstall NOME` para a instalação antiga, ou revise e mova a venv ou o link indicado. O projeto não remove nem substitui o que não criou. |
 | DuckDB ausente ou inseguro | É opcional. Confira origem, dono e modos dos diretórios e do executável; não aplique chmod recursivo. O reparo genérico do setup pode não abranger sua árvore externa. |
 
 ## Recuperação e outros limites

@@ -30,10 +30,16 @@ approval=$(./bin/devshell plan --profile personal,science --json | python3 -c 'i
 uv --version
 uvx --version
 uv --no-config python list --only-installed
-uv --no-config tool list
+# R-024: as ferramentas vêm das venvs com hash obrigatório, pelo symlink, e o doctor as aceita.
+for tool in ruff pre-commit ipython; do
+    [[ $(readlink "$HOME/.local/bin/$tool") == "$XDG_DATA_HOME/devshell/tools/$tool/bin/$tool" ]]
+done
 ruff --version
 pre-commit --version
 ipython --version
+# doctor pode sair com 3 por outros componentes; aqui importam só as ferramentas.
+doctor_report=$(./bin/devshell doctor --profile science --json || true)
+printf '%s' "$doctor_report" | python3 -c 'import json,sys;i=[s for s in json.load(sys.stdin)["issues"] if any(k in s for k in ("ferramenta uv","componentes uv","interpretador uv"))];assert not i,i'
 nu -c 'version | get version'
 # shortcut: sem TTY valida carregamento; usar PTY para testar interação com ZLE.
 zsh -fic '

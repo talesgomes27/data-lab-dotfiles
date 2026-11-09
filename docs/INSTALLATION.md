@@ -27,7 +27,7 @@ própria; um doctor sem problemas não comprova todo projeto científico externo
 | Aplicar dotfiles | Chezmoi >=2.62.0 e diretórios HOME/XDG graváveis pelo usuário e seguros | O setup instala Chezmoi se faltar; os hashes e backups continuam obrigatórios. |
 | Terminal personal | Zsh >=5.9, Starship, fzf, zoxide, direnv, ripgrep, fd, bat, eza, Delta e Fontconfig | Pacotes mapeados da distribuição; confira a disponibilidade da sua release. fzf >=0.48 é necessário aos atalhos integrados por `--zsh`. |
 | Complementos personal | Nushell >=0.116.1, dois plugins Zsh e FiraCode Nerd Font | O setup pode instalar os componentes de usuário. Escolha a fonte Mono no emulador; os ícones dependem dessa seleção. |
-| Ferramentas Python science | uv >=0.9.0, CPython e CLI declaradas no manifesto (Ruff, pre-commit, IPython) | uv e seus ambientes isolados são preparados pelo projeto; não instale pacotes com pip no Python do sistema. |
+| Ferramentas Python science | uv >=0.13.5, CPython e CLI declaradas no manifesto (Ruff, pre-commit, IPython) | Cada CLI ganha uma venv própria com lock e hash obrigatório; instalações anteriores pelo `uv tool` exigem a migração de [SECURITY](SECURITY.md#escopo-e-downloads). Não instale pacotes com pip no Python do sistema. |
 | Gerador de projetos science | `pyinit` (python-template-linux) | Script fixado por commit e SHA-256, instalado em `~/.local/bin` após confirmação; `direnv allow` permanece manual. |
 | Scripts e testes science | ShellCheck, shfmt e Bats | Pacotes da distribuição. Para executar a suíte, também são necessários Zsh, Nushell e Chezmoi. |
 | Extras | btop, ncdu, tealdeer (`tldr`) e Lazygit | Perfil `extras`; nem todos os adaptadores/releases oferecem todos os pacotes. |
@@ -130,7 +130,7 @@ A execução efetiva percorre estas etapas:
 2. Apresenta pacotes ausentes e mapeados. A execução administrativa tem uma
    confirmação própria; o gerenciador de pacotes pode perguntar novamente.
    Um pacote sem mapeamento bloqueia a tentativa administrativa parcial.
-3. Mantém uv >=0.9.0, Chezmoi >=2.62.0, Nushell >=0.116.1 e Zsh >=5.9
+3. Mantém uv >=0.9.0 (>=0.13.5 com `science`), Chezmoi >=2.62.0, Nushell >=0.116.1 e Zsh >=5.9
    compatíveis já disponíveis. Versões antigas exigem atualização manual.
    Cada componente ausente de usuário tem plano e confirmação próprios.
    Plugins, fonte e Python passam por verificação idempotente.
@@ -323,7 +323,9 @@ Para artefatos, prepare o arquivo oficial exato no cache
 Python usa o cache próprio de uv e interpretadores disponíveis.
 
 Os defaults de configuração, dados e estado seguem XDG. Valores XDG relativos
-usam os defaults da CLI. UV_PYTHON_INSTALL_DIR, UV_TOOL_DIR, UV_TOOL_BIN_DIR e
-UV_CACHE_DIR absolutos podem ser definidos explicitamente; o projeto não os
-exporta globalmente. A fonte fica em `$XDG_DATA_HOME/fonts/FiraCodeNerdFont`.
+usam os defaults da CLI. UV_PYTHON_INSTALL_DIR, UV_TOOL_BIN_DIR e UV_CACHE_DIR
+absolutos podem ser definidos explicitamente; o projeto não os exporta
+globalmente. As venvs das ferramentas ficam em `$XDG_DATA_HOME/devshell/tools`,
+e as demais variáveis `UV_*` não valem para a instalação delas. UV_TOOL_DIR
+continua validado quando definido, mas as ferramentas do projeto não o usam. A fonte fica em `$XDG_DATA_HOME/fonts/FiraCodeNerdFont`.
 Confira mais opções em `./bin/devshell --help`.

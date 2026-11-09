@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Inspeção do setup e ajuste restrito das permissões explicitamente revisadas."""
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -25,7 +26,13 @@ def target_paths():
     if any(component in fs.COMPONENTS for component in ('plugins', 'firacode', 'pyinit')) or any(not shutil.which(tool) for tool in ('uv', 'chezmoi', 'nu') if tool in fs.COMPONENTS):
         paths.add(artifacts.CACHE / 'artifact')
     if 'python-tools' in fs.COMPONENTS:
-        paths.update(Path(path) for path in artifacts.python_dirs(validate=False).values())
+        dirs = artifacts.python_dirs(validate=False)
+        paths.update(Path(path) for path in dirs.values())
+        # Só a raiz e cada venv: o conteúdo tem symlinks e hardlinks normais de uma venv.
+        tools = artifacts.DATA / 'devshell/tools'
+        paths.add(tools)
+        paths.update(tools / tool['name'] for tool in json.loads((fs.ROOT / 'manifests/python.json').read_text())['tools']
+                     if re.fullmatch(r'[a-z][a-z0-9-]*', tool['name']))
     for component, relative in (('plugins', 'devshell/plugins'), ('firacode', 'fonts/FiraCodeNerdFont')):
         if component not in fs.COMPONENTS:
             continue
@@ -105,7 +112,7 @@ def inspect():
     deps = fs.dependencies(exclude=('uv', 'chezmoi', 'nu'))
     versions, blockers, user_components = {}, fs.zsh_compiled_issues(), []
     if not permissions:
-        for tool, floor in fs.VERSION_FLOORS.items():
+        for tool, floor in fs.version_floors().items():
             if tool not in fs.COMPONENTS or not shutil.which(tool):
                 continue
             try:
@@ -129,6 +136,17 @@ def inspect():
         user_components.append('pyinit')
     if deps['manual_only']:
         blockers.append('componentes nativos ausentes sem pacote/adaptador definido: ' + ', '.join(deps['manual_only']))
+    if 'python-tools' in fs.COMPONENTS:
+        # R-025: a migração manual aparece antes de qualquer comando administrativo. Com reparos
+        # pendentes, só os links são lidos; o restante é reavaliado depois do reparo.
+        try:
+            spec = artifacts.python_spec()
+            if permissions:
+                blockers.extend(artifacts.python_tools.link_conflicts(spec, artifacts.python_dirs(validate=False)))
+            else:
+                blockers.extend(artifacts.python_tools.blockers(spec, artifacts.python_dirs()))
+        except (ValueError, OSError) as exc:
+            blockers.append(f'ferramentas Python: {exc}')
     return {'operation': 'setup', 'profiles': os.environ['DEVSHELL_PROFILES'].split(','),
             'components': fs.COMPONENTS, 'permissions': permissions, 'versions': versions,
             'native_command': deps['manual_system_command'], 'dependencies': deps,

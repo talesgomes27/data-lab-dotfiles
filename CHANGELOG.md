@@ -2,6 +2,14 @@
 
 ## Não publicado
 
+- Ruff, pre-commit e IPython passam a ser instalados em venvs próprias, a partir
+  de locks com hash de todas as dependências (`manifests/python-tools/`), com
+  `uv pip install --require-hashes`. O `doctor` confere a venv contra o lock.
+  **Migração:** quem já tem essas ferramentas pelo `uv tool` verá o `doctor` e o
+  `setup` apontarem conflito até rodar `uv tool uninstall NOME` para cada uma e
+  repetir `install --component python` aprovado. O uv mínimo com `science`
+  passa a 0.13.5.
+
 - O workflow `Verificações` passa a rodar toda segunda às 09:17 UTC com a
   cobertura do disparo manual: cenários opcionais sem skips, matriz de
   containers e smoke online.

@@ -13,9 +13,14 @@ for tool in chezmoi nu uv; do
     approval=$(./bin/devshell install --component "$tool" --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
     ./bin/devshell install --component "$tool" --approve "$approval"
 done
-# Ruff do check.sh: mesma versão fixada em manifests/python.json, com o Python do runner.
-ruff_pin=$(python3 -c 'import json;print(next(t["version"] for t in json.load(open("manifests/python.json"))["tools"] if t["name"]=="ruff"))')
-uv --no-config tool install --no-python-downloads --python "$(command -v python3)" "ruff==$ruff_pin"
+# Ruff do check.sh: lock com hash obrigatório numa venv só do CI, fora de devshell/tools e de
+# UV_TOOL_BIN_DIR, para não colidir com a instalação de science no smoke (R-024, R-025).
+uv --no-config --no-progress venv --no-python-downloads --python "$(command -v python3)" "$HOME/.cache/ci-ruff"
+uv --no-config --no-progress pip install --python "$HOME/.cache/ci-ruff/bin/python" --require-hashes --no-build \
+    --link-mode copy -r manifests/python-tools/ruff.txt
+mkdir -p "$HOME/.local/ci-bin"
+ln -sfn "$HOME/.cache/ci-ruff/bin/ruff" "$HOME/.local/ci-bin/ruff"
+export PATH="$HOME/.local/ci-bin:$PATH"
 starship_archive="$HOME/starship.tar.gz"
 curl --fail --location --silent --show-error --output "$starship_archive" https://github.com/starship/starship/releases/download/v1.22.1/starship-x86_64-unknown-linux-musl.tar.gz
 printf '62c91b5ecc7f8c8c6ea7ffea42a98bd2e6a2d29daf61562fac04daece18a6461  %s\n' "$starship_archive" | sha256sum --check

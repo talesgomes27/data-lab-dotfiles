@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 2
+versao_spec: 3
 atualizado_em: 2026-11-09
 gerado_por: pre-code-pipeline
 ---
@@ -24,10 +24,16 @@ Fatos observados (2026-11-09):
 - Transações locais: 13, todas `committed`, numa cadeia linear por
   `previous_latest`, 144 KiB. Os manifestos têm `files`, `previous_latest`,
   `previous_registry` e `status`, sem data de criação.
-- `uv tool install` (0.13.5) aceita `--constraints` e `--no-build`, mas não
-  `--require-hashes`, que existe só em `uv pip`. Pela documentação do uv,
-  hashes vindos de arquivos de constraints são regras de verificação ativas;
-  isso ainda não foi provado na prática (Q-001).
+- `uv tool install` (0.13.5) ignora os hashes de `--constraints` e de
+  `--with-requirements`, mesmo com `UV_REQUIRE_HASHES=1` (Q-001, teste offline).
+  `uv pip install --require-hashes -r LOCK` recusa hash errado e dependência
+  ausente do lock; `uv pip sync --require-hashes` recusa hash errado, mas
+  instala sem a dependência ausente.
+- O uv grava o caminho da venv nos executáveis: a venv não pode ser montada num
+  diretório temporário e renomeada depois.
+- Hoje ruff, pre-commit e ipython estão em `~/.local/share/uv/tools`, com
+  symlinks em `~/.local/bin`; o mesmo `uv tool` guarda outras ferramentas do
+  usuário, fora do Data Lab.
 - GitHub Actions: `schedule` usa cron POSIX em UTC, roda só na branch padrão,
   é desativado após 60 dias sem atividade em repositório público, e a
   notificação de falha vai para quem modificou o cron por último.
@@ -131,7 +137,7 @@ Fatos observados (2026-11-09):
 
 **Lock das ferramentas uv**
 
-### R-020 Constraints com hash por ferramenta
+### R-020 Lock com hash por ferramenta
 - Enunciado: cada ferramenta de `manifests/python.json` tem
   `manifests/python-tools/NOME.txt` com todas as dependências fixadas por `==`
   e ao menos um `--hash=sha256:`, incluindo a própria ferramenta na versão do
@@ -143,59 +149,79 @@ Fatos observados (2026-11-09):
   vazias, e guarda o marcador de ambiente (`; ...`) sem avaliá-lo. Sem
   `python-tools` nos componentes, nenhum lock é exigido.
 - Prioridade: alta
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: implementado
+- Evidência: tests/test_boundaries.py::PythonToolLocks.test_r020_reads_continuations_comments_markers_and_normalizes_names; tests/test_boundaries.py::PythonToolLocks.test_r020_refuses_invalid_or_mismatched_locks; manifests/python-tools/ruff.txt
 
-### R-021 Instalação restrita ao lock
-- Enunciado: `install --component python` passa `--constraints ARQUIVO
-  --no-build` a cada `uv tool install`.
-- Critério: Dado o plano, Quando é exibido, Então cada comando de ferramenta
-  contém o caminho do arquivo de constraints e `--no-build`, e o hash de
-  aprovação muda quando o arquivo muda (ele está em `manifests/`, coberto por
-  `source_sha256`). Com ferramentas no plano, `check()` exige o uv na versão
-  provada em R-022 ou superior.
+### R-021 Instalação com hash obrigatório
+- Enunciado: `install --component python` cria, para cada ferramenta, uma venv
+  própria em `$XDG_DATA_HOME/devshell/tools/NOME` com o CPython gerenciado de
+  `tool_python`, instala o lock com `uv pip install --require-hashes --no-build
+  -r LOCK` e liga `$UV_TOOL_BIN_DIR/NOME` à `bin/NOME` da venv por symlink.
+  Os comandos apontam a venv por `--python`, rodam sem `VIRTUAL_ENV`,
+  `CONDA_PREFIX` e variáveis `UV_*` do usuário além dos diretórios do Data Lab,
+  e não baixam interpretador.
+- Critério: Dado o plano, Quando é exibido, Então mostra os comandos `uv venv`
+  e `uv pip install` com o lock e a flag `--require-hashes`, o diretório da
+  venv e o symlink; o hash de aprovação muda quando o lock muda. Dada uma
+  instalação aprovada num ambiente de teste, a ferramenta executa pelo symlink
+  e repetir a instalação não altera nada; uma venv ativa de outro projeto sai
+  intacta. Com `python-tools` nos componentes, `check()`, `setup` e `doctor`
+  exigem o uv 0.13.5 ou superior.
 - Prioridade: alta
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: implementado
+- Evidência: tests/setup.bats::R-021 instalação preserva venv ativa de outro projeto e não chama uv tool; tests/setup.bats::R-021 repetir a instalação conforme não chama o uv para as ferramentas; tests/install.bats; fluxo com uv real pendente do smoke online
 
-### R-022 Hash divergente recusado
-- Enunciado: o uv recusa um artefato cujo hash difere do lock.
+### R-022 Hash divergente ou dependência fora do lock recusados
+- Enunciado: a instalação falha sem deixar ferramenta parcial quando um hash
+  diverge ou uma dependência não está no lock.
 - Critério: Dados dois wheels locais construídos no teste, A dependendo de B,
-  servidos com `--find-links`, `--no-index` e `--offline`, com o Python do
-  sistema (`--python "$(command -v python3)"`, sem Python gerenciado), Quando
-  `uv tool install A` roda com constraints em que o hash de B está errado,
-  Então falha com mensagem de divergência de hash e `UV_TOOL_DIR/A` não existe;
-  com os hashes certos, instala. O teste também registra o que acontece ao
-  reinstalar com constraints uma ferramenta já instalada sem elas e ao resolver
-  um pacote ausente do lock. Se o hash errado instalar, a tarefa para e PC-3 é
-  reaberto (D-008).
+  servidos offline com `--find-links`, Quando o lock tem o hash de B errado, ou
+  não tem B, Então `uv pip install --require-hashes` falha, a venv criada nesta
+  execução é removida, nenhum symlink é criado e a saída é 2; com o lock
+  correto, A executa pelo symlink. Verificação em dois níveis: o comportamento
+  do uv com wheels reais offline (T-201) e o da CLI com uv simulado (T-205); o
+  fluxo da CLI com uv real só roda com rede, no smoke (R-024).
 - Prioridade: alta
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: implementado
+- Evidência: tests/uv_constraints.bats (uv real, offline); tests/setup.bats::R-022 falha do uv pip install remove só a venv criada e sai com 2 (uv simulado); tests/setup.bats::R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores
 
-### R-023 Doctor detecta ferramenta fora do lock
-- Enunciado: `doctor` compara as distribuições instaladas no ambiente de cada
-  ferramenta com o arquivo de constraints.
-- Critério: Dado um ambiente de ferramenta com uma dependência em versão
-  diferente do lock, ou com uma distribuição que não aparece no lock, Quando
-  `doctor --profile science` roda, Então há o diagnóstico "ferramenta uv fora
-  do lock: NOME (DIST VERSÃO, lock VERSÃO)" e saída 3; a CLI não reinstala nem
-  usa `--force`. Nomes são comparados normalizados (PEP 503); uma linha do lock
-  sem distribuição instalada não gera alerta, porque pode ser de outra
-  plataforma.
-- Prioridade: média
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+### R-023 Doctor confere a ferramenta contra o lock
+- Enunciado: `doctor` confere a venv, o interpretador, as distribuições
+  instaladas e o symlink de cada ferramenta, sem executá-la.
+- Critério: Dado um ambiente de ferramenta com uma distribuição em versão
+  diferente do lock, uma distribuição ausente do lock, uma linha do lock sem
+  marcador e sem distribuição instalada, um interpretador diferente de
+  `tool_python`, ou um symlink que aponte para fora da venv, Quando
+  `doctor --profile science` roda, Então há diagnóstico com o nome da
+  ferramenta e saída 3. Nomes são comparados normalizados (PEP 503); linhas com
+  marcador sem distribuição instalada não geram alerta. O hash do executável e
+  dos módulos essenciais continua conferido pelo RECORD.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/setup.bats (oito testes R-023 do doctor, inclusive link para fora da venv e interpretador fora do CPython gerenciado)
 
 ### R-024 Smoke online com lock
-- Enunciado: o smoke online instala as ferramentas com os arquivos de lock.
+- Enunciado: o smoke online instala as ferramentas pelo fluxo com hash.
 - Critério: Dado `scripts/online-smoke.sh` no CI, Quando roda, Então ruff,
-  pre-commit e ipython instalam com `--constraints`, a saída de `doctor` não
-  contém "fora do lock", e o Ruff de `scripts/ci-setup.sh` também é instalado
-  com o lock.
+  pre-commit e ipython instalam com `--require-hashes`, executam pelo symlink e
+  a saída de `doctor --profile science` não aponta nenhuma ferramenta; o Ruff
+  de `scripts/ci-setup.sh` também é instalado com o lock e `--require-hashes`.
 - Prioridade: média
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: implementado
+- Evidência: scripts/online-smoke.sh; scripts/ci-setup.sh; execução remota pendente de workflow_dispatch
+
+### R-025 Migração explícita das instalações antigas
+- Enunciado: a CLI não remove nem substitui instalações que não criou.
+- Critério: Dado `$UV_TOOL_BIN_DIR/NOME` que não seja o symlink da venv do Data
+  Lab (por exemplo o do `uv tool`), ou `devshell/tools/NOME` existente e
+  divergente do lock, Quando `install --component python` planeja, Então sai
+  com 2, nada é alterado e a mensagem traz o comando manual (`uv tool uninstall
+  NOME`, ou revisar e mover o diretório). O mesmo bloqueio aparece em `setup
+  --dry-run` e antes de qualquer comando administrativo do `setup`. Outras
+  ferramentas do `uv tool` continuam intactas e a CLI não chama `uv tool`.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/setup.bats::R-025 instalação do uv tool bloqueia setup e install sem alterar nada; tests/setup.bats::R-025 dry-run mostra conflito do uv tool mesmo com reparo de permissão pendente; tests/setup.bats::R-025 setup science repara permissão de grupo antes de avaliar as ferramentas; tests/test_boundaries.py::PythonToolLocks.test_r025_states_absent_orphan_link_conflict_and_divergent
 
 **Documentação**
 
@@ -215,7 +241,7 @@ Fatos observados (2026-11-09):
 
 ### N-001 Poda de `launcher-backups`, `permission-repairs`, `manual-backups` e `user-config-backups`
 ### N-002 Poda automática ou por idade, sem aprovação
-### N-003 Reinstalação automática ou `--force` de ferramentas fora do lock
+### N-003 Reinstalação automática, `--force` ou remoção pela CLI de ferramentas fora do lock ou instaladas pelo `uv tool`
 ### N-004 Lock do próprio uv, do Chezmoi ou do Nushell (já fixados por SHA-256 em `artifacts.json`)
 ### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa)
 ### N-006 Alerta por canal além da notificação padrão do GitHub
@@ -248,8 +274,9 @@ apagado com `dir_fd` e `O_NOFOLLOW`. Uma interrupção deixa resto apenas em
 `pruning/`, que nenhum leitor do journal consulta e que a poda seguinte limpa.
 
 ### D-010 Piso do uv acompanha a prova
-Com ferramentas e locks no plano, `check()` exige o uv na versão em que R-022
-foi provado (hoje 0.13.5), porque a verificação de hash depende dele.
+Com `python-tools` nos componentes, `check()` e `VERSION_FLOORS` (usado por
+`setup` e `doctor`) exigem o uv na versão em que Q-001 e R-022 foram provados
+(0.13.5), porque a verificação de hash depende dele.
 
 ### D-005 `created` opcional
 Novos manifestos ganham `created`; leitores tratam ausência como `null`. O
@@ -260,30 +287,54 @@ campo não entra no hash do plano de `apply`.
 quando o GitHub atrasa ou descarta execuções. As condições dos jobs passam a
 `github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'`.
 
-### D-007 Um arquivo de constraints com hash por ferramenta
-Gerado na revisão de manifesto com
-`uv pip compile --universal --python-version 3.13 --generate-hashes`, a partir
-de `NOME==VERSÃO`, com `uv --no-config`, `--index-url https://pypi.org/simple`
-e `--no-python-downloads`, e versionado em `manifests/python-tools/`.
-`--python-version` é o `tool_python` de `manifests/python.json` em minor. Um arquivo por
-ferramenta evita conflito de dependências entre ferramentas. `--no-build`
-impede compilar sdists, cujas dependências de build não teriam hash. Fica
-registrado no ADR 004.
+### D-007 Um lock com hash por ferramenta
+Gerado na revisão de manifesto com `uv --no-config pip compile --universal
+--python-version 3.13 --generate-hashes --index-url https://pypi.org/simple
+--no-python-downloads` a partir de `NOME==VERSÃO`, e versionado em
+`manifests/python-tools/`. `--python-version` é o `tool_python` de
+`manifests/python.json` em minor. Um arquivo por ferramenta evita conflito de
+dependências entre elas.
 
-### D-008 Plano B se o uv não verificar os hashes
-Se R-022 mostrar que `uv tool install` ignora os hashes das constraints, a
-alternativa é criar o ambiente com `uv venv` e `uv pip install --require-hashes`
-e expor os executáveis, o que troca os recibos do `uv tool` e muda o doctor.
-Essa troca reabre PC-3 com o usuário antes de implementar.
+### D-008 Venv própria com `uv pip install --require-hashes` (adotada)
+O `uv tool install` não aplica hashes (Q-001). Cada ferramenta vira uma venv
+criada por `uv venv --managed-python --python TOOL_PYTHON` e preenchida por
+`uv pip install --require-hashes --no-build -r LOCK`. `install -r` foi
+escolhido sobre `sync` porque recusa dependência ausente do lock. O destino
+é sempre `--python VENV/bin/python`, com `--link-mode copy` para a venv não ter
+hardlinks no cache do uv, `--no-python-downloads` e `--offline` no modo
+offline. A venv é dedicada; distribuições extras aparecem no doctor.
+
+### D-011 Local e executáveis
+As venvs ficam em `$XDG_DATA_HOME/devshell/tools/NOME`, fora do registro do
+`uv tool`. O executável é um symlink em `$UV_TOOL_BIN_DIR` (o mesmo diretório
+que as shells já põem no PATH) para `bin/NOME` da venv, como o `uv tool` faz.
+
+### D-012 Falha não deixa ferramenta parcial
+A instalação roda num helper Python sob `fs.locked()`, que reclassifica cada
+ferramenta (ausente, conforme, divergente) antes de criar algo. A venv nasce no
+destino final, porque o uv grava o caminho nos executáveis: o diretório é
+criado com `os.mkdir` exclusivo, o que marca que a CLI o criou nesta execução,
+e só então o `uv venv` roda nele. Se o `uv pip install` falhar, a CLI remove
+essa venv com `shutil.rmtree` (que no Linux não segue symlinks), não cria o
+symlink e sai com 2; as ferramentas anteriores do mesmo plano ficam e o
+relatório diz quais. O symlink é criado com `os.symlink`, que falha se algo
+já existe. Uma interrupção por sinal deixa uma venv parcial, que a execução
+seguinte trata como divergente e bloqueia para revisão manual.
+
+### D-013 Migração manual
+Instalações anteriores feitas pelo `uv tool` bloqueiam o plano com o comando
+`uv tool uninstall NOME`. A CLI não chama `uv tool`, para não afetar outras
+ferramentas do usuário. O ADR 003 passa a apontar o ADR 004 para as CLI Python.
 
 ```mermaid
 flowchart LR
   M[manifests/python.json] --> P[install --component python: plano]
   L[manifests/python-tools/NOME.txt] --> P
   P --> H[hash aprovado]
-  H --> U[uv tool install NOME==VER --constraints L --no-build]
-  U --> E[ambiente da ferramenta]
-  E --> D[doctor: dist-info x lock]
+  H --> V[uv venv devshell/tools/NOME com tool_python]
+  V --> U[uv pip install --require-hashes --no-build -r L]
+  U --> E[symlink em UV_TOOL_BIN_DIR]
+  E --> D[doctor: venv, interpretador, dist-info x lock, RECORD]
   S[(transactions/ID)] --> LI[rollback --list]
   S --> PR[rollback --prune --keep N]
   PR --> H2[hash aprovado + lock]
@@ -301,12 +352,18 @@ flowchart LR
 ## Questões abertas
 
 ### Q-001 O `uv tool install` aplica os hashes do arquivo de constraints?
-Resolvida por R-022 (T-201), antes de qualquer outra tarefa do lock.
+Respondida em 2026-11-09 por T-201 (`tests/uv_constraints.bats`, offline, uv
+0.13.5): não. Com o hash da dependência transitiva errado, `uv tool install`
+instalou com `--constraints`, com `UV_REQUIRE_HASHES=1` e com
+`--with-requirements`; só `uv pip install --require-hashes` numa venv recusou
+("Hash mismatch"). Pela D-008, o Bloco C parou e o desenho volta ao usuário.
 
 ### Q-002 Todas as dependências têm wheel para x86_64 e aarch64, glibc e musl?
 Resolvida ao gerar os arquivos (T-202), conferindo os hashes do lock contra os
 wheels de cada combinação de `manifests/artifacts.json`; sem wheel para alguma,
-`--no-build` falharia ali e a decisão volta ao usuário.
+`--no-build` falharia ali e a decisão volta ao usuário. Respondida em 2026-11-09 por
+T-202: os três locks resolvem com `--no-build` e hash obrigatório em
+x86_64/aarch64 com glibc e musl (resolução, não execução nessas plataformas).
 
 ### Q-003 A notificação semanal para quem editou o cron por último atende?
 Por padrão, você recebe; se outra pessoa editar o cron, passa a ser ela.

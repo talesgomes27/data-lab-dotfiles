@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Instalação explícita de artefatos oficiais fixados; sem instaladores shell."""
-import base64
-import csv
 import io
 import json
 import os
@@ -12,13 +10,13 @@ import stat
 import subprocess
 import sys
 import tarfile
-import tomllib
 import urllib.error
 import urllib.request
 import zipfile
 
 # -I exclui o diretório do script; somente a lib da CLI é adicionada.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import python_tools
 import state as fs
 
 DATA = fs.xdg('XDG_DATA_HOME', fs.HOME / '.local/share')
@@ -81,67 +79,7 @@ def health_issues():
                     continue
             if not found:
                 issues.append(f'interpretador uv divergente: {version}')
-        for tool in spec['tools']:
-            name, version = tool['name'], tool['version']
-            receipt = Path(dirs['UV_TOOL_DIR']) / name / 'uv-receipt.toml'
-            executable = Path(dirs['UV_TOOL_BIN_DIR']) / name
-            if not receipt.is_file() or not os.access(executable, os.X_OK):
-                issues.append(f'ferramenta uv ausente: {name}=={version}')
-                continue
-            fs.safe_path(receipt)
-            try:
-                data = tomllib.loads(receipt.read_text()).get('tool', {})
-                requirements = data.get('requirements') if isinstance(data, dict) else None
-                if not isinstance(requirements, list) or any(not isinstance(item, dict) for item in requirements):
-                    raise ValueError('formato inválido')
-            except (OSError, ValueError, tomllib.TOMLDecodeError) as exc:
-                issues.append(f'recibo uv inválido: {name}: {exc}')
-                continue
-            if not any(item.get('name') == name and item.get('specifier') == '==' + version for item in requirements):
-                issues.append(f'versão da ferramenta uv divergente: {name}=={version}')
-            try:
-                tool_root = Path(dirs['UV_TOOL_DIR']) / name
-                target = (tool_root / 'bin' / name).resolve(strict=True)
-                fs.safe_path(target)
-                if executable.resolve(strict=True) != target:
-                    raise ValueError('executável aponta para outro destino')
-                metadata = list((tool_root / 'lib').glob('python*/site-packages/' + name.replace('-', '_') + '-*.dist-info/METADATA'))
-                if len(metadata) != 1:
-                    raise ValueError('metadados da distribuição ausentes ou ambíguos')
-                fs.safe_path(metadata[0])
-                match = re.search(r'^Version:\s*(\S+)', metadata[0].read_text(), re.M)
-                if not match or match.group(1) != version:
-                    raise ValueError('versão dos metadados divergente')
-                record = metadata[0].with_name('RECORD')
-                fs.safe_path(record)
-                with record.open(newline='') as stream:
-                    rows = [row for row in csv.reader(stream) if len(row) >= 2]
-                hashes = [row[1] for row in rows if row[0] == '../../../bin/' + name]
-                content = target.read_bytes()
-                checksum = base64.urlsafe_b64encode(bytes.fromhex(fs.digest(content))).decode().rstrip('=')
-                if hashes != ['sha256=' + checksum]:
-                    raise ValueError('hash do executável diverge do RECORD')
-                if content.startswith(b'#!'):
-                    shebang = content.split(b'\n', 1)[0][2:].strip().split(maxsplit=1)
-                    if not shebang:
-                        raise ValueError('interpretador do launcher ausente')
-                    interpreter = Path(os.fsdecode(shebang[0]))
-                    if not interpreter.is_absolute() or not os.access(interpreter, os.X_OK):
-                        raise ValueError('interpretador do launcher ausente ou não executável')
-                    fs.safe_path(interpreter.resolve())
-                required = {'pre-commit': ['pre_commit/__init__.py', 'pre_commit/main.py'],
-                            'ipython': ['IPython/__init__.py']}.get(name, [])
-                for relative in required:
-                    module = metadata[0].parent.parent / relative
-                    fs.safe_path(module)
-                    hashes = [row[1] for row in rows if row[0] == relative]
-                    if not module.is_file():
-                        raise ValueError(f'módulo essencial ausente: {relative}')
-                    checksum = base64.urlsafe_b64encode(bytes.fromhex(fs.digest(module.read_bytes()))).decode().rstrip('=')
-                    if hashes != ['sha256=' + checksum]:
-                        raise ValueError(f'módulo essencial divergente: {relative}')
-            except (OSError, ValueError) as exc:
-                issues.append(f'executável uv divergente: {name}; esperado {version}: {exc}')
+        issues.extend(python_tools.health_issues(spec, dirs))
     except (ValueError, OSError, KeyError) as exc:
         issues.append(f'não foi possível verificar componentes uv: {exc}')
     return issues
@@ -159,6 +97,7 @@ def python_spec():
             raise ValueError('ferramenta Python deve ter nome e versão exatos')
     if 'python-tools' not in fs.COMPONENTS:
         spec['tools'] = []
+    python_tools.locks(spec)
     return spec
 
 
@@ -183,8 +122,16 @@ def install_plan():
     if COMPONENT == 'python':
         spec = python_spec()
         commands = [['uv', '--no-config', '--no-progress', 'python', 'install', '--no-bin', v] for v in spec['interpreters']]
-        commands += [['uv', '--no-config', '--no-progress', 'tool', 'install', '--managed-python', '--no-python-downloads', '--python', spec['tool_python'], t['name'] + '==' + t['version']] for t in spec['tools']]
-        plan |= {'commands': commands, 'directories': python_dirs(), 'spec': spec}
+        dirs = python_dirs()
+        tools = python_tools.plan_tools(spec, dirs)
+        blocked = [f"{row['name']} ({row['state']}): {row['detail'][0]}" for row in tools if row['state'] in python_tools.BLOCKING]
+        if blocked:
+            raise ValueError('ferramentas Python exigem ação manual antes da instalação: ' + ' | '.join(blocked))
+        offline = os.environ['DEVSHELL_OFFLINE'] == '1'
+        for row in tools:
+            if row['state'] == 'ausente':
+                commands += python_tools.commands(row, spec, offline)
+        plan |= {'commands': commands, 'directories': dirs, 'spec': spec, 'tools': tools}
     else:
         artifacts = json.loads((fs.ROOT / 'manifests/artifacts.json').read_text())['artifacts']
         selected = [a for a in artifacts if a['component'] == COMPONENT and a['arch'] in ('any', os.environ['DEVSHELL_MACHINE']) and a['libc'] in ('any', os.environ['DEVSHELL_LIBC'])]
@@ -217,8 +164,9 @@ def check(plan):
             raise RuntimeError('uv ausente')
         result = subprocess.run([executable, '--version'], capture_output=True, text=True, check=True)
         match = re.search(r'uv (\d+)\.(\d+)\.(\d+)', result.stdout)
-        if not match or tuple(map(int, match.groups())) < (0, 9, 0):
-            raise ValueError('requer uv >=0.9.0 para --no-bin; instale a versão fixada')
+        floor = python_tools.UV_FLOOR if plan['spec']['tools'] else (0, 9, 0)
+        if not match or tuple(map(int, match.groups())) < floor:
+            raise ValueError(f"requer uv >={'.'.join(map(str, floor))} para este plano; instale a versão fixada")
 
 
 def members(artifact, content):
@@ -345,12 +293,18 @@ def report_plan(plan):
         for command in plan.get('commands', []):
             import shlex
             print('  ', shlex.join(command))
+        for row in plan.get('tools', []):
+            print(f"   ferramenta {row['name']}: {row['state']}; venv {row['venv']}; link {row['link']} -> {row['venv']}/bin/{row['name']}")
         for artifact in plan.get('artifacts', []):
             print('  ', artifact.get('name', plan['operation'].removeprefix('install-')), artifact['version'], artifact['url'], artifact['sha256'])
 
 
 def main():
     command = sys.argv[1]
+    if command == 'python-done':
+        # Depois da instalação o estado mudou; o resumo não depende do plano.
+        fs.report({'operation': 'install-python', 'message': 'Interpretadores e ferramentas uv processados; projetos externos preservados.'})
+        return
     plan = install_plan()
     if command == 'plan':
         report_plan(plan)
@@ -367,8 +321,11 @@ def main():
     elif command == 'python-spec':
         check(plan)
         print(json.dumps(python_spec()))
-    elif command == 'python-done':
-        fs.report({'operation': 'install-python', 'message': 'Interpretadores e ferramentas uv processados; projetos externos preservados.'})
+    elif command == 'python-tools':
+        check(plan)
+        done = python_tools.apply(plan, python_dirs())
+        # stdout fica para o relatório único de python-done (contrato do --json).
+        print(f"Ferramentas instaladas com hash obrigatório: {', '.join(done) or 'nenhuma alteração'}", file=sys.stderr)
 
 
 if __name__ == '__main__':

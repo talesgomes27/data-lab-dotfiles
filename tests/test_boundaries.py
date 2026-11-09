@@ -19,6 +19,7 @@ os.environ.setdefault('DEVSHELL_COMPONENTS', 'bash zsh uv chezmoi')
 os.environ.setdefault('DEVSHELL_COMPONENT', 'uv')
 import state
 import artifacts
+import python_tools
 
 
 class ArtifactBoundary(unittest.TestCase):
@@ -547,6 +548,129 @@ class TransactionHistory(unittest.TestCase):
         state.rollback()
         self.assertFalse((state.STATE / 'latest').exists())
         self.assertEqual(state.latest_transaction(), (None, None))
+
+
+class PythonToolLocks(unittest.TestCase):
+    """R-020, R-023 e R-025: leitura dos locks e classificação das ferramentas."""
+
+    HASH = 'a' * 64
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.home = self.base / 'home'
+        self.home.mkdir(mode=0o700)
+        for module, key, value in ((python_tools, 'LOCKS', self.base / 'locks'), (state, 'HOME', self.home)):
+            active = patch.object(module, key, value)
+            active.start()
+            self.addCleanup(active.stop)
+        active = patch.dict(os.environ, {'XDG_DATA_HOME': str(self.home / 'data')})
+        active.start()
+        self.addCleanup(active.stop)
+        (self.base / 'locks').mkdir()
+        self.spec = {'tool_python': '3.13.11', 'tools': [{'name': 'ruff', 'version': '0.17.3'}]}
+        self.dirs = {'UV_TOOL_BIN_DIR': str(self.home / 'bin')}
+
+    def write_lock(self, body, version='3.13'):
+        header = f'#    uv --no-config pip compile --universal --python-version {version} --generate-hashes -o x -\n'
+        (self.base / 'locks/ruff.txt').write_text(header + body)
+
+    def test_r020_reads_continuations_comments_markers_and_normalizes_names(self):
+        self.write_lock(f"""ruff==0.17.3 \\
+    --hash=sha256:{self.HASH} \\
+    --hash=sha256:{'b' * 64}
+    # via -r -
+Prompt_Toolkit==3.0.53 ; sys_platform == 'win32' \\
+    --hash=sha256:{self.HASH}
+""")
+        lock = python_tools.read_lock(self.base / 'locks/ruff.txt')
+        self.assertEqual(lock['python_version'], '3.13')
+        self.assertEqual(lock['requirements']['ruff'], {'version': '0.17.3', 'marker': None})
+        self.assertEqual(lock['requirements']['prompt-toolkit']['marker'], "sys_platform == 'win32'")
+        self.assertEqual(set(python_tools.locks(self.spec)), {'ruff'})
+
+    def test_r020_refuses_invalid_or_mismatched_locks(self):
+        cases = {'sem lock': None, 'sem hash': 'ruff==0.17.3\n', 'sem ==': f'ruff>=0.17 --hash=sha256:{self.HASH}\n',
+                 'versão raiz': f'ruff==0.1.0 --hash=sha256:{self.HASH}\n',
+                 'duplicado': f'ruff==0.17.3 --hash=sha256:{self.HASH}\nRuff==0.17.3 --hash=sha256:{self.HASH}\n'}
+        for label, body in cases.items():
+            with self.subTest(label):
+                (self.base / 'locks/ruff.txt').unlink(missing_ok=True)
+                if body is not None:
+                    self.write_lock(body)
+                with self.assertRaises(ValueError):
+                    python_tools.locks(self.spec)
+        self.write_lock(f'ruff==0.17.3 --hash=sha256:{self.HASH}\n', version='3.12')
+        with self.assertRaisesRegex(ValueError, 'Python 3.12'):
+            python_tools.locks(self.spec)
+
+    def test_r020_no_lock_needed_without_python_tools(self):
+        self.assertEqual(python_tools.locks({'tool_python': '3.13.11', 'tools': []}), {})
+
+    def test_r025_states_absent_orphan_link_conflict_and_divergent(self):
+        self.write_lock(f'ruff==0.17.3 --hash=sha256:{self.HASH}\n')
+        lock = python_tools.locks(self.spec)['ruff']
+        venv, link = python_tools.paths('ruff', self.dirs)
+        link.parent.mkdir(mode=0o700)
+
+        def state():
+            return python_tools.tool_state('ruff', lock, self.dirs, '3.13.11')
+        self.assertEqual(state()['state'], 'ausente')
+        link.symlink_to(venv / 'bin/ruff')
+        self.assertEqual(state()['state'], 'link-orfao')
+        link.unlink()
+        foreign = self.home / 'uv-tools/ruff/bin/ruff'
+        foreign.parent.mkdir(parents=True)
+        foreign.write_text('#!/bin/sh\n')
+        link.symlink_to(foreign)
+        row = state()
+        self.assertEqual(row['state'], 'conflito')
+        self.assertIn('uv tool uninstall ruff', row['detail'][0])
+        link.unlink()
+        venv.mkdir(parents=True, mode=0o700)
+        row = state()
+        self.assertEqual(row['state'], 'divergente')
+        self.assertIn('pyvenv.cfg', row['detail'][0])
+
+    def test_r025_symlinked_tools_root_blocks_without_creating_anything(self):
+        self.write_lock(f'ruff==0.17.3 --hash=sha256:{self.HASH}\n')
+        lock = python_tools.locks(self.spec)['ruff']
+        elsewhere = self.base / 'elsewhere'
+        elsewhere.mkdir(mode=0o700)
+        (self.home / 'data').mkdir(mode=0o700)
+        (self.home / 'data/devshell').symlink_to(elsewhere)
+        (self.home / 'bin').mkdir(mode=0o700)
+        row = python_tools.tool_state('ruff', lock, self.dirs, '3.13.11')
+        self.assertEqual(row['state'], 'divergente')
+        self.assertEqual(list(elsewhere.iterdir()), [])
+
+    def fake_uv(self, version):
+        binary = self.base / 'uv'
+        binary.write_text(f'#!/bin/sh\nprintf "uv {version}\\n"\n')
+        binary.chmod(0o700)
+        return str(binary)
+
+    def test_r021_uv_floor_rises_only_with_python_tools(self):
+        old_uv = self.fake_uv('0.13.4')
+        with patch.object(artifacts, 'COMPONENT', 'python'), patch.object(artifacts.shutil, 'which', return_value=old_uv), \
+                patch.dict(os.environ, {'DEVSHELL_APPROVAL': 'hash'}):
+            with self.assertRaisesRegex(ValueError, '0.13.5'):
+                artifacts.check({'approval': 'hash', 'spec': {'tools': [{'name': 'ruff'}]}})
+            artifacts.check({'approval': 'hash', 'spec': {'tools': []}})
+        for components, expected in ((['uv', 'python-tools'], True), (['uv'], False)):
+            with self.subTest(components=components), patch.object(state, 'COMPONENTS', components), \
+                    patch.object(state.shutil, 'which', return_value=old_uv):
+                _, issues = state.version_issues()
+                self.assertEqual(any('uv' in issue and '0.13.5' in issue for issue in issues), expected, issues)
+
+    def test_r021_uv_environment_drops_active_envs_and_user_uv_settings(self):
+        with patch.dict(os.environ, {'VIRTUAL_ENV': '/outra', 'CONDA_PREFIX': '/conda', 'UV_VENV_CLEAR': '1',
+                                     'UV_INDEX_URL': 'https://exemplo.invalid', 'PATH': '/usr/bin'}):
+            env = python_tools.uv_environment({'UV_PYTHON_INSTALL_DIR': '/p', 'UV_CACHE_DIR': '/c'})
+        self.assertNotIn('VIRTUAL_ENV', env)
+        self.assertNotIn('CONDA_PREFIX', env)
+        self.assertEqual({key for key in env if key.startswith('UV_')}, {'UV_PYTHON_INSTALL_DIR', 'UV_CACHE_DIR'})
 
 
 class StaticChezmoiSource(unittest.TestCase):
