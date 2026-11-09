@@ -2,6 +2,10 @@
 
 ## Não publicado
 
+- O workflow `Verificações` passa a rodar toda segunda às 09:17 UTC com a
+  cobertura do disparo manual: cenários opcionais sem skips, matriz de
+  containers e smoke online.
+
 - `rollback --list` mostra o histórico de transações com status, posição na
   cadeia e data de criação, que passa a ser gravada nas transações novas.
   `rollback --prune --keep N` remove backups antigos com plano, hash aprovado,

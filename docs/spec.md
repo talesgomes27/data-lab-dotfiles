@@ -126,8 +126,8 @@ Fatos observados (2026-11-09):
   que toda condição `workflow_dispatch` também aceita `schedule`. Verificação
   remota: a primeira execução agendada ou um disparo manual após o merge.
 - Prioridade: média
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: implementado
+- Evidência: tests/test_ci_workflow.py::WeeklyWorkflow (local); execução remota agendada pendente até o merge
 
 **Lock das ferramentas uv**
 
