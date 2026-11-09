@@ -13,6 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
+| Suíte local após guarda estática e Python isolado | 164 testes Bats e 45 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local da candidata de pin | 160 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui o novo smoke de recusa de configuração IDE vinculada pelo pyinit distribuído; sem estender a evidência histórica da matriz. |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
@@ -28,6 +29,51 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Ruff no check — 2026-11-09
+
+`ruff check --no-cache lib tests dotfiles scripts` com Ruff 0.17.3 (versão de
+`manifests/python.json`) passou após dois ajustes: `check=False` explícito na
+consulta de versão, que já conferia o código de saída, e `E402` ignorado só nos
+testes, que definem o ambiente antes do import. O conjunto padrão do Ruff 0.17
+apontava 33 itens, quase todos de estilo (ordem de imports, `with` aninhado);
+as regras ficaram fixadas em `ruff.toml` para o resultado não mudar com o padrão
+de outra versão. Um arquivo artificial fora do repositório confirmou F401, F821 e
+B006. `bash scripts/check.sh` em HOME/XDG temporários: saída 0, 164 Bats e 45
+unittest, sem skips.
+
+Não executados: `scripts/ci-setup.sh`, que exige HOME `/tmp/foundry-*` e baixa o
+Ruff do PyPI por `uv tool install` sem hash próprio (só a versão é fixada), a
+matriz de containers e o workflow remoto. `examples/` e `templates/` têm projetos
+e configurações próprios e não entram nesse lint.
+
+## Guarda estática do Chezmoi e Python isolado — 2026-11-09
+
+Achados S1 e S2 da auditoria local. Comando: `bash scripts/check.sh` com HOME,
+XDG_CONFIG_HOME, XDG_DATA_HOME e XDG_CACHE_HOME temporários; saída 0, 164 Bats e
+45 unittest, sem skips. Antes da correção, os novos testes falharam: a CLI
+importou um `json.py` do PYTHONPATH e `env.sh` executou um `.pth` da `.venv`
+herdada; `StaticChezmoiSource` não encontrava a guarda.
+
+- `StaticChezmoiSource` cria fontes com cada prefixo de atributo do Chezmoi
+  (inclusive `modify_`, `create_`, `symlink_`, `encrypted_`, `before_`/`after_`),
+  sufixos `.tmpl`/`.literal`/`.age`/`.asc`, diretórios `exact_`/`external_`,
+  `.chezmoiscripts` e `.chezmoiignore` e confirma a recusa sem chamar Chezmoi;
+  `dot_modify_*` continua aceito como nome literal. A execução de `modify_` pelo Chezmoi vem da documentação
+  oficial; não foi reproduzida localmente.
+- `tests/isolated_python.bats` usa uma `.venv` uv offline com `.pth` hostil e
+  PYTHONPATH com `json.py`: plan, doctor, status, install devshell e setup
+  dry-run devolvem JSON sem carregá-los; `env.sh` em Bash e Zsh, Nushell e o
+  helper direnv (com stubs da stdlib do direnv) também não os carregam.
+  A ausência de bytecode continua garantida por `-B` e pelo
+  `PYTHONDONTWRITEBYTECODE` já exportado; não há teste que separe os dois.
+- A revisão independente sugeriu remover o `sys.path` de `state.py`; o teste
+  reforçado mostrou que `doctor` importa `artifacts` sob `-I`, e a linha ficou.
+
+Limites: a CLI e as shells passam a exigir `/usr/bin/python3`, como `project`
+já exigia; um sistema sem esse caminho perde a filtragem de PATH nas shells e
+recebe erro na CLI. Matriz de containers e
+smoke online não foram executados.
 
 ## Configuração do Claude Code no projeto — 2026-11-08
 

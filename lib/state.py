@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tempfile
 
+# -I exclui o diretório do script; doctor importa artifacts desta mesma lib.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 os.umask(0o077)
 ROOT = Path(os.environ['DEVSHELL_ROOT'])
 HOME = Path(os.environ['HOME'])
@@ -223,16 +225,28 @@ def locked():
         yield
 
 
+STATIC_NAME = re.compile(r'(dot_)?[A-Za-z0-9][A-Za-z0-9._-]*')
+# Prefixos de atributo do Chezmoi; após dot_ o restante do nome é literal.
+CHEZMOI_ATTRIBUTE = re.compile(r'(after|before|create|empty|encrypted|exact|executable|external|literal|'
+                               r'modify|once|onchange|private|readonly|remove|run|symlink)_')
+
+
+def static_sources():
+    """Lista permitida: nomes literais, opcionalmente dot_; nenhum script, template, atributo ou external."""
+    if (ROOT / '.chezmoiroot').read_text().strip() != 'dotfiles':
+        raise ValueError('.chezmoiroot deve apontar para dotfiles')
+    for source in (ROOT / 'dotfiles').rglob('*'):
+        name = source.name
+        if (source.is_symlink() or not (source.is_file() or source.is_dir()) or not STATIC_NAME.fullmatch(name)
+                or CHEZMOI_ATTRIBUTE.match(name) or name.endswith(('.tmpl', '.literal', '.age', '.asc'))):
+            raise ValueError(f'fonte Chezmoi não estática recusada: {source}')
+
+
 def chezmoi_render():
     executable = shutil.which('chezmoi')
     if not executable:
         raise RuntimeError('Chezmoi ausente: use install --component chezmoi ou instalação manual')
-    # Fonte exclusivamente estática: nenhum script, template ou external é aceito.
-    if (ROOT / '.chezmoiroot').read_text().strip() != 'dotfiles':
-        raise ValueError('.chezmoiroot deve apontar para dotfiles')
-    for source in (ROOT / 'dotfiles').rglob('*'):
-        if source.is_symlink() or (source.is_file() and (source.name.startswith('.') or source.name.startswith('run_') or source.suffix == '.tmpl')):
-            raise ValueError(f'fonte Chezmoi não estática recusada: {source}')
+    static_sources()
     with tempfile.TemporaryDirectory(prefix='devshell-render-') as temp:
         sandbox = Path(temp)
         destination = sandbox / 'home'
@@ -407,7 +421,7 @@ def command_version(tool):
         env = {key: value for key, value in os.environ.items() if not key.startswith('UV_')}
         env.update({'HOME': temporary, 'XDG_CONFIG_HOME': temporary + '/config', 'XDG_DATA_HOME': temporary + '/data',
                     'XDG_STATE_HOME': temporary + '/state', 'XDG_CACHE_HOME': temporary + '/cache'})
-        result = subprocess.run([executable, '--version'], capture_output=True, text=True, timeout=10, env=env)
+        result = subprocess.run([executable, '--version'], capture_output=True, text=True, timeout=10, env=env, check=False)
     match = re.search(r'(\d+)\.(\d+)(?:\.(\d+))?', result.stdout)
     if result.returncode or not match:
         raise ValueError(f'não foi possível identificar versão: {tool}')

@@ -17,6 +17,8 @@ import urllib.error
 import urllib.request
 import zipfile
 
+# -I exclui o diretório do script; somente a lib da CLI é adicionada.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import state as fs
 
 DATA = fs.xdg('XDG_DATA_HOME', fs.HOME / '.local/share')

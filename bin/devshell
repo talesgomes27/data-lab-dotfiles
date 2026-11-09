@@ -93,9 +93,9 @@ while (($#)); do
     esac
 done
 [[ "$command" == project || "$project_path_set" == 0 ]] || fail '--path só é aceito por project'
-python_command=(python3)
-# O reparo não deve iniciar o interpretador do projeto que está inspecionando.
-[[ "$command" != project ]] || python_command=(/usr/bin/python3 -I -B)
+# Python da distribuição isolado: .venv ativa, .pth ou PYTHONPATH de projeto não entram na CLI.
+python_command=(/usr/bin/python3 -I -B)
+devshell_python() { "${python_command[@]}" "$@"; }
 command -v "${python_command[0]}" >/dev/null || fail 'Requer Python >=3.11 da distribuição para relatórios/transações.' 3
 "${python_command[@]}" -c 'import sys;sys.exit(sys.version_info<(3,11))' || fail 'Requer Python >=3.11.' 3
 if [[ "$command" != project ]]; then
@@ -125,5 +125,5 @@ elif [[ "$command" == install ]]; then
 else
     if ((dry_run)) && [[ "$command" == apply || "$command" == update ]]; then command=plan; fi
     if ((dry_run)) && [[ "$command" == rollback ]]; then export DEVSHELL_APPROVAL=''; fi
-    exec python3 "$ROOT/lib/state.py" "$command"
+    exec "${python_command[@]}" "$ROOT/lib/state.py" "$command"
 fi

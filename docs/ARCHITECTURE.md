@@ -33,7 +33,11 @@ flowchart LR
 ```
 
 `.chezmoiroot` aponta para `dotfiles/`. Só fontes estáticas são aceitas: sem
-externals, scripts de instalação ou templates executáveis. Chezmoi é executado
+externals, scripts de instalação ou templates executáveis. A conferência é uma
+lista permitida, aplicada antes de executar Chezmoi: cada arquivo ou diretório
+tem nome literal, opcionalmente com `dot_`, sem prefixos de atributo (`modify_`,
+`create_`, `symlink_`, `run_`, `exact_` e afins), nomes `.chezmoi*` ou sufixos
+`.tmpl`/`.literal`/`.age`/`.asc`. Chezmoi é executado
 com HOME, cache, configuração e banco temporários; sua renderização deve
 coincidir com os bytes aprovados antes da aplicação aos destinos reais. A
 transação própria adiciona proteção contra conflitos e rollback, inclusive para
@@ -132,7 +136,13 @@ de chmod via descritor, sem recursão. Não há modo de aprovação irrestrita.
 conserva stdout reservado ao PATH e emite os motivos em stderr. Direnv mostra
 os caminhos recusados, mantendo navegação sem instalações ou reparos.
 
-`lib/project.py` usa o Python da distribuição em modo isolado e importa apenas
+Todos os comandos da CLI e os helpers das shells executam
+`/usr/bin/python3` em modo isolado (`-I`, e `-B` na CLI): uma `.venv` ativa,
+seus `.pth` ou o PYTHONPATH de um projeto não carregam código nas transações nem
+na abertura das shells. Cada módulo de `lib/` importado por outro acrescenta somente o diretório `lib/`
+ao `sys.path`.
+
+`lib/project.py` usa esse mesmo Python isolado e importa apenas
 a lib conhecida da CLI. Reaproveita o fingerprint das fontes e o chmod por
 descritor de setup. A aprovação inclui o validador, os motivos e as identidades
 observadas. Somente diretórios próprios dentro da HOME são reparáveis, sem

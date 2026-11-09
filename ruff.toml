@@ -1,0 +1,10 @@
+# Lint de defeitos, não de estilo. Regras fixadas: o conjunto padrão muda entre versões do Ruff.
+# A versão do Ruff é a de manifests/python.json; scripts/check.sh confere a correspondência.
+target-version = "py311"
+
+[lint]
+select = ["E4", "E7", "E9", "F", "B", "PLW1510"]
+
+[lint.per-file-ignores]
+# Os testes definem o ambiente da CLI antes de importar seus módulos.
+"tests/*.py" = ["E402"]

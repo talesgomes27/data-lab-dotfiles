@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Orquestra os comandos públicos; aprovação e transações permanecem nos helpers.
 setup_values() {
-    python3 -c 'import json,sys;value=json.load(sys.stdin)[sys.argv[1]];[print(item) for item in value] if isinstance(value,list) else print(value)' "$1"
+    devshell_python -c 'import json,sys;value=json.load(sys.stdin)[sys.argv[1]];[print(item) for item in value] if isinstance(value,list) else print(value)' "$1"
 }
 
 setup_confirm() {
@@ -17,18 +17,18 @@ setup_cancel() {
 }
 
 setup_inspect() {
-    python3 "$ROOT/lib/setup.py" inspect
+    devshell_python "$ROOT/lib/setup.py" inspect
 }
 
 setup_show() {
-    python3 "$ROOT/lib/setup.py" show
+    devshell_python "$ROOT/lib/setup.py" show
 }
 
 setup_path() {
     local directory
     while IFS= read -r directory; do
         case ":$PATH:" in *":$directory:"*) ;; *) export PATH="$directory:$PATH" ;; esac
-    done < <(python3 "$ROOT/dotfiles/dot_config/devshell/safe-path.py" "$HOME/.local/bin")
+    done < <(devshell_python "$ROOT/dotfiles/dot_config/devshell/safe-path.py" "$HOME/.local/bin")
 }
 
 setup_environment() {
@@ -45,14 +45,14 @@ setup_environment() {
     [[ -z $(printf '%s' "$inspection" | setup_values blockers) ]] || fail 'resolva os bloqueios apresentados e execute setup novamente' 3
     mapfile -t packages < <(printf '%s' "$inspection" | setup_values native_command)
     if ((DEVSHELL_OFFLINE && ${#packages[@]})); then fail 'offline: pacotes nativos ausentes; instale-os manualmente antes de continuar' 3; fi
-    count=$(printf '%s' "$inspection" | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["permissions"]))')
+    count=$(printf '%s' "$inspection" | devshell_python -c 'import json,sys;print(len(json.load(sys.stdin)["permissions"]))')
     if ((count)); then
-        printf '%s' "$inspection" | python3 -c 'import json,sys;sys.exit(any(not item["repairable"] for item in json.load(sys.stdin)["permissions"]))' || fail 'há caminhos que exigem correção manual; nenhum modo foi alterado' 3
+        printf '%s' "$inspection" | devshell_python -c 'import json,sys;sys.exit(any(not item["repairable"] for item in json.load(sys.stdin)["permissions"]))' || fail 'há caminhos que exigem correção manual; nenhum modo foi alterado' 3
         setup_confirm 'Retirar escrita de grupo/outros somente dos caminhos apresentados?' || {
             setup_cancel
             return 1
         }
-        printf '%s' "$inspection" | python3 "$ROOT/lib/setup.py" repair
+        printf '%s' "$inspection" | devshell_python "$ROOT/lib/setup.py" repair
         setup_path
         inspection=$(setup_inspect)
         printf '%s\n' "$inspection" | setup_show
@@ -91,7 +91,7 @@ setup_environment() {
         setup_path
     done
     plan=$("$ROOT/bin/devshell" plan "${options[@]}" --json)
-    count=$(printf '%s' "$plan" | python3 -c 'import json,sys;print(sum(item["action"]=="write" for item in json.load(sys.stdin)["files"]))')
+    count=$(printf '%s' "$plan" | devshell_python -c 'import json,sys;print(sum(item["action"]=="write" for item in json.load(sys.stdin)["files"]))')
     if ((count)); then
         printf '%s\n' "$plan" | setup_show
         "$ROOT/bin/devshell" diff "${options[@]}"
@@ -99,7 +99,7 @@ setup_environment() {
             setup_cancel
             return 1
         }
-        count=$(printf '%s' "$plan" | python3 -c 'import json,sys;print(sum(item["conflict"] for item in json.load(sys.stdin)["files"]))')
+        count=$(printf '%s' "$plan" | devshell_python -c 'import json,sys;print(sum(item["conflict"] for item in json.load(sys.stdin)["files"]))')
         if ((count)); then
             printf 'Há %s conflito(s). Para substituir os arquivos existentes com backup, digite substituir: ' "$count" >&2
             IFS= read -r answer || {

@@ -5,10 +5,10 @@ $env.config.history.sync_on_enter = true
 let config_dir = if (($env.XDG_CONFIG_HOME? | default '' | str starts-with '/')) { $env.XDG_CONFIG_HOME } else { $env.HOME | path join '.config' }
 let components_file = ($config_dir | path join 'devshell' 'components')
 let features = if ($components_file | path exists) { open --raw $components_file | str trim | split row ' ' } else { [] }
-if $nu.is-interactive and ('uv' in $features) and ('direnv' in $features) and (which direnv | is-not-empty) and (which python3 | is-not-empty) and (($env.VIRTUAL_ENV? | default '') == '') and (($env.CONDA_PREFIX? | default '') == '') and (($env.DIRENV_DIR? | default '') == '') {
+if $nu.is-interactive and ('uv' in $features) and ('direnv' in $features) and (which direnv | is-not-empty) and ('/usr/bin/python3' | path exists) and (($env.VIRTUAL_ENV? | default '') == '') and (($env.CONDA_PREFIX? | default '') == '') and (($env.DIRENV_DIR? | default '') == '') {
     let data_dir = if (($env.XDG_DATA_HOME? | default '' | str starts-with '/')) { $env.XDG_DATA_HOME } else { $env.HOME | path join '.local' 'share' }
     let general = ($data_dir | path join 'devshell' 'venvs' 'geral')
-    let safe_bins = (^python3 ($config_dir | path join 'devshell' 'safe-path.py') --venv ($general | path join 'bin') | lines)
+    let safe_bins = (^/usr/bin/python3 -I ($config_dir | path join 'devshell' 'safe-path.py') --venv ($general | path join 'bin') | lines)
     if ($safe_bins | is-not-empty) {
         $env.VIRTUAL_ENV = $general
         $env.PATH = ($safe_bins | append $env.PATH | uniq)

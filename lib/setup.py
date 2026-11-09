@@ -8,6 +8,8 @@ import stat
 import subprocess
 import sys
 
+# -I exclui o diretório do script; somente a lib da CLI é adicionada.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import artifacts
 import state as fs
 

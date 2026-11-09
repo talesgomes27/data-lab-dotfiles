@@ -10,7 +10,8 @@ devshell_enabled() {
 }
 case "${XDG_DATA_HOME-}" in /*) _foundry_uv_bin="${XDG_DATA_HOME%/*}/bin" ;; *) _foundry_uv_bin="$HOME/.local/bin" ;; esac
 _foundry_uv_bin=${UV_TOOL_BIN_DIR:-${XDG_BIN_HOME:-$_foundry_uv_bin}}
-if command -v python3 >/dev/null; then
+# Python da distribuição isolado: a .venv herdada não executa .pth ao abrir a shell.
+if [[ -x /usr/bin/python3 ]]; then
     while IFS= read -r _foundry_directory; do
         case ":$PATH:" in
             *":$_foundry_directory:"*) ;;
@@ -22,18 +23,18 @@ if command -v python3 >/dev/null; then
                 fi
                 ;;
         esac
-    done < <(python3 "$_foundry_config/devshell/safe-path.py" "$HOME/.local/bin" "$_foundry_uv_bin")
+    done < <(/usr/bin/python3 -I "$_foundry_config/devshell/safe-path.py" "$HOME/.local/bin" "$_foundry_uv_bin")
 fi
 unset _foundry_uv_bin _foundry_directory
 if [[ $- == *i* ]] && devshell_enabled uv && devshell_enabled direnv &&
     [[ -z ${VIRTUAL_ENV-} && -z ${CONDA_PREFIX-} && -z ${DIRENV_DIR-} ]] &&
-    command -v direnv >/dev/null && command -v python3 >/dev/null; then
+    command -v direnv >/dev/null && [[ -x /usr/bin/python3 ]]; then
     case "${XDG_DATA_HOME-}" in /*) _foundry_data=$XDG_DATA_HOME ;; *) _foundry_data="$HOME/.local/share" ;; esac
     while IFS= read -r _foundry_directory; do
         export VIRTUAL_ENV="${_foundry_directory%/bin}"
         export PATH="$_foundry_directory:$PATH"
         unset PYTHONHOME
-    done < <(python3 "$_foundry_config/devshell/safe-path.py" --venv "$_foundry_data/devshell/venvs/geral/bin")
+    done < <(/usr/bin/python3 -I "$_foundry_config/devshell/safe-path.py" --venv "$_foundry_data/devshell/venvs/geral/bin")
     unset _foundry_data _foundry_directory
 fi
 export STARSHIP_CONFIG="$_foundry_config/starship.toml"

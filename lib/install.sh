@@ -3,22 +3,22 @@ install_component() {
     local dry_run=$1
     if [[ "$DEVSHELL_COMPONENT" == devshell ]]; then
         if ((dry_run)) || [[ -z "$DEVSHELL_APPROVAL" ]]; then
-            python3 "$ROOT/lib/launcher.py" plan
+            devshell_python "$ROOT/lib/launcher.py" plan
         else
-            python3 "$ROOT/lib/launcher.py" apply
+            devshell_python "$ROOT/lib/launcher.py" apply
         fi
         return
     fi
     if ((dry_run)) || [[ -z "$DEVSHELL_APPROVAL" ]]; then
-        python3 "$ROOT/lib/artifacts.py" plan
+        devshell_python "$ROOT/lib/artifacts.py" plan
         return
     fi
-    python3 "$ROOT/lib/artifacts.py" check
+    devshell_python "$ROOT/lib/artifacts.py" check
     if [[ "$DEVSHELL_COMPONENT" == python ]]; then
         # shellcheck source=lib/uv.sh
         source "$ROOT/lib/uv.sh"
         install_python
     else
-        python3 "$ROOT/lib/artifacts.py" apply
+        devshell_python "$ROOT/lib/artifacts.py" apply
     fi
 }
