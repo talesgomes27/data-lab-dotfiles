@@ -19,7 +19,7 @@ def target_paths():
     paths = {Path(path) for path in fs.desired_files()}
     if 'zsh' in fs.COMPONENTS:
         paths.add(fs.CONFIG / 'zsh/.zshenv.local')
-    paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions', 'pruning'))
+    paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions', 'pruning', 'profiles'))
     paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
         paths.add(artifacts.BIN / 'uvx')
@@ -75,7 +75,33 @@ def permission_review():
             and (stat.S_ISDIR(info['mode']) or (stat.S_ISREG(info['mode']) and info['links'] == 1))
             and any(path.is_relative_to(root) for root in roots if root.is_absolute())
         )
-    return sorted(issues.values(), key=lambda issue: (len(Path(issue['path']).parts), issue['path'], issue['kind']))
+    return sorted([*issues.values(), *venv_mode_issues()], key=lambda issue: (len(Path(issue['path']).parts), issue['path'], issue['kind']))
+
+
+def venv_mode_issues():
+    """D-018: escrita de grupo/outros dentro das venvs do Data Lab; symlinks da venv são ignorados."""
+    if 'python-tools' not in fs.COMPONENTS:
+        return []
+    issues, tools = [], artifacts.DATA / 'devshell/tools'
+    for tool in json.loads((fs.ROOT / 'manifests/python.json').read_text())['tools']:
+        name = tool['name']
+        venv, config = tools / name, tools / name / 'pyvenv.cfg'
+        if not re.fullmatch(r'[a-z][a-z0-9-]*', name) or venv.is_symlink() or not venv.is_dir() or config.is_symlink() or not config.is_file():
+            continue
+        for root, directories, files in os.walk(venv, followlinks=False):
+            for entry in [*directories, *files]:
+                path = Path(root) / entry
+                try:
+                    info = path.lstat()
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISLNK(info.st_mode) or not info.st_mode & 0o022:
+                    continue
+                regular = stat.S_ISREG(info.st_mode) and info.st_nlink == 1
+                issues.append({'path': str(path), 'kind': 'venv-mode', 'tool': name,
+                               'message': f'escrita de grupo/outros na venv {name}: {path}', 'identity': identity(path),
+                               'repairable': bool(info.st_uid == os.getuid() and (stat.S_ISDIR(info.st_mode) or regular))})
+    return issues
 
 
 def repair_permissions(review):
@@ -148,19 +174,88 @@ def inspect():
         except (ValueError, OSError) as exc:
             blockers.append(f'ferramentas Python: {exc}')
     return {'operation': 'setup', 'profiles': os.environ['DEVSHELL_PROFILES'].split(','),
+            'profile_source': os.environ.get('DEVSHELL_PROFILE_SOURCE', 'informados'),
             'components': fs.COMPONENTS, 'permissions': permissions, 'versions': versions,
             'native_command': deps['manual_system_command'], 'dependencies': deps,
             'user_components': user_components, 'blockers': blockers}
+
+
+def cli_json(*arguments):
+    """Plano de um comando público da CLI, sem gravar estado."""
+    command = [str(fs.ROOT / 'bin/devshell'), *arguments, '--profile', os.environ['DEVSHELL_PROFILES'], '--json']
+    if os.environ['DEVSHELL_OFFLINE'] == '1':
+        command.append('--offline')
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+    return (json.loads(result.stdout) if result.returncode == 0 else None), (result.stderr.strip().splitlines() or [''])[-1]
+
+
+def summary(inspection):
+    """D-016: previsão das etapas; cada uma recalcula o próprio plano antes de perguntar."""
+    permissions, steps = inspection['permissions'], []
+
+    def unavailable(error):
+        return ('reavaliado depois do reparo de permissões', '') if permissions else ('bloqueado', error)
+
+    steps.append({'step': 'permissões', 'status': 'corrigir' if permissions else 'em dia',
+                  'detail': f'{len(permissions)} caminho(s)' if permissions else ''})
+    native = inspection['native_command']
+    steps.append({'step': 'pacotes do sistema', 'status': 'instalar' if native else 'em dia', 'detail': ' '.join(native)})
+    for target in inspection['user_components']:
+        plan, error = cli_json('install', '--component', target)
+        if plan:
+            pending_tools = sum(row['state'] != 'conforme' for row in plan.get('tools', []))
+            status = 'instalar ou atualizar' if plan['pending'] else 'em dia'
+            detail = f'{pending_tools} ferramenta(s) a instalar ou migrar' if pending_tools else ''
+        else:
+            status, detail = unavailable(error)
+        steps.append({'step': f'componente {target}', 'status': status, 'detail': detail})
+    plan, error = cli_json('plan')
+    if plan:
+        writes = sum(entry['action'] == 'write' for entry in plan['files'])
+        conflicts = sum(entry['conflict'] for entry in plan['files'])
+        status, detail = ('atualizar', f'{writes} arquivo(s) a atualizar, {conflicts} em conflito') if writes else ('em dia', '')
+    else:
+        status, detail = unavailable(error)
+    steps.append({'step': 'dotfiles', 'status': status, 'detail': detail})
+    try:
+        recorded = fs.read_own_regular(fs.profiles_record())
+    except (OSError, ValueError):
+        recorded = None
+    remembered = (recorded or '').strip() == os.environ['DEVSHELL_PROFILES']
+    steps.append({'step': 'perfis', 'status': 'em dia' if remembered else 'registrar', 'detail': '' if remembered else os.environ['DEVSHELL_PROFILES']})
+    return {'steps': steps, 'blockers': inspection['blockers'],
+            'nothing_to_do': not inspection['blockers'] and all(step['status'] == 'em dia' for step in steps)}
+
+
+def show_summary(data):
+    print('Resumo do setup (cada etapa pede a própria confirmação):')
+    for step in data['steps']:
+        print(f"  {step['step']}: {step['status']}" + (f" ({step['detail']})" if step['detail'] else ''))
+    for blocker in data['blockers']:
+        print('  bloqueio:', blocker)
+    if data['nothing_to_do']:
+        print('Nada a fazer: tudo em dia.')
 
 
 def show(plan):
     if plan['operation'].startswith('install-'):
         artifacts.report_plan(plan)
         return
+    if 'summary' in plan:
+        show_summary(plan['summary'])
     fs.report(plan)
     if plan['operation'] != 'setup':
         return
+    grouped = {}
     for issue in plan['permissions']:
+        if issue['kind'] == 'venv-mode':
+            grouped.setdefault(issue['tool'], []).append(issue)
+    for tool, items in grouped.items():
+        examples = ', '.join(Path(item['path']).name for item in items[:2])
+        print(f"  venv {tool}: {len(items)} itens com escrita de grupo/outros (ex.: {examples}) [retirar escrita de grupo/outros]")
+    for issue in plan['permissions']:
+        if issue['kind'] == 'venv-mode':
+            continue
         info = issue['identity']
         change = f"{stat.S_IMODE(info['mode']):04o} -> {stat.S_IMODE(info['mode']) & ~0o022:04o}" if issue['repairable'] else 'correção manual necessária'
         print(f"  {issue['message']} [{change}]")
@@ -175,7 +270,10 @@ def show(plan):
 def main():
     command = sys.argv[1]
     if command == 'inspect':
-        print(json.dumps(inspect(), ensure_ascii=False))
+        data = inspect()
+        if sys.argv[2:] == ['--summary']:
+            data['summary'] = summary(data)
+        print(json.dumps(data, ensure_ascii=False))
     elif command == 'repair':
         repair_permissions(json.load(sys.stdin)['permissions'])
     elif command == 'show':

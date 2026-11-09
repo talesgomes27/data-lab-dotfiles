@@ -17,7 +17,7 @@ setup_cancel() {
 }
 
 setup_inspect() {
-    devshell_python "$ROOT/lib/setup.py" inspect
+    devshell_python "$ROOT/lib/setup.py" inspect "$@"
 }
 
 setup_show() {
@@ -36,12 +36,14 @@ setup_environment() {
     local -a packages components options=(--profile "$DEVSHELL_PROFILES") replacement=()
     [[ "$DEVSHELL_OFFLINE" == 0 ]] || options+=(--offline)
     setup_path
-    inspection=$(setup_inspect)
+    # R-041: o resumo vem antes de qualquer pergunta; cada etapa recalcula o próprio plano depois.
+    inspection=$(setup_inspect --summary)
     if ((dry_run)); then
         if [[ "$DEVSHELL_JSON" == 1 ]]; then printf '%s\n' "$inspection"; else printf '%s\n' "$inspection" | setup_show; fi
         return
     fi
     printf '%s\n' "$inspection" | setup_show
+    [[ $(printf '%s' "$inspection" | devshell_python -c 'import json,sys;print(json.load(sys.stdin)["summary"]["nothing_to_do"])') == False ]] || return 0
     [[ -z $(printf '%s' "$inspection" | setup_values blockers) ]] || fail 'resolva os bloqueios apresentados e execute setup novamente' 3
     mapfile -t packages < <(printf '%s' "$inspection" | setup_values native_command)
     if ((DEVSHELL_OFFLINE && ${#packages[@]})); then fail 'offline: pacotes nativos ausentes; instale-os manualmente antes de continuar' 3; fi
@@ -81,6 +83,11 @@ setup_environment() {
     mapfile -t components < <(printf '%s' "$inspection" | setup_values user_components)
     for target in "${components[@]}"; do
         plan=$("$ROOT/bin/devshell" install --component "$target" "${options[@]}" --json)
+        # R-042: componente já conforme não pergunta nem instala.
+        if [[ $(printf '%s' "$plan" | setup_values pending) == False ]]; then
+            printf 'Componente %s em dia; nada a instalar.\n' "$target"
+            continue
+        fi
         printf '%s\n' "$plan" | setup_show
         setup_confirm "Instalar/verificar o componente $target conforme este plano?" || {
             setup_cancel
@@ -95,7 +102,7 @@ setup_environment() {
     if ((count)); then
         printf '%s\n' "$plan" | setup_show
         "$ROOT/bin/devshell" diff "${options[@]}"
-        setup_confirm 'Aplicar os dotfiles apresentados, com backup?' || {
+        setup_confirm "Aplicar os dotfiles apresentados, com backup, e lembrar os perfis $DEVSHELL_PROFILES?" || {
             setup_cancel
             return 1
         }
@@ -115,7 +122,17 @@ setup_environment() {
         hash=$(printf '%s' "$plan" | setup_values approval)
         "$ROOT/bin/devshell" apply "${options[@]}" --approve "$hash" "${replacement[@]}"
     else
-        printf 'Dotfiles já correspondem ao perfil; nenhuma aplicação necessária.\n'
+        printf 'Dotfiles já correspondem ao perfil.\n'
+        # R-040: registrar os perfis também é escrita e tem confirmação própria (AGENTS.md).
+        if [[ $(printf '%s' "$plan" | setup_values profiles_recorded) == False ]]; then
+            if setup_confirm "Registrar os perfis $DEVSHELL_PROFILES como lembrados para os próximos comandos?"; then
+                hash=$(printf '%s' "$plan" | setup_values approval)
+                "$ROOT/bin/devshell" apply "${options[@]}" --approve "$hash" >/dev/null
+                printf 'Perfis registrados.\n'
+            else
+                printf 'Perfis não registrados; os próximos comandos continuam pedindo --profile.\n'
+            fi
+        fi
     fi
     "$ROOT/bin/devshell" doctor "${options[@]}"
     printf 'Setup concluído. Inicie zsh quando desejar; a shell de login foi preservada.\n'

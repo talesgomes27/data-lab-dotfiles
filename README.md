@@ -68,8 +68,25 @@ Conflitos exigem revisão do diff e a palavra `substituir`. O setup termina com
 `doctor`; retorno zero indica que as verificações do perfil passaram.
 
 Para incluir btop, ncdu, tldr e Lazygit, use `personal,science,extras` **nos três
-comandos**. Mantenha a mesma seleção nas verificações e atualizações futuras.
-A disponibilidade dos pacotes varia por versão da distribuição.
+comandos**. A disponibilidade dos pacotes varia por versão da distribuição.
+Depois do primeiro `setup`, os perfis ficam lembrados: os comandos sem
+`--profile` usam a última seleção aplicada.
+
+### Atualizar
+
+```bash
+git pull
+./bin/devshell setup
+```
+
+O setup começa por um resumo do que vai fazer, pergunta só pelas etapas que
+têm algo a mudar e termina sem perguntas quando está tudo em dia. O `doctor`
+indica o próximo passo quando encontra pendências.
+
+Se você aplicou os dotfiles antes desta versão, rode uma vez
+`./bin/devshell setup --profile SEUS_PERFIS` (por exemplo
+`personal,science,extras`): sem perfis lembrados, os comandos sem `--profile`
+param em vez de reduzir a sua HOME ao perfil `minimal`.
 
 Depois, inicie `zsh` ou abra outro terminal se ela já for sua shell de login.
 Selecione **FiraCode Nerd Font Mono** nas preferências do emulador para os ícones.
@@ -191,8 +208,9 @@ Bash e Nushell têm integrações próprias. Personalizações particulares da
 inicialização Zsh ficam na
 [extensão `.zshenv.local`](docs/INSTALLATION.md#personalização-da-zshenv),
 preservada fora dos arquivos gerenciados. [Veja os caminhos e a arquitetura](docs/ARCHITECTURE.md).
-Para mudar a configuração, edite as fontes, confira `plan` e `diff` e use o setup
-ou a aplicação manual aprovada. `update` atualiza somente configuração.
+Para mudar a configuração, edite as fontes e rode o setup; para controlar cada
+passo, use `plan`, `diff` e a aplicação manual aprovada. `update` atualiza
+somente configuração.
 O gerador `pyinit` e o lançador têm instalações separadas: atualizar o clone
 ou aplicar dotfiles não reinstala o `pyinit`. Siga o
 [fluxo de atualização de ferramentas](docs/INSTALLATION.md#atualizar-configuração-e-versões)

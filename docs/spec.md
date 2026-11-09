@@ -2,12 +2,12 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 3
+versao_spec: 5
 atualizado_em: 2026-11-09
 gerado_por: pre-code-pipeline
 ---
 
-# Spec: histórico de transações, CI agendado e lock das ferramentas uv
+# Spec: histórico de transações, CI agendado, lock das ferramentas uv e setup simplificado
 
 ## Contexto
 
@@ -223,6 +223,94 @@ Fatos observados (2026-11-09):
 - Estado: implementado
 - Evidência: tests/setup.bats::R-025 instalação do uv tool bloqueia setup e install sem alterar nada; tests/setup.bats::R-025 dry-run mostra conflito do uv tool mesmo com reparo de permissão pendente; tests/setup.bats::R-025 setup science repara permissão de grupo antes de avaliar as ferramentas; tests/test_boundaries.py::PythonToolLocks.test_r025_states_absent_orphan_link_conflict_and_divergent
 
+**Setup simplificado (Bloco D)**
+
+Contexto: depois do Bloco C, atualizar a HOME exigiu `install --component
+python` com hash copiado, `plan`/`apply` com a lista de perfis decorada e um
+`chmod` manual. O `setup` já coordena os comandos com confirmações, mas não
+lembra os perfis, pergunta por componente mesmo sem nada a fazer e não oferece
+a correção dos modos das venvs. O caminho comum passa a ser `git pull` seguido
+de `./bin/devshell setup`; os comandos individuais não mudam.
+
+### R-040 Perfis lembrados
+- Enunciado: depois de um `apply` concluído, a CLI guarda os perfis usados; um
+  comando sem `--profile` usa os perfis guardados.
+- Critério: Dado `apply --profile personal,science` concluído, Quando
+  `setup`, `plan`, `doctor`, `diff`, `status` ou `install` rodam sem
+  `--profile`, Então usam `personal,science`, e a saída mostra os perfis e a
+  origem (`lembrados`, `informados` ou `padrão`). Com `--profile`, vale o
+  informado, sem gravar nada até o próximo `apply`. Sem registro, vale
+  `minimal`, exceto quando `~/.config/devshell/components` já tem componentes
+  além dos de `minimal`: aí os comandos sem `--profile` saem com 2 pedindo
+  `setup --profile ...` uma vez, para não rebaixar uma HOME já aplicada. Um
+  `apply` sem arquivos a alterar também grava o registro. `plan`, `doctor`,
+  `diff`, `status` e `--dry-run` não gravam o registro. `rollback` restaura os
+  perfis guardados antes da transação. `project`, `install --component
+  devshell` e `rollback` não dependem do registro; com `--profile` informado,
+  um registro inválido só gera aviso.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/profiles.bats (14 testes R-040); tests/test_boundaries.py::RememberedProfiles
+
+### R-041 Resumo do setup antes da primeira confirmação
+- Enunciado: o `setup` mostra, antes de qualquer pergunta, o que vai fazer.
+- Critério: Dado um ambiente com reparos de permissão, pacotes nativos,
+  componentes a instalar, ferramentas a migrar e dotfiles a atualizar, Quando
+  `setup` roda, Então a primeira saída é um resumo com uma linha por etapa
+  (quantidade e o que muda) e os bloqueios; com tudo em dia, o resumo diz
+  "nada a fazer" e o setup termina com 0 sem perguntas. `setup --dry-run --json`
+  traz o mesmo resumo num campo `summary`.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/setup.bats (três testes R-041 do resumo)
+
+### R-042 Componente sem nada a fazer não pede confirmação
+- Enunciado: o `setup` só pergunta pelos componentes cujo plano prevê escrita.
+- Critério: Dado um componente já instalado e conforme (binários e plugins com
+  o mesmo hash do manifesto; Python com interpretadores presentes e ferramentas
+  `conforme`), Quando `setup` roda, Então não há pergunta nem chamada de
+  instalação para ele, e o resumo o lista como "em dia".
+- Prioridade: média
+- Estado: implementado
+- Evidência: tests/setup.bats (testes R-042 de pending e da atualização do projeto)
+
+### R-043 Correção segura dos modos das venvs do Data Lab
+- Enunciado: o `setup` oferece tirar a escrita de grupo e outros dos arquivos
+  dentro de `devshell/tools/NOME`, com confirmação própria.
+- Critério: Dada uma venv do Data Lab com arquivos 664 (cache do uv com umask
+  002), Quando `setup` roda, Então o resumo e a revisão de permissões listam a
+  correção, que só é aplicada depois do `s`, por descritor, sem seguir
+  symlinks e conferindo a identidade de cada arquivo; depois dela o `doctor`
+  não aponta a ferramenta. Fora de `devshell/tools`, nada muda. A remoção da
+  escrita feita na instalação (Bloco C) também passa a ser por descritor.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/setup.bats (três testes R-043); tests/test_setup.py::PermissionReview.test_r043_venv_mode_items_ignore_symlinks_and_refuse_swaps
+
+### R-044 Doctor indica o próximo passo
+- Enunciado: com pendências, o `doctor` termina com o comando a rodar.
+- Critério: Dado um `doctor` com pendências que o `setup` resolve (componente
+  ausente, dotfile desatualizado, ferramenta ausente ou com modos inseguros),
+  Quando roda, Então a última linha é "Próximo passo: ./bin/devshell setup" (com
+  `--profile` só se os perfis não forem os lembrados) e o JSON traz
+  `next_step` com `command` e `reason`; com pendência manual (conflito do `uv
+  tool`, extensão Zsh insegura, arquivo `.zwc`), o próximo passo é a ação
+  manual da mensagem; sem pendências, `next_step` é `null`.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/test_boundaries.py::DoctorNextStep; tests/setup.bats (dois testes R-044)
+
+### R-045 Documentação do caminho comum
+- Enunciado: README e INSTALLATION abrem com o caminho comum de instalar e
+  atualizar e mantêm os comandos individuais numa seção avançada.
+- Critério: Dado o diff final, Quando revisado, Então "Atualizar" tem dois
+  comandos (`git pull` e `./bin/devshell setup`), com saída de exemplo
+  executada em HOME temporária, e a seção avançada mantém plan/apply/install/
+  rollback com hash; CHANGELOG avisa da mudança do perfil padrão.
+- Prioridade: média
+- Estado: implementado
+- Evidência: README.md (Atualizar); docs/INSTALLATION.md (Atualizar configuração e versões); CHANGELOG.md
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -245,6 +333,9 @@ Fatos observados (2026-11-09):
 ### N-004 Lock do próprio uv, do Chezmoi ou do Nushell (já fixados por SHA-256 em `artifacts.json`)
 ### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa)
 ### N-006 Alerta por canal além da notificação padrão do GitHub
+### N-007 `git pull`, atualização do checkout ou verificação de versões nova pela CLI
+### N-008 `--yes` ou aprovação automática no setup
+### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta)
 
 ## Decisões
 
@@ -326,6 +417,85 @@ Instalações anteriores feitas pelo `uv tool` bloqueiam o plano com o comando
 `uv tool uninstall NOME`. A CLI não chama `uv tool`, para não afetar outras
 ferramentas do usuário. O ADR 003 passa a apontar o ADR 004 para as CLI Python.
 
+### D-014 Perfis em arquivo de estado próprio
+Os perfis ficam em `$XDG_STATE_HOME/devshell/profiles`, numa forma canônica
+(sem duplicatas, sem o `minimal` implícito, na ordem informada), validada
+como em `resolve_profiles`. Não vão para `~/.config/devshell/components`, que
+o Nushell lê inteiro. Num `apply` com arquivos a alterar, o registro é gravado
+na transação, depois de `current.json`, e o manifesto guarda
+`previous_profiles` (texto ou `null`); o caminho de falha e o `rollback` o
+restauram (`null` remove o registro; manifesto antigo sem a chave deixa o
+registro como está e o rollback avisa "perfis anteriores desconhecidos; informe
+--profile"). Num `apply` sem arquivos a alterar, o registro é gravado sob
+`locked()` por escrita atômica, sem transação. O registro nunca é um item de
+`transactions/ID`, o que preserva a poda e o `--list` do Bloco A.
+
+### D-015 Precedência: informado, lembrado, `minimal`
+Vale para `setup`, `plan`, `apply`, `update`, `diff`, `status`, `doctor` e
+`install` (menos `--component devshell`). `project`, `install --component
+devshell` e `rollback` não leem o registro; a guarda de `project` passa a
+olhar se `--profile` foi informado. A leitura é feita por um helper Python de
+`state.py`, com o mesmo `xdg()` da gravação e sem `mkdir`; ela confere o próprio
+arquivo (regular, do usuário, sem symlink nem hardlink) mas não os ancestrais,
+para um `~/.local` com escrita de grupo não impedir o `setup` de oferecer o
+reparo. A gravação continua com `safe_path`.
+
+Revisão na execução (2026-11-09): a ordem informada é mantida, em vez da ordem
+de `profiles/`, porque reordenar mudaria a ordem dos componentes e reescreveria
+`~/.config/devshell/components` de quem já aplicou; `personal,science` e
+`science,personal` são seleções distintas no hash. Num `apply` sem arquivos a
+alterar pelo `setup`, o registro dos perfis tem confirmação própria. Sem
+`--profile`, um registro inválido sai com 2 e a mensagem pede `--profile`;
+com `--profile`, vira aviso. A origem (`lembrados`, `informados` ou
+`padrão`) vai em `profile_source`, fora do hash de aprovação, como `created`.
+Sem registro e com `components` além de `minimal`, a origem é `desconhecida`
+e os comandos sem `--profile` saem com 2 (R-040).
+
+### D-016 Resumo como previsão das inspeções existentes
+O resumo de R-041 vem de `setup inspect` e dos planos de `install` e `plan`,
+sem estado novo e sem rede. Etapas que dependem do reparo de permissões
+(Python, versões) aparecem como "reavaliado depois do reparo". Cada etapa
+recalcula o próprio plano antes da sua pergunta; não há confirmação global, e o
+resumo diz que cada etapa pede a sua.
+
+### D-017 `pending` por componente
+`pending` entra no plano de `install`, fora do hash de aprovação. Por
+componente: `pyinit`, hash do destino e bit de execução; `plugins` e
+`firacode`, os checksums `health` de `artifacts.json` (a mesma conferência do
+doctor, um subconjunto dos arquivos, registrado como limite); `uv`, `chezmoi` e
+`nu`, que já ficam fora de `user_components` quando presentes; `python`,
+interpretadores do manifesto presentes em `UV_PYTHON_INSTALL_DIR` e todas as
+ferramentas `conforme`. O `setup` só pergunta quando `pending` é verdadeiro.
+
+### D-018 Modos das venvs na revisão de permissões do setup
+A revisão ganha uma categoria própria: arquivos regulares e diretórios com
+escrita de grupo ou outros dentro de `devshell/tools/NOME` com `pyvenv.cfg`
+regular, obtidos por `os.walk` sem seguir symlinks; symlinks da venv são
+ignorados, não recusados, e os itens não passam pelas checagens de hardlink e
+dono de `target_paths`. O texto agrupa por venv (quantidade e exemplos) e o JSON
+mantém a identidade de cada item. O reparo usa `repair_permission`, que abre
+com `O_NOFOLLOW` no último componente e confere a identidade antes do `fchmod`;
+a instalação passa a usar uma função equivalente em `state.py`, sem importar
+`setup` (evita ciclo). A mensagem do doctor para esse caso é própria ("modos
+inseguros na venv; o setup corrige"), distinta de uma venv divergente.
+
+### D-019 Regras do próximo passo
+Um `next_step` só: se houver pendência manual, a primeira delas; senão, se
+houver pendência que o `setup` resolve, o `setup` (com `--profile` só quando a
+origem não é `lembrados`); senão, `null`. Um doctor que sai com 2 não emite
+`next_step`. Invariante testada: depois de um `setup` que diz "nada a fazer",
+o doctor nunca sugere `setup`. A classificação é uma tabela de padrões das
+mensagens, com teste por tipo; ficam como ação manual, por escolha, a
+integridade divergente de um componente e o interpretador uv divergente (a
+reinstalação não remove o que diverge), `permissões inseguras` fora das venvs
+(o reparo do setup não cobre todo caminho que o doctor confere) e o componente
+que está em `~/.local/bin` fora do PATH da sessão (abrir uma shell nova
+resolve). O doctor deixou de acusar `arquivo gerenciado divergente` quando o
+arquivo já é igual ao desejado e só o registro em `current.json` difere: o
+apply seguinte reescreve o registro, e acusar levaria a um setup sem nada a
+fazer; `next_step` entra no CHANGELOG como campo novo
+do JSON.
+
 ```mermaid
 flowchart LR
   M[manifests/python.json] --> P[install --component python: plano]
@@ -364,6 +534,11 @@ wheels de cada combinação de `manifests/artifacts.json`; sem wheel para alguma
 `--no-build` falharia ali e a decisão volta ao usuário. Respondida em 2026-11-09 por
 T-202: os três locks resolvem com `--no-build` e hash obrigatório em
 x86_64/aarch64 com glibc e musl (resolução, não execução nessas plataformas).
+
+### Q-004 O perfil padrão sem `--profile` pode passar a ser o lembrado em todos os comandos?
+Hoje é `minimal`. Scripts que chamam a CLI sem `--profile` passariam a usar os
+perfis aplicados (D-015). A alternativa é lembrar só no `setup`. Respondida em
+2026-11-09 pelo aceite do desenho do Bloco D: vale em todos os comandos (D-015).
 
 ### Q-003 A notificação semanal para quem editou o cron por último atende?
 Por padrão, você recebe; se outra pessoa editar o cron, passa a ser ela.

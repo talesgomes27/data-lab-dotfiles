@@ -2,6 +2,24 @@
 
 ## Não publicado
 
+- O setup vira o caminho comum de atualização (`git pull` e `./bin/devshell
+  setup`): começa por um resumo das etapas, só pergunta pelos componentes com
+  algo a instalar e termina sem perguntas quando está tudo em dia. Oferece, com
+  confirmação própria, tirar a escrita de grupo e outros das venvs das
+  ferramentas.
+- **Mudança de padrão:** os comandos sem `--profile` usam os perfis do último
+  `apply` (gravados em `$XDG_STATE_HOME/devshell/profiles`, restaurados pelo
+  `rollback`). Sem registro e com a HOME já aplicada além de `minimal`, eles
+  param e pedem `setup --profile ...` uma vez. `project` e
+  `install --component devshell` não leem o registro; `project` deixa de
+  aceitar `--profile`, inclusive `--profile minimal`.
+- O `doctor` termina com o próximo passo, e o JSON ganha o campo `next_step`
+  (`kind`, `command`, `reason`, ou `null`).
+  Um componente instalado em `~/.local/bin` fora do PATH da sessão aparece
+  como "componente fora do PATH", com passo manual, e não como ausente. O
+  plano do `rollback` mostra os perfis lembrados que voltam
+  (`profiles_restore` no JSON).
+
 - Ruff, pre-commit e IPython passam a ser instalados em venvs próprias, a partir
   de locks com hash de todas as dependências (`manifests/python-tools/`), com
   `uv pip install --require-hashes`. O `doctor` confere a venv contra o lock.

@@ -6,6 +6,14 @@ Os exemplos interativos supõem uma sessão Zsh com o perfil `personal` aplicado
 Substitua nomes de arquivos e pastas pelos seus. `extras` é necessário para
 selecionar seus pacotes; as bibliotecas de estudos são preparadas separadamente.
 
+## Manter o ambiente em dia
+
+Depois de atualizar o checkout, `./bin/devshell setup` faz o que faltar, com uma
+confirmação por etapa, e `./bin/devshell doctor` termina com o próximo passo
+quando encontra pendências. Os comandos sem `--profile` usam os perfis do último
+`apply`; a linha `Perfis:` da saída mostra quais e de onde vieram (`lembrados`,
+`informados` ou `padrão`). Em JSON, o `doctor` traz o campo `next_step`.
+
 ## Navegar entre pastas
 
 Visite uma pasta pelo caminho completo. O zoxide guarda visitas localmente e,

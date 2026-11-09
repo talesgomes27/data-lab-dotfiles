@@ -20,7 +20,9 @@ for command in sudo apt-get dnf pacman zypper; do
 done
 export PATH="$sandbox/guard-bin:$PATH"
 ./bin/devshell setup --profile science --dry-run --json | python3 -c 'import json,sys;p=json.load(sys.stdin);assert not p["native_command"] and not p["permissions"] and not p["blockers"],p'
-printf 's\ns\ns\n' | ./bin/devshell setup --profile science
+# Cada resposta confere o texto da pergunta: nenhuma aprova outra etapa (AGENTS.md).
+# Downloads reais podem ficar minutos sem saída.
+ANSWER_TIMEOUT=900 python3 tests/answer.py 'componente python conforme=s' 'componente pyinit conforme=s' 'Aplicar os dotfiles=s' -- ./bin/devshell setup --profile science
 "$HOME/.local/bin/pyinit" --help
 approval=$(./bin/devshell install --component plugins --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
 ./bin/devshell install --component plugins --approve "$approval"

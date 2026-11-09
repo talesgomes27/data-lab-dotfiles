@@ -132,7 +132,7 @@ BIN
 
 @test 'setup com ferramentas compatíveis aplica dotfiles sem reinstalar ou sudo' {
     prepare_setup
-    run bash -c 'printf "s\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 0 ]
     [ -f "$HOME/.zshenv" ]
     [ -f "$XDG_CONFIG_HOME/zsh/.zshrc" ]
@@ -146,8 +146,8 @@ BIN
 @test 'setup exibe e exige confirmação separada antes de sudo' {
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/starship"
-    run bash -c 'printf "n\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
-    [ "$status" -ne 0 ]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "privilégios administrativos=n" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
+    [ "$status" -eq 1 ]
     [[ "$output" == *'apt-get install -- starship'* ]]
     [ ! -e "$SETUP_LOG" ]
     [ ! -e "$HOME/.zshenv" ]
@@ -159,8 +159,8 @@ BIN
     run "$SETUP_REPO/bin/devshell" setup --profile extras --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["native_command"]==["apt-get","install","--","btop","lazygit","ncdu","tealdeer"]'
-    run bash -c 'printf "n\n" | "$SETUP_REPO/bin/devshell" setup --profile extras'
-    [ "$status" -ne 0 ]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "privilégios administrativos=n" -- "$SETUP_REPO/bin/devshell" setup --profile extras'
+    [ "$status" -eq 1 ]
     [ ! -e "$SETUP_LOG" ]
     [ ! -e "$HOME/.zshenv" ]
 }
@@ -168,8 +168,9 @@ BIN
 @test 'setup offline não chama gerenciador de pacotes com respostas positivas' {
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/starship"
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal --offline'
-    [ "$status" -ne 0 ]
+    # As respostas positivas só seriam lidas se, por regressão, o setup pedisse o sudo offline.
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" --allow-unused "privilégios administrativos=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile personal --offline'
+    [ "$status" -eq 3 ]
     [[ "$output" == *offline* ]]
     [ ! -e "$SETUP_LOG" ]
     [ ! -e "$HOME/.zshenv" ]
@@ -179,7 +180,7 @@ BIN
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/starship"
     export SETUP_NATIVE_FAIL=1
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "privilégios administrativos=s" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
     [ "$status" -eq 17 ]
     [ -e "$SETUP_LOG" ]
     [ ! -e "$HOME/.zshenv" ]
@@ -188,8 +189,8 @@ BIN
 @test 'setup não sobrescreve conflito sem confirmação explícita' {
     prepare_setup
     printf 'minha configuração\n' >"$HOME/.zshenv"
-    run bash -c 'printf "s\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
-    [ "$status" -ne 0 ]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite substituir=<EOF>" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 1 ]
     [ "$(/usr/bin/cat "$HOME/.zshenv")" = 'minha configuração' ]
     [ ! -e "$XDG_STATE_HOME/devshell/latest" ]
 }
@@ -197,7 +198,7 @@ BIN
 @test 'setup aceita conflito com confirmação e mantém backup para rollback' {
     prepare_setup
     printf 'minha configuração\n' >"$HOME/.zshenv"
-    run bash -c 'printf "s\nsubstituir\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite substituir=substituir" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 0 ]
     hash=$("$SETUP_REPO/bin/devshell" rollback --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
     "$SETUP_REPO/bin/devshell" rollback --approve "$hash"
@@ -248,7 +249,7 @@ PY
     /usr/bin/chmod 775 "$HOME/.local" "$HOME/.local/bin"
     /usr/bin/mkdir "$HOME/.local/unrelated"
     /usr/bin/chmod 777 "$HOME/.local/unrelated"
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Retirar escrita=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/stat -c %a "$HOME/.local")" = 755 ]
     [ "$(/usr/bin/stat -c %a "$HOME/.local/bin")" = 755 ]
@@ -260,7 +261,7 @@ PY
     prepare_setup
     seed_artifact chezmoi
     /usr/bin/rm "$SETUP_BIN/chezmoi"
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente chezmoi conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal --offline'
     [ "$status" -eq 0 ]
     [ -x "$HOME/.local/bin/chezmoi" ]
     [ -f "$HOME/.zshenv" ]
@@ -290,7 +291,7 @@ PY
     seed_artifact plugins
     seed_artifact firacode
     /usr/bin/rm "$SETUP_BIN/starship"
-    run bash -c 'printf "s\ns\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "privilégios administrativos=s" "componente plugins conforme=s" "componente firacode conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
     [ "$status" -eq 0 ]
     [ -x "$SETUP_BIN/starship" ]
     [ -f "$XDG_DATA_HOME/devshell/plugins/autosuggestions/zsh-autosuggestions.zsh" ]
@@ -321,7 +322,7 @@ PY
 
 @test 'setup science exige confirmação própria antes de instalar pyinit' {
     prepare_setup
-    run bash -c 'printf "s\nn\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=n" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 1 ]
     [[ "$output" == *'componente pyinit conforme este plano?'* ]]
     [ ! -e "$HOME/.local/bin/pyinit" ]
@@ -330,7 +331,7 @@ PY
 
 @test 'setup science reutiliza uv compatível e instala Python isolado e pyinit' {
     prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [ -x "$HOME/.local/bin/pyinit" ]
     python3 - <<'PY'
@@ -352,7 +353,7 @@ PY
     run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert "duckdb" in p["components"];assert "duckdb" in p["dependencies"]["optional_missing"];assert not p["blockers"]'
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [[ "$output" == *'DuckDB opcional ausente'* ]]
 }
@@ -369,7 +370,7 @@ PY
 
 install_science() {
     prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     TOOLS="$XDG_DATA_HOME/devshell/tools"
 }
@@ -377,6 +378,133 @@ doctor_issue() {
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
     [ "$status" -eq 3 ]
     printf '%s' "$output" | python3 -c 'import json,sys;i=json.load(sys.stdin)["issues"];assert any(all(p in s for p in sys.argv[1:]) for s in i),i' "$@"
+}
+
+@test 'R-043 setup oferece e aplica a correção dos modos das venvs do Data Lab' {
+    install_science
+    /usr/bin/chmod g+w "$TOOLS"/ipython/lib/python3.13/site-packages/*.dist-info/METADATA "$TOOLS/ipython/lib/python3.13/site-packages"
+    /usr/bin/mkdir -p "$HOME/fora"
+    printf 'x\n' >"$HOME/fora/arquivo"
+    /usr/bin/chmod 664 "$HOME/fora/arquivo"
+    run bash -c '"$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json 2>/dev/null'
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c '
+import json,sys
+p=json.load(sys.stdin);items=[i for i in p["permissions"] if i["kind"]=="venv-mode"]
+assert items and all(i["repairable"] for i in items),p["permissions"]
+assert all("/devshell/tools/ipython/" in i["path"] for i in items),items
+assert not p["blockers"],p["blockers"]'
+    run bash -c '"$SETUP_REPO/bin/devshell" setup --profile science --dry-run'
+    [[ "$output" == *'venv ipython:'* ]]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Retirar escrita=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [ -z "$(/usr/bin/find "$TOOLS" -perm /022 ! -type l -print -quit)" ]
+    [ "$(/usr/bin/stat -c %a "$HOME/fora/arquivo")" = 664 ]
+    [ -L "$TOOLS/ipython/bin/python" ]
+    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
+    printf '%s' "$output" | python3 -c 'import json,sys;i=[s for s in json.load(sys.stdin)["issues"] if "ferramenta" in s];assert not i,i'
+}
+
+@test 'R-043 doctor tem mensagem própria para modos inseguros na venv' {
+    install_science
+    /usr/bin/chmod g+w "$TOOLS"/ruff/lib/python3.13/site-packages/ruff-*.dist-info/METADATA
+    doctor_issue ruff 'modos inseguros na venv' 'setup'
+}
+
+@test 'R-043 venv com milhares de arquivos é revista agrupada e em tempo curto' {
+    install_science
+    python3 - "$TOOLS/ipython/lib/python3.13/site-packages" <<'MANY'
+import os,sys
+from pathlib import Path
+root=Path(sys.argv[1])/'muitos'
+root.mkdir()
+for index in range(2000):
+    path=root/f'm{index}.py';path.write_text('#\n');path.chmod(0o664)
+MANY
+    start=$SECONDS
+    run bash -c '"$SETUP_REPO/bin/devshell" setup --profile science --dry-run'
+    [ "$status" -eq 0 ]
+    [ $((SECONDS - start)) -lt 20 ]
+    [[ "$output" == *'venv ipython: 2000 '* ]]
+    [ "$(printf '%s\n' "$output" | /usr/bin/grep -c 'muitos/m')" -le 3 ]
+}
+
+@test 'R-041 resumo é a primeira saída e diz que cada etapa pede a sua confirmação' {
+    prepare_setup
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=n" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 1 ]
+    printf '%s' "$output" | python3 -c '
+import sys
+text=sys.stdin.read()
+summary=text.index("Resumo do setup")
+assert summary < text.index("[s/N]"),text
+block=text[summary:text.index("[s/N]")]
+assert "cada etapa pede a própria confirmação" in block,block
+assert "componente python: instalar ou atualizar" in block and "componente pyinit: instalar ou atualizar" in block,block
+assert "dotfiles:" in block and "a atualizar" in block,block'
+}
+
+@test 'R-040 setup pergunta antes de registrar os perfis quando os dotfiles já estão em dia' {
+    install_science
+    /usr/bin/rm "$XDG_STATE_HOME/devshell/profiles"
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Registrar os perfis science=n" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'Perfis não registrados'* ]]
+    [ ! -e "$XDG_STATE_HOME/devshell/profiles" ]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Registrar os perfis science=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/profiles")" = science ]
+}
+
+@test 'R-041 com tudo em dia o setup diz nada a fazer, sai com 0 e não pergunta' {
+    install_science
+    run "$SETUP_REPO/bin/devshell" setup --offline </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'Nada a fazer: tudo em dia.'* ]]
+    [[ "$output" != *'[s/N]'* ]]
+    run bash -c '"$SETUP_REPO/bin/devshell" setup --dry-run --json 2>/dev/null'
+    printf '%s' "$output" | python3 -c 'import json,sys;s=json.load(sys.stdin)["summary"];assert s["nothing_to_do"] is True,s;assert all(step["status"]=="em dia" for step in s["steps"]),s'
+}
+
+@test 'R-042 atualização do projeto só pergunta pelo que mudou' {
+    install_science
+    printf '# versão nova\n' >>"$SETUP_REPO/dotfiles/dot_config/devshell/env.sh"
+    /usr/bin/rm "$UV_TOOL_BIN_DIR/ruff"
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --offline'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'componente pyinit: em dia'* ]]
+    [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/ruff")" = "$TOOLS/ruff/bin/ruff" ]
+    [ "$(/usr/bin/tail -n 1 "$XDG_CONFIG_HOME/devshell/env.sh")" = '# versão nova' ]
+}
+
+@test 'R-041 com reparo pendente as etapas dependentes são reavaliadas depois' {
+    install_science
+    /usr/bin/chmod 775 "$HOME/.local"
+    run bash -c '"$SETUP_REPO/bin/devshell" setup --dry-run --json 2>/dev/null'
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c '
+import json,sys
+s=json.load(sys.stdin)["summary"];steps={x["step"]:x for x in s["steps"]}
+assert steps["permissões"]["status"]=="corrigir",steps
+assert steps["componente python"]["status"]=="reavaliado depois do reparo de permissões",steps
+assert s["nothing_to_do"] is False'
+}
+
+@test 'R-044 doctor termina com o próximo passo e o JSON traz next_step' {
+    prepare_setup
+    run "$SETUP_REPO/bin/devshell" doctor --profile science --offline
+    [ "$status" -eq 3 ]
+    [[ "$(printf '%s\n' "$output" | /usr/bin/tail -n 1)" == 'Próximo passo: ./bin/devshell setup --profile science'* ]]
+    run bash -c '"$SETUP_REPO/bin/devshell" doctor --profile science --json 2>/dev/null'
+    printf '%s' "$output" | python3 -c 'import json,sys;s=json.load(sys.stdin)["next_step"];assert s["kind"]=="setup" and s["command"][-2:]==["--profile","science"],s'
+}
+
+@test 'R-044 depois de um setup sem nada a fazer o doctor não sugere setup' {
+    install_science
+    run "$SETUP_REPO/bin/devshell" setup --offline </dev/null
+    [[ "$output" == *'Nada a fazer: tudo em dia.'* ]]
+    run bash -c '"$SETUP_REPO/bin/devshell" doctor --json 2>/dev/null'
+    printf '%s' "$output" | python3 -c 'import json,sys;d=json.load(sys.stdin);s=d["next_step"];assert s is None or s["kind"]!="setup",(s,d["issues"])'
 }
 
 @test 'R-023 doctor relata link ausente e versão divergente do lock' {
@@ -439,6 +567,47 @@ RECORD
     doctor_issue pre-commit 'módulo essencial'
 }
 
+pending_of() {
+    "$SETUP_REPO/bin/devshell" install --component "$1" --profile "$2" --offline --json 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["pending"])'
+}
+
+@test 'R-042 pending do pyinit, plugins e fonte acompanha o que está instalado' {
+    prepare_setup
+    seed_artifact plugins
+    seed_artifact firacode
+    [ "$(pending_of pyinit science)" = True ]
+    [ "$(pending_of plugins personal)" = True ]
+    [ "$(pending_of firacode personal)" = True ]
+    for spec in 'pyinit science' 'plugins personal' 'firacode personal'; do
+        read -r component profile <<<"$spec"
+        hash=$("$SETUP_REPO/bin/devshell" install --component "$component" --profile "$profile" --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+        "$SETUP_REPO/bin/devshell" install --component "$component" --profile "$profile" --offline --approve "$hash" >/dev/null
+        [ "$(pending_of "$component" "$profile")" = False ]
+    done
+    /usr/bin/chmod a-x "$HOME/.local/bin/pyinit"
+    [ "$(pending_of pyinit science)" = True ]
+    printf 'modificado' >"$XDG_DATA_HOME/devshell/plugins/autosuggestions/zsh-autosuggestions.zsh"
+    [ "$(pending_of plugins personal)" = True ]
+}
+
+@test 'R-042 pending do Python fica falso com interpretadores e ferramentas conformes' {
+    prepare_setup
+    [ "$(pending_of python science)" = True ]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [ "$(pending_of python science)" = False ]
+    /usr/bin/rm "$UV_TOOL_BIN_DIR/ruff"
+    [ "$(pending_of python science)" = True ]
+}
+
+@test 'R-042 pending fica fora do hash de aprovação' {
+    prepare_setup
+    before=$("$SETUP_REPO/bin/devshell" install --component pyinit --profile science --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    "$SETUP_REPO/bin/devshell" install --component pyinit --profile science --offline --approve "$before" >/dev/null
+    [ "$(pending_of pyinit science)" = False ]
+    after=$("$SETUP_REPO/bin/devshell" install --component pyinit --profile science --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    [ "$before" = "$after" ]
+}
 @test 'R-025 setup science repara permissão de grupo antes de avaliar as ferramentas' {
     prepare_setup
     /usr/bin/mkdir -p "$HOME/.local/bin"
@@ -446,7 +615,7 @@ RECORD
     run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["permissions"] and all(i["repairable"] for i in p["permissions"]),p["permissions"];assert not p["blockers"],p["blockers"]'
-    run bash -c 'printf "s\ns\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Retirar escrita=s" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/stat -c %a "$HOME/.local")" = 755 ]
     [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/ruff")" = "$XDG_DATA_HOME/devshell/tools/ruff/bin/ruff" ]
@@ -503,7 +672,7 @@ RECORD
     run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["native_command"],p;b=p["blockers"];assert any("conflito: ruff" in x and "uv tool uninstall ruff" in x for x in b),b'
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 3 ]
     [ -z "$(/usr/bin/grep -s '^sudo ' "$SETUP_LOG")" ]
     run "$SETUP_REPO/bin/devshell" install --component python --profile science --json
@@ -521,7 +690,7 @@ RECORD
     printf '#!/bin/sh\n' >"$UV_TOOL_DIR/outra/bin/outra"
     /usr/bin/ln -s "$UV_TOOL_DIR/outra/bin/outra" "$UV_TOOL_BIN_DIR/outra"
     VIRTUAL_ENV="$HOME/projeto/.venv" CONDA_PREFIX="$HOME/conda" UV_VENV_CLEAR=1 UV_INDEX_URL=https://exemplo.invalid \
-        run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+        run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/find "$HOME/projeto" -printf '%p %s\n' | /usr/bin/sort)" = "$before" ]
     [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/outra")" = "$UV_TOOL_DIR/outra/bin/outra" ]
@@ -563,7 +732,7 @@ RECORD
 
 @test 'doctor identifica metadado de versão incorreto no interpretador uv' {
     prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente python conforme=s" "componente pyinit conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     printf '#define PY_VERSION "3.1.0"\n' >"$UV_PYTHON_INSTALL_DIR/cpython-3.12.12-fixture/include/python3.12/patchlevel.h"
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
@@ -575,7 +744,7 @@ RECORD
     prepare_setup
     seed_artifact plugins
     seed_artifact firacode
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente plugins conforme=s" "componente firacode conforme=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile personal --offline'
     [ "$status" -eq 0 ]
     printf 'modificado' >"$XDG_DATA_HOME/devshell/plugins/autosuggestions/zsh-autosuggestions.zsh"
     printf 'modificado' >"$XDG_DATA_HOME/fonts/FiraCodeNerdFont/FiraCodeNerdFontMono-Regular.ttf"
@@ -588,7 +757,7 @@ RECORD
 @test 'setup sem sudo diagnostica pacotes ausentes sem pedir outros ajustes' {
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/sudo" "$SETUP_BIN/starship"
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
     [ "$status" -eq 3 ]
     [[ "$output" == *'sudo ausente'* ]]
     [ ! -e "$SETUP_LOG" ]
@@ -598,7 +767,7 @@ RECORD
 @test 'setup recusa versão incompatível em vez de substituir executável' {
     prepare_setup
     printf '#!/usr/bin/env bash\nprintf "uv 0.1.0\\n"\n' >"$SETUP_BIN/uv"
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile science'
     [ "$status" -eq 3 ]
     [[ "$output" == *'uv incompatível'* ]]
     [ ! -e "$SETUP_LOG" ]
@@ -643,7 +812,7 @@ PY
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/starship" "$SETUP_BIN/zsh"
     printf 'ID=fedora\n' >"$BATS_TEST_TMPDIR/fedora"
-    DEVSHELL_OS_RELEASE="$BATS_TEST_TMPDIR/fedora" run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
+    DEVSHELL_OS_RELEASE="$BATS_TEST_TMPDIR/fedora" run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
     [ "$status" -eq 3 ]
     [[ "$output" == *'sem pacote/adaptador definido: starship'* ]]
     [ ! -e "$SETUP_LOG" ]
@@ -660,7 +829,7 @@ manifest=json.loads(Path(os.environ['SETUP_REPO'],'manifests/artifacts.json').re
 artifact=next(a for a in manifest['artifacts'] if a['component']=='chezmoi')
 Path(os.environ['XDG_CACHE_HOME'],'devshell/artifacts',artifact['sha256']).write_bytes(b'corrompido')
 PY
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal --offline'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "componente chezmoi conforme=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal --offline'
     [ "$status" -eq 2 ]
     [[ "$output" == *'cache corrompido:'* && "$output" == *'/devshell/artifacts/'* ]]
     [ ! -e "$HOME/.local/bin/chezmoi" ]
@@ -671,7 +840,7 @@ PY
     prepare_setup
     /usr/bin/rm "$SETUP_BIN/starship"
     printf 'ID=unknown\n' >"$BATS_TEST_TMPDIR/unknown"
-    DEVSHELL_OS_RELEASE="$BATS_TEST_TMPDIR/unknown" run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile personal'
+    DEVSHELL_OS_RELEASE="$BATS_TEST_TMPDIR/unknown" run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile personal'
     [ "$status" -eq 3 ]
     [[ "$output" == *'sem pacote/adaptador definido'* ]]
     [ ! -e "$SETUP_LOG" ]
@@ -683,7 +852,7 @@ PY
     /usr/bin/mkdir -p "$HOME/.local/bin"
     printf '#!/usr/bin/env bash\nprintf "uv 0.1.0\\n"\n' >"$HOME/.local/bin/uv"
     /usr/bin/chmod 755 "$HOME/.local/bin/uv"
-    run bash -c 'printf "s\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 3 ]
     [[ "$output" == *'uv incompatível'* ]]
     [ ! -e "$HOME/.zshenv" ]
@@ -695,7 +864,7 @@ PY
     printf '#!/usr/bin/env bash\nprintf "uv 0.1.0\\n"\n' >"$HOME/.local/bin/uv"
     /usr/bin/chmod 755 "$HOME/.local/bin/uv"
     /usr/bin/chmod 775 "$HOME/.local/bin"
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Retirar escrita=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 3 ]
     [[ "$output" == *'uv incompatível'* ]]
     [ "$(/usr/bin/stat -c %a "$HOME/.local/bin")" = 755 ]
@@ -709,7 +878,7 @@ PY
     run "$SETUP_REPO/bin/devshell" setup --profile minimal --dry-run --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys,os;p=json.load(sys.stdin);assert any(i["path"]==os.environ["XDG_STATE_HOME"]+"/devshell/transactions" for i in p["permissions"])'
-    run bash -c 'printf "s\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Retirar escrita=s" "Aplicar os dotfiles=s" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/stat -c %a "$XDG_STATE_HOME/devshell/transactions")" = 755 ]
     [ -f "$HOME/.zshenv" ]

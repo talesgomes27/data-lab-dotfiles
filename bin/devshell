@@ -20,7 +20,9 @@ Uso: devshell COMANDO [opções]
 Comandos: setup plan apply status diff doctor update rollback install project
   project doctor|fix-permissions  Diagnosticar .venv ou revisar seu reparo
   --path CAMINHO  Diretório do projeto (project; default: diretório atual)
-  --profile minimal,personal,work,science,extras   Perfis combináveis (default: minimal)
+  --profile minimal,personal,work,science,extras   Perfis combináveis (default: os do último apply;
+                  sem registro, minimal; HOME já aplicada sem registro sai com 2;
+                  project, rollback e install --component devshell não usam o registro)
   --dry-run       Planejar sem escrita persistente ou downloads
   --offline       Proibir downloads (análise/configuração já são offline)
   --json          Relatório JSON
@@ -55,14 +57,18 @@ if [[ "$command" == project ]]; then
 fi
 profile=minimal
 json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
-rollback_list=0 rollback_prune=0 keep=''
+rollback_list=0 rollback_prune=0 keep='' profile_set=0
 while (($#)); do
     case "$1" in
         --profile | --approve | --component | --path | --keep)
             if (($# < 2)) || [[ -z "$2" || "$2" == --* ]]; then
                 fail "valor ausente para $1"
             fi
-            case "$1" in --profile) profile=$2 ;; --approve) approval=$2 ;; --component)
+            case "$1" in --profile)
+                profile=$2
+                profile_set=1
+                ;;
+            --approve) approval=$2 ;; --component)
                 component=$2
                 component_set=1
                 ;;
@@ -126,13 +132,22 @@ if [[ "$command" != project ]]; then
     source "$ROOT/lib/platform.sh"
     detect_platform
 fi
+# D-015: informado, lembrado ou minimal; project, rollback e o lançador não dependem do registro.
+profile_source=informados
+if [[ "$command" == project || "$command" == rollback || ("$command" == install && "$component" == devshell) ]]; then
+    ((profile_set)) || profile_source=padrão
+else
+    remembered=$(DEVSHELL_PROFILE_INFORMED="$( ((profile_set)) && printf '%s' "$profile")" devshell_python "$ROOT/lib/state.py" profiles-source)
+    read -r profile_source profile <<<"$remembered"
+fi
 # shellcheck source=lib/profiles.sh
 source "$ROOT/lib/profiles.sh"
 resolve_profiles "$profile"
+export DEVSHELL_PROFILE_SOURCE="$profile_source"
 export DEVSHELL_PROFILES="$profile" DEVSHELL_JSON="$json" DEVSHELL_OFFLINE="$offline"
 export DEVSHELL_APPROVAL="$approval" DEVSHELL_REPLACE="$replace" DEVSHELL_COMPONENT="$component"
 if [[ "$command" == project ]]; then
-    [[ "$replace" == 0 && "$component_set" == 0 && "$profile" == minimal ]] || fail 'project não aceita --replace-existing, --component ou perfis adicionais'
+    [[ "$replace" == 0 && "$component_set" == 0 && "$profile_set" == 0 ]] || fail 'project não aceita --replace-existing, --component ou --profile'
     export DEVSHELL_PROJECT_PATH="$project_path" DEVSHELL_DRY_RUN="$dry_run"
     exec "${python_command[@]}" "$ROOT/lib/project.py" "$project_action"
 elif [[ "$command" == setup ]]; then

@@ -99,6 +99,9 @@ Rollback de dotfiles preserva lançador, registro e backups da instalação.
 Antes da escrita, Chezmoi renderiza numa HOME temporária, a CLI confere os
 bytes e obtém um lock exclusivo. Cada arquivo existente é copiado com seus
 metadados para uma transação em `$XDG_STATE_HOME/devshell/transactions/ID`.
+O registro de perfis (`$XDG_STATE_HOME/devshell/profiles`) só escolhe perfis
+válidos de `profiles/`: é lido sem seguir symlink e recusado com outro dono ou
+hardlink, e qualquer escrita continua exigindo o hash aprovado.
 O journal é escrito antes de alterar os alvos; arquivos novos usam modo 600,
 backups/estado ficam em diretórios privados. Arquivos preexistentes conservam
 modo, UID e GID. Substituições são atômicas por arquivo, não por diretório.
