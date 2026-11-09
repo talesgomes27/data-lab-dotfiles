@@ -1,0 +1,50 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(chsh *)",
+      "Bash(chezmoi apply *)",
+      "Bash(chezmoi update *)",
+      "Bash(chezmoi init *)",
+      "Edit(~/.zshenv)",
+      "Edit(~/.zshrc)",
+      "Edit(~/.bashrc)",
+      "Edit(~/.bash_aliases)",
+      "Edit(~/.config/devshell/**)",
+      "Edit(~/.config/direnv/**)",
+      "Edit(~/.config/nushell/**)",
+      "Edit(~/.config/uv/**)",
+      "Edit(~/.config/zsh/**)",
+      "Edit(~/.config/starship.toml)"
+    ],
+    "ask": [
+      "Bash(bin/devshell apply *)",
+      "Bash(bin/devshell install *)",
+      "Bash(bin/devshell setup *)",
+      "Bash(bin/devshell update *)",
+      "Bash(bin/devshell rollback *)",
+      "Bash(devshell apply *)",
+      "Bash(devshell install *)",
+      "Bash(devshell setup *)",
+      "Bash(devshell update *)",
+      "Bash(devshell rollback *)",
+      "Bash(./bootstrap.sh *)",
+      "Bash(sh bootstrap.sh *)",
+      "Bash(bash scripts/containers.sh *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint-shell.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

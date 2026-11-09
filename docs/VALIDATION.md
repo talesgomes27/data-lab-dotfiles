@@ -29,6 +29,26 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Configuração do Claude Code no projeto — 2026-11-08
+
+O repositório passa a ter `.claude/settings.json`, um hook de lint shell, as
+skills `/bump-pyinit` e `/entrega` e o subagente `matrix-runner`. Nada disso
+muda o comportamento da CLI, dos perfis ou dos manifestos.
+
+As regras `deny` recusam `sudo`, `chsh`, `chezmoi apply/update/init` e edições
+nos destinos dos dotfiles na HOME real. As regras `ask` pedem confirmação para
+`devshell apply/install/setup/update/rollback`, `bootstrap.sh` e a matriz de
+containers. As regras de Bash comparam só o começo do comando, então
+`env X=1 sudo` ou `cd x && chezmoi apply` dependem também das outras camadas.
+
+O hook `PostToolUse` foi exercitado com eventos simulados: formatou `.sh` e
+`.bats` com os argumentos do `check.sh`, devolveu saída 2 com o ShellCheck
+(SC2086, SC2050) e com `zsh -n` num `dot_zshrc` inválido, e passou sem ação em
+`.py`, arquivo ausente, evento sem caminho e JSON inválido. O script entrou nas
+listas de ShellCheck e shfmt do `check.sh`. A suíte local passou com 160 Bats e
+42 unittest, sem skips. As regras de permissão e o carregamento do hook, das
+skills e do subagente pelo Claude Code não foram exercitados num cliente real.
+
 ## Candidata de pin A1–A6/F1 — 2026-11-06
 
 Preparada em cópias Git independentes da base Data Lab
