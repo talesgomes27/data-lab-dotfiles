@@ -200,8 +200,10 @@ para preservar instalações anteriores e revisar o novo plano.
 
 Backups ficam em `~/.local/state/devshell/transactions` por padrão. `rollback`
 restaura a última transação de dotfiles e recusa alterações posteriores; ele não
-desinstala ferramentas. Leia [segurança e recuperação](docs/SECURITY.md) antes de
-restaurar. Não aplique Chezmoi diretamente sobre a HOME usando estas fontes:
+desinstala ferramentas. `rollback --list` mostra o histórico, e
+`rollback --prune --keep N` remove backups antigos depois de aprovação, sem
+volta. Leia [segurança e recuperação](docs/SECURITY.md) antes de restaurar ou
+podar. Não aplique Chezmoi diretamente sobre a HOME usando estas fontes:
 isso contornaria o journal da CLI.
 
 ## Glossário rápido

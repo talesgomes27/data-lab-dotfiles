@@ -209,6 +209,40 @@ O [diagnóstico](TROUBLESHOOTING.md) trata ausências, permissões, conflitos e
 problemas dos atalhos. Os componentes declarados estão em `profiles/` e
 `manifests/`; essa relação é diferente do inventário particular de uma máquina.
 
+## Consultar e podar o histórico de backups
+
+```bash
+./bin/devshell rollback --list                  # transações, status e datas
+./bin/devshell rollback --prune --keep 3        # plano: o que seria removido
+```
+
+Exemplo de listagem e de plano numa HOME de teste com três transações:
+
+```text
+Data Lab Dotfiles — rollback-list
+  ID: committed, cadeia 0, 1 arquivo(s), AAAA-MM-DDTHH:MM:SSZ
+  ID: committed, cadeia 1, 1 arquivo(s), AAAA-MM-DDTHH:MM:SSZ
+  ID: committed, cadeia 2, 9 arquivo(s), AAAA-MM-DDTHH:MM:SSZ
+```
+
+Plano com `--keep 2`:
+
+```text
+Data Lab Dotfiles — rollback-prune
+Aprovação: HASH
+Aviso: remove a primeira transação (ID), que guarda os dotfiles de antes do primeiro apply
+  ID: keep, committed, cadeia 0
+  ID: keep, committed, cadeia 1
+  ID: delete, committed, cadeia 2
+Bytes a remover: 4310
+message: Remoção irreversível: os backups removidos não podem ser restaurados.
+```
+
+A remoção só acontece com
+`./bin/devshell rollback --prune --keep 2 --approve HASH`, usando o hash do
+plano revisto, e não tem volta. Leia
+[Histórico e poda de backups](SECURITY.md#histórico-e-poda-de-backups) antes.
+
 ## Diagnosticar e reparar permissões de uma .venv
 
 Execute a CLI na raiz do Data Lab Dotfiles, apontando para o projeto afetado.
