@@ -6,6 +6,8 @@ import shlex
 import sys
 import uuid
 
+# -I exclui o diretório do script; somente a lib da CLI é adicionada.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import state as fs
 
 TARGET = fs.HOME / '.local/bin/devshell'

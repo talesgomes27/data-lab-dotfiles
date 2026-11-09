@@ -389,5 +389,42 @@ class TransactionBoundary(unittest.TestCase):
         self.assertEqual(original.read_text(), 'preservar')
 
 
+class StaticChezmoiSource(unittest.TestCase):
+    """Atributos, scripts e templates Chezmoi são recusados antes de executar Chezmoi."""
+
+    def test_repository_sources_are_static(self):
+        state.static_sources()
+
+    def test_attribute_words_after_dot_prefix_are_literal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / '.chezmoiroot').write_text('dotfiles\n')
+            (root / 'dotfiles/dot_config/tool').mkdir(parents=True)
+            for name in ('dot_modify_probe', 'dot_executable_probe', 'dot_config/tool/config.toml'):
+                (root / 'dotfiles' / name).write_text('literal\n')
+            with patch.object(state, 'ROOT', root):
+                state.static_sources()
+
+    def test_chezmoi_attributes_are_refused_before_rendering(self):
+        refused = ['modify_dot_probe', 'create_dot_probe', 'symlink_dot_probe', 'remove_dot_probe',
+                   'executable_probe', 'private_dot_probe', 'run_onchange_probe.sh', 'dot_probe.tmpl',
+                   'exact_dir/file', 'external_dir/file', '.chezmoiscripts/probe.sh', '.chezmoiignore',
+                   'dot_config/nested/modify_probe', 'dot_config/once_probe', 'encrypted_dot_probe',
+                   'empty_dot_probe', 'readonly_dot_probe', 'literal_dot_probe', 'before_probe.sh',
+                   'after_probe.sh', 'dot_probe.literal', 'dot_probe.age', 'dot_probe.asc']
+        for name in refused:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                (root / '.chezmoiroot').write_text('dotfiles\n')
+                source = root / 'dotfiles' / name
+                source.parent.mkdir(parents=True)
+                source.write_text('#!/bin/sh\ntouch executed\n')
+                with patch.object(state, 'ROOT', root), patch.object(state.shutil, 'which', return_value='/bin/false'), \
+                        patch.object(state.subprocess, 'run') as run:
+                    with self.assertRaisesRegex(ValueError, 'não estática'):
+                        state.chezmoi_render()
+                    run.assert_not_called()
+
+
 if __name__ == '__main__':
     unittest.main()

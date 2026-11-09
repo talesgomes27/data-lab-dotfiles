@@ -2,6 +2,17 @@
 
 ## Não publicado
 
+- `scripts/check.sh` roda Ruff com regras de defeitos fixadas em `ruff.toml`
+  (pyflakes, erros de sintaxe/importação, bugbear e `subprocess.run` sem
+  `check`), sem regras de estilo. A versão exigida é a de `manifests/python.json`;
+  `scripts/ci-setup.sh` instala essa mesma versão nos runners e containers.
+
+- Segurança: a guarda de fontes estáticas do Chezmoi passa a ser uma lista
+  permitida, recusando antes da renderização prefixos de atributo como
+  `modify_` (script executado pelo Chezmoi), `create_`, `symlink_` e `exact_`.
+  CLI, setup, instalação e helpers de Bash/Zsh/Nushell/direnv usam
+  `/usr/bin/python3 -I`, sem carregar `.pth` de `.venv` ativa nem PYTHONPATH.
+
 - Pin de `pyinit` atualizado para as correções A1–A6/A2-LF-01 e F1/P3:
   preservação de configurações, criação isolada, composição Ruff/pytest,
   seleção minor na migração, inferência do alvo Ruff e JupyterLab no grupo

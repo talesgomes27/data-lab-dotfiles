@@ -9,7 +9,7 @@ Python >=3.11 padrão cuida de JSON, arquivos atômicos e backups. Consulte
   faça commit, push ou publique sem instrução explícita do usuário.
 - Teste com HOME/XDG/cache temporários. Nunca use fixtures reais com segredos.
 - Toda mudança de comportamento deve ter teste pertinente; não enfraqueça guardas.
-- `bash scripts/check.sh`: ShellCheck, shfmt, Bats e unittest offline.
+- `bash scripts/check.sh`: ShellCheck, shfmt, Ruff, Bats e unittest offline.
 - `bash scripts/containers.sh`: matriz isolada; requer Docker acessível e downloads.
 - Antes da entrega: executar checks, conferir ajuda/exemplos, revisão de segurança
   e registrar resultados/limitações em `docs/VALIDATION.md`.

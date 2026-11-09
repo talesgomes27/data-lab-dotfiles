@@ -19,8 +19,8 @@ use_devshell_python() {
     export PATH="${kept[*]}"
     unset VIRTUAL_ENV PYTHONHOME
     watch_file "$PWD/.venv/pyvenv.cfg" "$PWD/.venv/bin/python" "$PWD/.venv/bin/python3"
-    if command -v python3 >/dev/null && [[ -r $config/devshell/safe-path.py ]]; then
-        safe_bin=$(python3 "$config/devshell/safe-path.py" --venv --explain "$PWD/.venv/bin")
+    if [[ -x /usr/bin/python3 && -r $config/devshell/safe-path.py ]]; then
+        safe_bin=$(/usr/bin/python3 -I "$config/devshell/safe-path.py" --venv --explain "$PWD/.venv/bin")
     fi
     if [[ -n $safe_bin ]]; then
         export VIRTUAL_ENV="$PWD/.venv"

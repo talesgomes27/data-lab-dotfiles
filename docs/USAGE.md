@@ -212,7 +212,7 @@ problemas dos atalhos. Os componentes declarados estão em `profiles/` e
 ## Diagnosticar e reparar permissões de uma .venv
 
 Execute a CLI na raiz do Data Lab Dotfiles, apontando para o projeto afetado.
-Os comandos `project` usam `/usr/bin/python3 >=3.11` em modo isolado (`-I -B`),
+Os comandos `project`, como os demais comandos da CLI, usam `/usr/bin/python3 >=3.11` em modo isolado (`-I -B`),
 sem iniciar o Python da `.venv` ou importar código pelo PYTHONPATH do projeto.
 O modo `-B` impede gravação de bytecode. Sem `--path`, o diretório atual é
 o projeto inspecionado.
