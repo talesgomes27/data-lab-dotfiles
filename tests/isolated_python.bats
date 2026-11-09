@@ -26,6 +26,7 @@ assert_not_loaded() {
     for spec in plan doctor status 'install --component devshell' 'setup --dry-run'; do
         read -r -a command <<<"$spec"
         PATH="$HOSTILE_VENV/bin:$PATH" PYTHONPATH="$HOSTILE_PATH" run --separate-stderr "$FOUNDRY_ROOT/bin/devshell" "${command[@]}" --json
+        # shellcheck disable=SC2154 # $stderr vem de run --separate-stderr; ShellCheck antigo não o conhece.
         printf '%s => %s: %s\n' "$spec" "$status" "$stderr"
         [ "$status" -eq 0 ] || [ "$status" -eq 3 ]
         # JSON válido prova que o Python da CLI executou, não um erro de pré-requisito.
