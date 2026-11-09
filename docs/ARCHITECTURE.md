@@ -184,7 +184,9 @@ stderr. `diff --json` retorna hashes/ações; sem JSON mostra o diff unificado.
 ## Onde manter cada informação
 
 `dotfiles/` contém as fontes estáticas; `profiles/` seleciona componentes;
-`manifests/` declara pacotes, versões e checksums. Os exemplos em `examples/`
+`manifests/` declara pacotes, versões e checksums. Os perfis do último apply
+ficam em `$XDG_STATE_HOME/devshell/profiles`, gravado na transação e restaurado
+pelo rollback; comandos sem `--profile` os usam. Os exemplos em `examples/`
 têm ambientes próprios. Os testes e os scripts de verificação ficam em `tests/`
 e `scripts/`. Consulte o [guia de contribuição](../CONTRIBUTING.md) para validar
 mudanças e a [instalação](INSTALLATION.md) para operar a CLI.

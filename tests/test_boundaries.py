@@ -391,6 +391,98 @@ class TransactionBoundary(unittest.TestCase):
         self.assertEqual(original.read_text(), 'preservar')
 
 
+class RememberedProfiles(unittest.TestCase):
+    """R-040: o caminho de falha do apply restaura o registro de perfis."""
+
+    setUp = TransactionBoundary.setUp
+    apply = TransactionBoundary.apply
+
+    def test_r040_failed_apply_restores_previous_profiles(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        real_atomic = state.atomic
+
+        def fail_on_commit(path, content, *args, **kwargs):
+            if path.name == 'manifest.json' and b'"committed"' in content:
+                raise OSError('falha injetada no commit')
+            return real_atomic(path, content, *args, **kwargs)
+
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'atomic', side_effect=fail_on_commit):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+
+    def test_r040_failed_apply_without_previous_record_removes_it(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        record.unlink()
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        real_atomic = state.atomic
+
+        def fail_on_commit(path, content, *args, **kwargs):
+            if path.name == 'manifest.json' and b'"committed"' in content:
+                raise OSError('falha injetada no commit')
+            return real_atomic(path, content, *args, **kwargs)
+
+        with patch.object(state, 'atomic', side_effect=fail_on_commit):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        self.assertFalse(record.exists())
+
+    def test_r040_rollback_shows_profiles_and_refuses_unsafe_record_before_restoring(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        plan = state.rollback_plan()[0]
+        self.assertEqual(plan['profiles_restore'], 'minimal')
+        target = self.home / '.zshenv'
+        applied = target.read_text()
+        record.unlink()
+        record.symlink_to(self.home / 'outro')
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        with self.assertRaises(ValueError):
+            state.rollback()
+        self.assertEqual(target.read_text(), applied)
+        self.assertNotIn('rolling-back', (state.STATE / 'transactions' / (state.STATE / 'latest').read_text() / 'manifest.json').read_text())
+
+
+class DoctorNextStep(unittest.TestCase):
+    """R-044: um próximo passo só, manual primeiro, setup depois, nada sem pendência."""
+
+    def step(self, issues, source='lembrados', profiles='personal'):
+        return state.next_step(issues, profiles, source)
+
+    def test_r044_setup_resolves_missing_and_outdated_items(self):
+        for issue in ('componente ausente: fzf', 'arquivo esperado ausente: /h/.zshenv',
+                      'arquivo esperado não corresponde ao perfil: /h/.zshrc', 'interpretador uv ausente: 3.13.11',
+                      'ferramenta uv ausente: ruff: não instalada; use install --component python',
+                      'ferramenta uv divergente: ruff: /v: modos inseguros na venv (escrita de grupo/outros); rode ./bin/devshell setup, que corrige'):
+            with self.subTest(issue):
+                self.assertEqual(self.step([issue]), {'kind': 'setup', 'command': ['./bin/devshell', 'setup'], 'reason': issue})
+
+    def test_r044_manual_issue_comes_first_and_unknown_is_manual(self):
+        conflict = 'ferramenta uv conflito: ruff: /h/.local/bin/ruff já existe; se for do uv tool, rode `uv tool uninstall ruff`'
+        step = self.step(['componente ausente: fzf', conflict])
+        self.assertEqual(step['kind'], 'manual')
+        self.assertEqual(step['reason'], conflict)
+        for issue in ('extensão Zsh local insegura: x', 'arquivo Zsh compilado não permitido: x', 'algo novo e desconhecido',
+                      'ferramenta uv divergente: ruff: /v: pyvenv.cfg ausente; revise e mova a venv para fora de devshell/tools',
+                      'componente fora do PATH: chezmoi está em /h/.local/bin; abra uma shell nova ou adicione esse diretório ao PATH',
+                      'integridade do componente divergente: /h/.local/bin/pyinit', 'interpretador uv divergente: 3.13.10',
+                      'permissões inseguras: /h/.config'):
+            with self.subTest(issue):
+                self.assertEqual(self.step([issue])['kind'], 'manual')
+
+    def test_r044_no_issue_means_no_step_and_informed_profiles_are_kept(self):
+        self.assertIsNone(self.step([]))
+        self.assertEqual(self.step(['componente ausente: fzf'], 'informados', 'science')['command'],
+                         ['./bin/devshell', 'setup', '--profile', 'science'])
+
+
 class TransactionHistory(unittest.TestCase):
     """R-004, R-005 e R-006 nas falhas que só um teste unitário consegue injetar."""
 
@@ -663,6 +755,16 @@ Prompt_Toolkit==3.0.53 ; sys_platform == 'win32' \\
                     patch.object(state.shutil, 'which', return_value=old_uv):
                 _, issues = state.version_issues()
                 self.assertEqual(any('uv' in issue and '0.13.5' in issue for issue in issues), expected, issues)
+
+    def test_r043_modes_message_only_for_paths_inside_the_venv(self):
+        self.write_lock(f'ruff==0.17.3 --hash=sha256:{self.HASH}\n')
+        lock = python_tools.locks(self.spec)['ruff']
+        venv, link = python_tools.paths('ruff', self.dirs)
+        venv.mkdir(parents=True, mode=0o700)
+        link.parent.mkdir(mode=0o700)
+        for path, expected in ((venv / 'lib/x', 'modos inseguros na venv'), (self.home / 'python/bin/python3', 'revise e mova')):
+            with self.subTest(path=path), patch.object(python_tools, 'venv_issues', side_effect=ValueError(f'permissões inseguras: {path}')):
+                self.assertIn(expected, python_tools.tool_state('ruff', lock, self.dirs, '3.13.11')['detail'][0])
 
     def test_r021_uv_environment_drops_active_envs_and_user_uv_settings(self):
         with patch.dict(os.environ, {'VIRTUAL_ENV': '/outra', 'CONDA_PREFIX': '/conda', 'UV_VENV_CLEAR': '1',

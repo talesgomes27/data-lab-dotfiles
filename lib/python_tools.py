@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 import re
 import shutil
-import stat
 import subprocess
 import sys
 
@@ -171,12 +170,14 @@ def tool_state(name, lock, dirs, tool_python):
         link_state = 'nosso'
     else:
         link_state = 'outro'
-    detail = []
+    detail, modes_only = [], False
     if os.path.lexists(venv):
         try:
             detail = venv_issues(name, venv, lock, tool_python, dirs.get('UV_PYTHON_INSTALL_DIR'))
         except (OSError, ValueError, RuntimeError, csv.Error) as exc:
             detail = [str(exc)]
+            # Só modos: o setup corrige (D-018), diferente de uma venv divergente.
+            modes_only = isinstance(exc, ValueError) and str(exc).startswith(f'permissões inseguras: {venv}/')
         venv_state = 'divergente' if detail else 'conforme'
     else:
         venv_state = 'ausente'
@@ -186,7 +187,10 @@ def tool_state(name, lock, dirs, tool_python):
         detail = [f'{link} já existe ({target}); se for do uv tool, rode `uv tool uninstall {name}` e planeje de novo']
     elif venv_state == 'divergente':
         state = 'divergente'
-        detail = [f'{venv}: ' + '; '.join(detail) + '; revise e mova a venv para fora de devshell/tools']
+        if modes_only:
+            detail = [f'{venv}: modos inseguros na venv (escrita de grupo/outros); rode ./bin/devshell setup, que corrige']
+        else:
+            detail = [f'{venv}: ' + '; '.join(detail) + '; revise e mova a venv para fora de devshell/tools']
     elif venv_state == 'ausente':
         state = 'link-orfao' if link_state == 'nosso' else 'ausente'
         if state == 'link-orfao':
@@ -230,16 +234,6 @@ def commands(row, spec, offline):
              '--require-hashes', '--no-build', '--link-mode', 'copy', '-r', row['lock']]]
 
 
-def drop_shared_write(venv):
-    """Na venv criada nesta execução: o uv copia os modos do cache, que podem ter escrita de grupo."""
-    for root, directories, files in os.walk(venv, followlinks=False):
-        for name in [*directories, *files]:
-            path = os.path.join(root, name)
-            info = os.lstat(path)
-            if not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022:
-                os.chmod(path, stat.S_IMODE(info.st_mode) & ~0o022)
-
-
 def uv_environment(dirs):
     """Sem venv ativa nem configuração UV_* do usuário além dos diretórios aprovados."""
     removed = ('VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONHOME', 'PYTHONPATH')
@@ -272,7 +266,8 @@ def apply(plan, dirs):
                                        stdout=sys.stderr)
                     if not (venv / 'bin' / row['name']).is_file():
                         raise RuntimeError(f"executável {row['name']} não criado na venv")
-                    drop_shared_write(venv)
+                    # O uv copia os modos do cache, que podem ter escrita de grupo.
+                    fs.drop_group_write_tree(venv)
                 except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
                     shutil.rmtree(venv)
                     raise RuntimeError(f"instalação de {row['name']} falhou e a venv foi removida; "

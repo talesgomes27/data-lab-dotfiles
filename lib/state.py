@@ -31,7 +31,8 @@ def xdg(name, default):
 
 CONFIG = xdg('XDG_CONFIG_HOME', HOME / '.config')
 STATE = xdg('XDG_STATE_HOME', HOME / '.local/state') / 'devshell'
-COMPONENTS = os.environ['DEVSHELL_COMPONENTS'].split()
+COMPONENTS = os.environ.get('DEVSHELL_COMPONENTS', '').split()
+PROFILE_LIST = re.compile(r'[a-z]+(,[a-z]+)*')
 
 
 def digest(data):
@@ -63,6 +64,29 @@ def path_issues(path):
 def safe_path(path):
     for issue in path_issues(path):
         raise ValueError(issue['message'])
+
+
+def drop_group_write_tree(root):
+    """Tira escrita de grupo/outros por descritor, conferindo a identidade, sem seguir symlinks (D-018)."""
+    def fix(name, dir_fd, directory):
+        info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+        if not info.st_mode & 0o022 or not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
+            return
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_DIRECTORY if directory else 0)
+        descriptor = os.open(name, flags, dir_fd=dir_fd)
+        try:
+            current = os.fstat(descriptor)
+            if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                raise ValueError(f'item trocado durante o ajuste de modo: {name}')
+            os.fchmod(descriptor, stat.S_IMODE(current.st_mode) & ~0o022)
+        finally:
+            os.close(descriptor)
+
+    for _, directories, files, dir_fd in os.fwalk(root, follow_symlinks=False):
+        for name in directories:
+            fix(name, dir_fd, True)
+        for name in files:
+            fix(name, dir_fd, False)
 
 
 def snapshot(path):
@@ -97,6 +121,79 @@ def desired_files(all_components=False):
     return files
 
 
+def canonical_profiles(text):
+    """Sem duplicatas e sem o minimal implícito, na ordem informada (D-014)."""
+    names = []
+    for name in text.split(','):
+        if name != 'minimal' and name not in names:
+            names.append(name)
+    return ','.join(names) or 'minimal'
+
+
+def valid_profiles(text):
+    return bool(PROFILE_LIST.fullmatch(text)) and all((ROOT / 'profiles' / f'{name}.profile').is_file() for name in text.split(','))
+
+
+def profiles_record():
+    return STATE / 'profiles'
+
+
+def read_profiles_record():
+    safe_path(profiles_record())
+    return profiles_record().read_text().strip() if profiles_record().exists() else None
+
+
+def read_own_regular(path):
+    """Leitura para escolher perfis: o próprio arquivo é conferido, sem exigir ancestrais seguros."""
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ValueError(f'arquivo irregular recusado: {path}') from exc
+    with os.fdopen(descriptor, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise ValueError(f'arquivo irregular, de outro dono ou com hardlink recusado: {path}')
+        return stream.read().decode()
+
+
+def restore_profiles(previous):
+    safe_path(profiles_record())
+    if previous is None:
+        profiles_record().unlink(missing_ok=True)
+    else:
+        atomic(profiles_record(), (previous + '\n').encode())
+
+
+def profiles_source(informed):
+    """Origem e perfis para bin/devshell, sem gravar nada (D-015)."""
+    hint = 'rode ./bin/devshell setup --profile PERFIS uma vez, com os perfis que você aplicou'
+    if informed is not None:
+        # Caminho inseguro é assunto da revisão de permissões; aqui só um registro ilegível avisa.
+        try:
+            text = read_profiles_record()
+        except (OSError, ValueError):
+            text = None
+        if text is not None and not valid_profiles(text):
+            print(f'devshell: aviso: registro de perfis inválido em {profiles_record()}; o próximo apply o substitui', file=sys.stderr)
+        return 'informados', canonical_profiles(informed)
+    # A escrita continua exigindo safe_path; aqui só se escolhem nomes validados contra profiles/.
+    text = read_own_regular(profiles_record())
+    text = text.strip() if text is not None else None
+    if text is None:
+        components = read_own_regular(CONFIG / 'devshell/components')
+        if components is not None:
+            minimal = {line.strip() for line in (ROOT / 'profiles/minimal.profile').read_text().splitlines()
+                       if line.strip() and not line.startswith('#')}
+            if set(components.split()) - minimal:
+                raise ValueError(f'nenhum perfil lembrado e a HOME já tem componentes além de minimal; {hint}')
+        return 'padrão', 'minimal'
+    if not valid_profiles(text):
+        raise ValueError(f'registro de perfis inválido em {profiles_record()}; {hint}')
+    return 'lembrados', canonical_profiles(text)
+
+
 def registry():
     safe_path(STATE / 'current.json')
     path = STATE / 'current.json'
@@ -114,7 +211,7 @@ def zsh_compiled_issues():
 def dependencies(exclude=()):
     columns = {'apt': 2, 'dnf': 3, 'pacman': 4, 'zypper': 5}
     adapter = os.environ['DEVSHELL_ADAPTER']
-    packages, missing, manual_only = [], [], []
+    packages, missing, manual_only, outside_path = [], [], [], []
     for line in (ROOT / 'manifests/packages.tsv').read_text().splitlines():
         if not line or line.startswith('#'):
             continue
@@ -123,6 +220,10 @@ def dependencies(exclude=()):
             continue
         commands = {'fd': ['fd', 'fdfind'], 'bat': ['bat', 'batcat']}.get(row[0], [row[1]])
         if not any(shutil.which(cmd) for cmd in commands):
+            # R-044: instalado em ~/.local/bin por um setup anterior, mas fora do PATH desta sessão.
+            if any(os.access(HOME / '.local/bin' / cmd, os.X_OK) and (HOME / '.local/bin' / cmd).is_file() for cmd in commands):
+                outside_path.append(row[0])
+                continue
             missing.append(row[0])
             package = row[columns[adapter]] if adapter in columns else '-'
             if package != '-':
@@ -132,7 +233,7 @@ def dependencies(exclude=()):
     prefix = {'apt': ['apt-get', 'install', '--'], 'dnf': ['dnf', 'install', '--'],
               'pacman': ['pacman', '-S', '--needed', '--'], 'zypper': ['zypper', 'install', '--']}
     optional_missing = ['duckdb'] if 'duckdb' in COMPONENTS and not shutil.which('duckdb') else []
-    return {'missing': missing, 'manual_only': manual_only, 'optional_missing': optional_missing,
+    return {'missing': missing, 'manual_only': manual_only, 'optional_missing': optional_missing, 'outside_path': outside_path,
             'manual_system_command': prefix.get(adapter, []) + sorted(set(packages)) if packages else [],
             'note': 'Comando administrativo para revisão; setup só executa após confirmação separada. Disponibilidade varia por versão.'}
 
@@ -160,6 +261,13 @@ def build_plan():
     # Inclui a implementação e os manifestos: uma edição invalida a aprovação.
     result['source_sha256'] = source_sha256()
     result['approval'] = digest(encode(result))
+    # Fora do hash: o mesmo plano vale com perfis lembrados ou informados (D-015).
+    result['profile_source'] = os.environ.get('DEVSHELL_PROFILE_SOURCE', 'informados')
+    try:
+        recorded = read_own_regular(profiles_record())
+    except (OSError, ValueError):
+        recorded = None
+    result['profiles_recorded'] = (recorded or '').strip() == os.environ['DEVSHELL_PROFILES']
     return result
 
 
@@ -170,6 +278,10 @@ def report(data):
     print('Data Lab Dotfiles —', data.get('operation', 'relatório'))
     if 'approval' in data:
         print('Aprovação:', data['approval'])
+    if 'profiles' in data and 'profile_source' in data:
+        print(f"Perfis: {','.join(data['profiles'])} ({data['profile_source']})")
+    if 'profiles_restore' in data:
+        print('Perfis lembrados voltam a:', data['profiles_restore'] or '(nenhum registro)')
     if 'platform' in data:
         print('Plataforma:', ', '.join(f'{k}={v}' for k, v in data['platform'].items()))
     if 'components' in data:
@@ -322,7 +434,10 @@ def apply_configuration():
         _, transaction = latest_transaction()
         if transaction and transaction['status'] in ('pending', 'rolling-back'):
             raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
-        report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano.'})
+        with locked():
+            if read_profiles_record() != os.environ['DEVSHELL_PROFILES']:
+                restore_profiles(os.environ['DEVSHELL_PROFILES'])
+        report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis registrados.'})
         return
     chezmoi_render()
     with locked():
@@ -337,6 +452,7 @@ def apply_configuration():
         directory.mkdir(parents=True, mode=0o700)
         tx = {'status': 'pending', 'files': changed, 'previous_registry': registry(),
               'previous_latest': old_dir.name if old_dir else None,
+              'previous_profiles': read_profiles_record(),
               'created': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
         contents = desired_files()
         for index, entry in enumerate(changed):
@@ -356,12 +472,14 @@ def apply_configuration():
                 atomic(directory / 'manifest.json', encode(tx))
             current = tx['previous_registry'] | {entry['path']: entry['after'] for entry in changed}
             atomic(STATE / 'current.json', encode(current))
+            restore_profiles(os.environ['DEVSHELL_PROFILES'])
             tx['status'] = 'committed'
             atomic(directory / 'manifest.json', encode(tx))
         except BaseException:
             for entry in reversed(written):
                 restore_entry(directory, entry)
             atomic(STATE / 'current.json', encode(tx['previous_registry']))
+            restore_profiles(tx['previous_profiles'])
             if tx['previous_latest']:
                 atomic(STATE / 'latest', tx['previous_latest'].encode())
             else:
@@ -394,6 +512,8 @@ def rollback_plan():
         entries.append({'path': entry['path'], 'before': before, 'action': 'restore',
                         'after': entry['before']['sha256'] if entry['before'] else None})
     data = {'operation': 'rollback', 'transaction': directory.name, 'files': entries}
+    if 'previous_profiles' in tx:
+        data['profiles_restore'] = tx['previous_profiles']
     data['approval'] = digest(encode(data) + encode(tx))
     return data, directory, tx
 
@@ -408,6 +528,8 @@ def rollback():
     with locked():
         if rollback_plan()[0]['approval'] != plan['approval']:
             raise RuntimeError('estado mudou antes do rollback')
+        # Falha cedo: um registro de perfis inseguro não pode deixar a transação no meio do caminho.
+        safe_path(profiles_record())
         tx['status'] = 'rolling-back'
         atomic(directory / 'manifest.json', encode(tx))
         reviewed = {entry['path']: entry['before'] for entry in plan['files']}
@@ -421,6 +543,10 @@ def rollback():
         # D-004: a transação anterior pode ter sido podada; latest nunca aponta para ela.
         previous = tx['previous_latest'] if isinstance(tx['previous_latest'], str) and TRANSACTION_ID.fullmatch(tx['previous_latest']) else None
         warnings = []
+        if 'previous_profiles' in tx and isinstance(tx['previous_profiles'], (str, type(None))):
+            restore_profiles(tx['previous_profiles'])
+        else:
+            warnings.append('perfis anteriores desconhecidos; informe --profile no próximo setup')
         if previous and readable_manifest(STATE / 'transactions' / previous):
             atomic(STATE / 'latest', previous.encode())
         else:
@@ -444,7 +570,7 @@ def readable_manifest(directory):
         data = json.loads((directory / 'manifest.json').read_text())
     except (OSError, ValueError):
         return None
-    optional_text = all(isinstance(data.get(key), (str, type(None))) for key in ('previous_latest', 'created')) if isinstance(data, dict) else False
+    optional_text = all(isinstance(data.get(key), (str, type(None))) for key in ('previous_latest', 'created', 'previous_profiles')) if isinstance(data, dict) else False
     return data if optional_text and isinstance(data.get('status'), str) and isinstance(data.get('files'), list) else None
 
 
@@ -663,14 +789,38 @@ def version_issues():
     return versions, issues
 
 
+# D-019: pendências que o setup resolve; o resto é ação manual, inclusive o que não estiver nesta tabela.
+SETUP_RESOLVES = ('componente ausente: ', 'arquivo esperado ausente: ', 'arquivo esperado não corresponde ao perfil: ',
+                  'arquivo gerenciado divergente: ', 'componente de usuário ausente: ', 'componente não executável: ',
+                  'interpretador uv ausente: ', 'ferramenta uv ausente: ', 'ferramenta uv sem-link: ')
+
+
+def next_step(issues, profiles, source):
+    """Um próximo passo só: a primeira pendência manual, senão o setup, senão nada."""
+    def resolvable(issue):
+        return issue.startswith(SETUP_RESOLVES) or 'modos inseguros na venv' in issue
+    manual = [issue for issue in issues if not resolvable(issue)]
+    if manual:
+        return {'kind': 'manual', 'command': None, 'reason': manual[0]}
+    if issues:
+        command = ['./bin/devshell', 'setup'] + (['--profile', profiles] if source == 'informados' else [])
+        return {'kind': 'setup', 'command': command, 'reason': issues[0]}
+    return None
+
+
 def main():
     command = sys.argv[1]
+    if command == 'profiles-source':
+        source, profiles = profiles_source(os.environ.get('DEVSHELL_PROFILE_INFORMED') or None)
+        print(source, profiles)
+        return 0
     if command == 'update' and not os.environ['DEVSHELL_APPROVAL']:
         command = 'plan'
     if command in ('plan', 'status', 'diff', 'doctor'):
         plan = build_plan()
         plan['operation'] = command
         if command == 'diff' and os.environ['DEVSHELL_JSON'] != '1':
+            print(f"Perfis: {os.environ['DEVSHELL_PROFILES']} ({plan['profile_source']})", file=sys.stderr)
             for target, content in desired_files().items():
                 path = Path(target)
                 before = path.read_text() if path.exists() else ''
@@ -678,6 +828,8 @@ def main():
             return
         if command == 'doctor':
             plan['issues'] = [f'componente ausente: {item}' for item in plan['dependencies']['missing']]
+            plan['issues'].extend(f'componente fora do PATH: {item} está em {HOME}/.local/bin; abra uma shell nova ou adicione esse diretório ao PATH'
+                                  for item in plan['dependencies']['outside_path'])
             known = registry()
             plan['warnings'] = [f'arquivo idêntico não registrado: {entry["path"]}' for entry in plan['files']
                                 if entry['before'] and not entry['managed'] and entry['action'] == 'unchanged']
@@ -692,7 +844,8 @@ def main():
                     plan['warnings'].append(f'DuckDB detectado em caminho inseguro: {exc}')
             plan['issues'].extend(f'arquivo esperado ausente: {entry["path"]}' for entry in plan['files'] if not entry['before'])
             plan['issues'].extend(f'arquivo gerenciado divergente: {entry["path"]}' for entry in plan['files']
-                                  if entry['managed'] and (not entry['before'] or entry['before']['sha256'] != known[entry['path']]))
+                                  if entry['managed'] and entry['action'] == 'write'
+                                  and (not entry['before'] or entry['before']['sha256'] != known[entry['path']]))
             plan['issues'].extend(f'arquivo esperado não corresponde ao perfil: {entry["path"]}' for entry in plan['files']
                                   if entry['before'] and entry['action'] == 'write')
             if 'zsh' in COMPONENTS:
@@ -714,7 +867,11 @@ def main():
             _, transaction = latest_transaction()
             if transaction and transaction['status'] in ('pending', 'rolling-back'):
                 plan['issues'].append('transação interrompida: revise rollback')
+            plan['next_step'] = next_step(plan['issues'], os.environ['DEVSHELL_PROFILES'], plan['profile_source'])
             report(plan)
+            if plan['next_step'] and os.environ['DEVSHELL_JSON'] != '1':
+                step = plan['next_step']
+                print('Próximo passo: ' + (' '.join(step['command']) if step['command'] else f"resolva manualmente: {step['reason']}"))
             return 3 if plan['issues'] else 0
         report(plan)
     elif command in ('apply', 'update'):

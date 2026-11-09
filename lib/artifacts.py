@@ -33,55 +33,67 @@ def health_issues():
         component = artifact['component']
         if component not in ('plugins', 'firacode', 'pyinit') or component not in fs.COMPONENTS:
             continue
-        root = DATA / 'devshell/plugins' / artifact['name'] if component == 'plugins' else DATA / 'fonts/FiraCodeNerdFont'
-        checks = artifact.get('health', {})
-        if component == 'pyinit':
-            root, checks = BIN, {'pyinit': artifact['sha256']}
-        if not checks:
-            issues.append(f'checksums de diagnóstico ausentes: {component}')
-        for name, checksum in checks.items():
-            relative = PurePosixPath(name)
-            if relative.is_absolute() or '..' in relative.parts or '\\' in name or not re.fullmatch(r'[a-f0-9]{64}', checksum):
-                issues.append(f'checksum de diagnóstico inválido: {component}')
-                continue
-            path = root / name
-            try:
-                current = fs.snapshot(path)
-                if not current:
-                    issues.append(f'componente de usuário ausente: {path}')
-                elif current['sha256'] != checksum:
-                    issues.append(f'integridade do componente divergente: {path}')
-                elif component == 'pyinit' and not current['mode'] & 0o100:
-                    issues.append(f'componente não executável: {path}')
-            except (ValueError, OSError) as exc:
-                issues.append(str(exc))
+        issues.extend(artifact_issues(artifact))
     if 'python-tools' not in fs.COMPONENTS:
         return issues
     try:
         spec, dirs = python_spec(), python_dirs()
-        python_dir = Path(dirs['UV_PYTHON_INSTALL_DIR'])
-        for version in spec['interpreters']:
-            candidates = [path for path in python_dir.glob(f'cpython-{version}-*') if os.access(path / 'bin/python3', os.X_OK)]
-            if not candidates:
-                issues.append(f'interpretador uv ausente: {version}')
-                continue
-            found = False
-            for candidate in candidates:
-                try:
-                    fs.safe_path((candidate / 'bin/python3').resolve())
-                    header = candidate / 'include' / ('python' + '.'.join(version.split('.')[:2])) / 'patchlevel.h'
-                    fs.safe_path(header)
-                    match = re.search(r'^#define\s+PY_VERSION\s+"([^"]+)"', header.read_text(), re.M)
-                    if match and match.group(1) == version:
-                        found = True
-                        break
-                except (OSError, ValueError):
-                    continue
-            if not found:
-                issues.append(f'interpretador uv divergente: {version}')
+        issues.extend(interpreter_issues(spec, dirs))
         issues.extend(python_tools.health_issues(spec, dirs))
     except (ValueError, OSError, KeyError) as exc:
         issues.append(f'não foi possível verificar componentes uv: {exc}')
+    return issues
+
+
+def artifact_issues(artifact):
+    """Mesma conferência do doctor para plugins, fonte e pyinit (subconjunto `health` do manifesto)."""
+    component, issues = artifact['component'], []
+    root = DATA / 'devshell/plugins' / artifact['name'] if component == 'plugins' else DATA / 'fonts/FiraCodeNerdFont'
+    checks = artifact.get('health', {})
+    if component == 'pyinit':
+        root, checks = BIN, {'pyinit': artifact['sha256']}
+    if not checks:
+        issues.append(f'checksums de diagnóstico ausentes: {component}')
+    for name, checksum in checks.items():
+        relative = PurePosixPath(name)
+        if relative.is_absolute() or '..' in relative.parts or '\\' in name or not re.fullmatch(r'[a-f0-9]{64}', checksum):
+            issues.append(f'checksum de diagnóstico inválido: {component}')
+            continue
+        path = root / name
+        try:
+            current = fs.snapshot(path)
+            if not current:
+                issues.append(f'componente de usuário ausente: {path}')
+            elif current['sha256'] != checksum:
+                issues.append(f'integridade do componente divergente: {path}')
+            elif component == 'pyinit' and not current['mode'] & 0o100:
+                issues.append(f'componente não executável: {path}')
+        except (ValueError, OSError) as exc:
+            issues.append(str(exc))
+    return issues
+
+
+def interpreter_issues(spec, dirs):
+    issues, python_dir = [], Path(dirs['UV_PYTHON_INSTALL_DIR'])
+    for version in spec['interpreters']:
+        candidates = [path for path in python_dir.glob(f'cpython-{version}-*') if os.access(path / 'bin/python3', os.X_OK)]
+        if not candidates:
+            issues.append(f'interpretador uv ausente: {version}')
+            continue
+        found = False
+        for candidate in candidates:
+            try:
+                fs.safe_path((candidate / 'bin/python3').resolve())
+                header = candidate / 'include' / ('python' + '.'.join(version.split('.')[:2])) / 'patchlevel.h'
+                fs.safe_path(header)
+                match = re.search(r'^#define\s+PY_VERSION\s+"([^"]+)"', header.read_text(), re.M)
+                if match and match.group(1) == version:
+                    found = True
+                    break
+            except (OSError, ValueError):
+                continue
+        if not found:
+            issues.append(f'interpretador uv divergente: {version}')
     return issues
 
 
@@ -150,7 +162,20 @@ def install_plan():
             plan['commands'] = [['fc-cache', '-f', str(destination)]]
     plan['source_sha256'] = fs.build_plan()['source_sha256']
     plan['approval'] = fs.digest(fs.encode(plan))
+    plan['pending'] = install_pending(plan)
+    plan['profiles'] = os.environ['DEVSHELL_PROFILES'].split(',')
+    plan['profile_source'] = os.environ.get('DEVSHELL_PROFILE_SOURCE', 'informados')
     return plan
+
+
+def install_pending(plan):
+    """D-017: o setup só pergunta quando há algo a instalar; fica fora do hash de aprovação."""
+    if COMPONENT == 'python':
+        return bool(interpreter_issues(plan['spec'], plan['directories'])) or any(row['state'] != 'conforme' for row in plan['tools'])
+    if COMPONENT in ('plugins', 'firacode', 'pyinit'):
+        return any(artifact_issues(artifact) for artifact in plan['artifacts'])
+    # uv, chezmoi e nu só entram no setup quando não estão no PATH; aí há sempre algo a instalar.
+    return True
 
 
 def check(plan):

@@ -295,7 +295,39 @@ backup. Se a origem desaparecer, o lançador falha com instrução de reinstalar
 
 ## Atualizar configuração e versões
 
-Para dotfiles, revise as fontes em `dotfiles/` e o plano:
+O caminho comum, depois de atualizar o checkout:
+
+```bash
+git pull
+./bin/devshell setup
+```
+
+O setup usa os perfis lembrados (os do último `apply`), começa por um resumo e
+só pergunta pelas etapas com algo a mudar. Exemplo numa HOME de teste com o
+perfil `minimal` já aplicado:
+
+```text
+Resumo do setup (cada etapa pede a própria confirmação):
+  permissões: em dia
+  pacotes do sistema: em dia
+  dotfiles: em dia
+  perfis: em dia
+Nada a fazer: tudo em dia.
+Data Lab Dotfiles — setup
+Perfis: minimal (lembrados)
+Componentes: bash, zsh, git, uv, chezmoi
+…
+```
+
+Numa HOME nova, o mesmo resumo lista o que falta, por exemplo
+`dotfiles: atualizar (9 arquivo(s) a atualizar, 0 em conflito)` e
+`perfis: registrar (minimal)`. Etapas que dependem de um reparo de permissões
+aparecem como "reavaliado depois do reparo de permissões". Quem aplicou os
+dotfiles antes desta versão roda `./bin/devshell setup --profile SEUS_PERFIS`
+uma vez para registrar os perfis.
+
+Para controlar cada passo, siga a operação manual. Para dotfiles, revise as
+fontes em `dotfiles/` e o plano:
 
 ```bash
 ./bin/devshell update --profile personal,science

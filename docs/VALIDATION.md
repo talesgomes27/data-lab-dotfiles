@@ -32,6 +32,60 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Setup simplificado — 2026-11-09
+
+Bloco D do [plano](plan.md) (R-040 a R-045). `bash scripts/check.sh` em
+HOME/XDG temporários saiu com 0: 226 Bats, 75 unittest, Ruff limpo, sem skips.
+Testes escritos antes do código em cada tarefa e vistos falhando pelo motivo
+esperado; os que já passavam antes ficaram como guarda (project e rollback
+sem depender do registro).
+
+- Perfis lembrados (`tests/profiles.bats`, `RememberedProfiles`): padrão,
+  lembrado e informado em plan/doctor/status/diff/install/setup, com a origem
+  também no JSON do install e do setup e no `diff` em texto; mesmo hash com
+  duplicatas e o `minimal` implícito (a ordem informada é mantida); `apply` sem
+  mudança grava, e o `setup` pergunta antes de registrar; HOME aplicada sem registro sai com
+  2; registro inválido sai com 2 ou só avisa com `--profile`; symlink recusado;
+  leitura mesmo com permissão de grupo a reparar; restauração no rollback, no
+  caminho de falha do apply e com manifesto antigo (aviso).
+- `pending` por componente e fora do hash; resumo do setup como primeira saída;
+  "nada a fazer" sem perguntas; atualização do projeto perguntando só pelo que
+  mudou; etapas reavaliadas depois do reparo.
+- Modos das venvs: categoria própria na revisão, symlinks ignorados, reparo por
+  descritor com identidade, troca por symlink recusada, 2000 arquivos agrupados
+  em menos de 20 s; mensagem própria no doctor.
+- `next_step`: tabela de classificação com teste por tipo; invariante "setup
+  sem nada a fazer, doctor sem sugerir setup".
+- As 27 respostas por posição do `setup.bats` e a do `online-smoke.sh` passam
+  por `tests/answer.py`, que confere o trecho de cada pergunta e sai com 98 se
+  um trecho não bater, se aparecer pergunta sem resposta prevista ou se sobrar
+  resposta (EOF intencional é declarado com `<EOF>`; `--allow-unused` só no
+  teste offline, cujas respostas positivas só seriam lidas numa regressão).
+  Sem saída por 60 s (900 s no smoke online), encerra o comando e sai com 98,
+  para uma leitura sem pergunta não travar a suíte. As sequências vieram de
+  duas passadas de registro das perguntas; testes de recusa conferem a saída 1.
+- Revisão independente: P1 corrigido (o registro dos perfis sem arquivos a
+  alterar passou a ter confirmação própria, com teste) e P2/P3: uv, chezmoi e
+  nu sem falso "em dia", origem dos perfis no install/setup/diff, respondedor
+  estrito, ajuda e USAGE, mensagem de modos só para caminhos da própria venv,
+  registro desatualizado de arquivo idêntico fora das pendências, spec alinhada
+  à ordem informada e à leitura do registro.
+- Segunda revisão independente, sem P0/P1: o doctor numa sessão sem
+  `~/.local/bin` no PATH acusava o componente como ausente e mandava rodar o
+  setup, que diz "nada a fazer" (P2, agora passo manual "fora do PATH", com
+  teste); leitura do registro por descritor sem seguir symlink; plano do
+  rollback mostra os perfis que voltam e recusa um registro inseguro antes de
+  restaurar arquivos; pergunta do apply diz que lembra os perfis; resumo conta
+  as ferramentas a instalar ou migrar; testes novos de troca por arquivo
+  regular, falha do apply sem registro anterior, `diff` e `setup --dry-run`
+  sem estado e `project` com registro corrompido. Mudança de diagnóstico e
+  classificações manuais registradas na D-019.
+- Limite: `install` só considera pendente um plugin ou fonte quando um arquivo
+  conferido em `health` (subconjunto de `artifacts.json`) diverge.
+- Os exemplos da INSTALLATION são a saída de uma HOME de teste com `minimal`.
+
+Não executados: matriz de containers e smoke online deste bloco.
+
 ## Matriz e smoke após o Bloco C — 2026-11-09
 
 `workflow_dispatch` na branch do Bloco C, commit b57feba ([execução

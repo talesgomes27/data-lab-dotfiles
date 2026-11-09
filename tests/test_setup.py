@@ -63,6 +63,52 @@ class PermissionReview(unittest.TestCase):
         issues = guided.permission_review()
         self.assertIn(str(pruning), {issue['path'] for issue in issues})
 
+    def make_tool_venv(self):
+        venv = artifacts.DATA / 'devshell/tools/ruff'
+        (venv / 'lib').mkdir(parents=True)
+        (venv / 'pyvenv.cfg').write_text('version_info = 3.13.11\n')
+        (venv / 'bin').mkdir()
+        (venv / 'bin/python').symlink_to('/usr/bin/python3')
+        target = venv / 'lib/arquivo.py'
+        target.write_text('#\n')
+        target.chmod(0o664)
+        return venv, target
+
+    def test_r043_venv_mode_items_ignore_symlinks_and_refuse_swaps(self):
+        venv, target = self.make_tool_venv()
+        review = [issue for issue in guided.permission_review() if issue['kind'] == 'venv-mode']
+        self.assertEqual([issue['path'] for issue in review], [str(target)])
+        self.assertTrue(review[0]['repairable'])
+        outside = self.home / 'fora'
+        outside.write_text('preservar')
+        outside.chmod(0o664)
+        target.unlink()
+        target.symlink_to(outside)
+        with self.assertRaises((OSError, ValueError)):
+            guided.repair_permission(review[0])
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o664)
+
+    def test_r043_venv_mode_repair_refuses_regular_file_swapped_in_after_review(self):
+        venv, target = self.make_tool_venv()
+        review = [issue for issue in guided.permission_review() if issue['kind'] == 'venv-mode']
+        replacement = target.with_name('troca')
+        replacement.write_text('outro')
+        replacement.chmod(0o664)
+        os.replace(replacement, target)
+        with self.assertRaisesRegex(ValueError, 'mudou após revisão'):
+            guided.repair_permission(review[0])
+        self.assertEqual(target.stat().st_mode & 0o777, 0o664)
+
+    def test_r043_install_drops_group_write_by_descriptor_without_following_links(self):
+        venv, target = self.make_tool_venv()
+        outside = self.home / 'fora'
+        outside.write_text('preservar')
+        outside.chmod(0o664)
+        (venv / 'lib/link').symlink_to(outside)
+        state.drop_group_write_tree(venv)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o664)
+
     def test_repair_changes_only_reviewed_paths_without_recursion(self):
         paths = self.unsafe_paths()
         unrelated = self.home / '.local/unrelated'

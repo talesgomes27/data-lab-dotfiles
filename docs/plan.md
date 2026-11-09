@@ -37,6 +37,14 @@ aprovacoes:
     por: usuario
     em: "2026-11-09"
     evidencia: "resposta 'aceito' na conversa"
+  - item: desenho do Bloco D (spec v4, R-040 a R-045, D-014 a D-019; Q-004 pela D-015)
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'Aprovar o desenho' na conversa"
+  - item: plano revisto do Bloco D (A1, T-301 a T-307), com os achados do plan-reviewer incorporados
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'Aprovar o plano' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -45,13 +53,17 @@ revisao_do_bloco_c:
   por: subagente plan-reviewer
   em: "2026-11-09"
   resultado: "não pronto; 4 P1, 9 P2 e 7 P3 incorporados (D-008, D-010, D-012 detalhadas; T-204 e T-205 reordenadas)"
+revisao_do_bloco_d:
+  por: subagente plan-reviewer
+  em: "2026-11-09"
+  resultado: "não pronto; 5 P1, 8 P2 e 6 P3 incorporados (spec v5: R-040 e D-014 a D-019 detalhadas)"
 dispensas:
   - gate: PC-1
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: commit, PR e workflow_dispatch do Bloco C (cada um com autorização); R-010 e R-024 verificados nas execuções remotas
-pendencias: [Q-001, Q-002, Q-003]
+proximo_passo: implementar o Bloco D pela execution-pipeline, começando por T-301, quando o usuário pedir
+pendencias: [Q-003]
 ```
 
 # Plano: histórico de transações, CI agendado e lock das ferramentas uv
@@ -310,13 +322,116 @@ e o bloco passa a usar uma venv por ferramenta com `uv pip install
 - Verificação: remota, `workflow_dispatch` na branch com `online-smoke` e
   `containers` verdes; local, `bash scripts/check.sh`.
 
+## Bloco D: setup simplificado
+
+O caminho comum passa a ser `git pull` e `./bin/devshell setup`; os comandos
+individuais não mudam. Testes antes do código em cada tarefa.
+
+### T-301 Testes dos perfis lembrados
+- Requisitos: R-040
+- Objetivo: fixar a precedência, a persistência e as exceções antes do código.
+- Arquivos: `tests/profiles.bats` (novo), `tests/test_boundaries.py`
+- Dependências: nenhuma
+- Critério de aceite: casos para lembrado, informado e `minimal` em `plan`,
+  `doctor`, `status`, `diff`, `install` e `setup --dry-run`; `profile_source`
+  na saída e no JSON, fora do hash; `apply` sem mudança gravando o registro;
+  HOME já aplicada sem registro saindo com 2 e pedindo `--profile`; `project` e
+  `install --component devshell` funcionando com registro gravado; registro
+  inválido saindo com 2 sem `--profile` e só avisando com `--profile`;
+  `rollback` funcionando com registro corrompido; restauração no `rollback`, no
+  caminho de falha do `apply`, com `previous_profiles` nulo e com manifesto
+  antigo sem a chave (aviso); ordem e duplicatas normalizadas; leitura sem
+  gravar (árvore de estado idêntica). Todos falham pelo motivo esperado.
+- Verificação: `bats tests/profiles.bats` e os unittest novos falham só nos
+  casos novos.
+
+### T-302 Gravação e leitura dos perfis
+- Requisitos: R-040
+- Objetivo: D-014 e D-015.
+- Arquivos: `bin/devshell`, `lib/profiles.sh`, `lib/state.py`, `lib/setup.py`
+  (`target_paths` com `STATE/profiles`)
+- Dependências: T-301
+- Critério de aceite: os casos de T-301 passam; os testes existentes que
+  dependem do `minimal` implícito continuam verdes ou são ajustados com
+  `--profile` explícito, sem enfraquecer o que conferem.
+- Verificação: `bash scripts/check.sh` inteiro.
+
+### T-303 `pending` nos planos de instalação
+- Requisitos: R-042
+- Objetivo: D-017.
+- Arquivos: `tests/test_boundaries.py` e `tests/install.bats` (antes),
+  `lib/artifacts.py`
+- Dependências: T-302
+- Critério de aceite: testes falham antes do código; por componente, presente
+  e conforme dá `false`, ausente ou divergente dá `true`; um arquivo de plugin
+  fora do `health` divergente é o limite documentado; `pending` fica fora do
+  hash e `install --approve` continua igual.
+- Verificação: testes por componente.
+
+### T-304 Modos das venvs no reparo do setup
+- Requisitos: R-043
+- Objetivo: D-018.
+- Arquivos: `tests/setup.bats` e `tests/test_setup.py` (antes),
+  `lib/setup.py`, `lib/state.py`, `lib/python_tools.py`
+- Dependências: T-302
+- Critério de aceite: testes falham antes do código; venv do fixture com
+  `bin/python` symlink e arquivos 664 aparece como reparável e o setup
+  prossegue; depois do `s`, nenhum arquivo da venv tem escrita de grupo e o
+  doctor aceita a ferramenta; troca de arquivo depois da revisão é recusada pela
+  identidade; nada fora de `devshell/tools` muda; texto agrupado por venv;
+  teste com cerca de 2000 arquivos fixando saída e tempo; mensagem própria no
+  doctor; a instalação usa a função por descritor de `state.py`.
+- Verificação: testes novos; `bats tests/setup.bats`.
+
+### T-305 Resumo do setup e componentes em dia
+- Requisitos: R-041, R-042
+- Objetivo: D-016 e o uso de `pending` no `setup`.
+- Arquivos: `tests/setup.bats` (antes), `scripts/online-smoke.sh`,
+  `lib/setup.py`, `lib/setup.sh`
+- Dependências: T-303, T-304
+- Critério de aceite: testes falham antes do código; o resumo é a primeira
+  saída e diz que cada etapa pede a sua confirmação; etapas dependentes do
+  reparo aparecem como "reavaliado depois do reparo", com teste; tudo em dia dá
+  "nada a fazer", saída 0, nenhuma pergunta e nenhuma pendência que o setup
+  resolva; componente `pending: false` não gera pergunta nem chamada; `--dry-run
+  --json` traz `summary`; os testes do setup e o `online-smoke.sh` que
+  respondem por posição passam a conferir o texto de cada pergunta respondida.
+- Verificação: testes novos, inclusive o cenário de atualização do projeto com
+  dotfiles e ferramentas desatualizados; `bash scripts/check.sh`.
+
+### T-306 Próximo passo no doctor
+- Requisitos: R-044
+- Objetivo: D-019.
+- Arquivos: `tests/test_boundaries.py` e `tests/setup.bats` (antes),
+  `lib/state.py`
+- Dependências: T-302, T-304
+- Critério de aceite: testes falham antes do código; um teste por tipo de
+  pendência (resolvida pelo setup, manual, nenhuma, doctor com saída 2); texto
+  termina com "Próximo passo: ..."; JSON com `next_step` ou `null`;
+  `--profile` no comando só quando a origem não é `lembrados`; invariante
+  "setup com nada a fazer, doctor sem sugerir setup".
+- Verificação: testes novos.
+
+### T-307 Documentação do caminho comum
+- Requisitos: R-045
+- Objetivo: README, INSTALLATION, USAGE, CHANGELOG e VALIDATION.
+- Arquivos: `README.md`, `docs/INSTALLATION.md`, `docs/USAGE.md`,
+  `CHANGELOG.md`, `docs/VALIDATION.md`
+- Dependências: T-305, T-306
+- Critério de aceite: "Atualizar" com dois comandos e saída executada em HOME
+  temporária; aviso de migração para quem já tem a HOME aplicada (`setup
+  --profile ...` uma vez); seção avançada com plan/apply/install/rollback;
+  CHANGELOG com a mudança do perfil padrão e o campo `next_step`.
+- Verificação: `bash scripts/check.sh`; leitura do diff; remota,
+  `workflow_dispatch` na branch (smoke e containers), com autorização própria.
+
 ## Encerramento
 
 ### T-900 Verificação final e revisão independente
-- Requisitos: R-001, R-002, R-003, R-004, R-005, R-006, R-010, R-020, R-021, R-022, R-023, R-024, R-025, R-030
+- Requisitos: R-001, R-002, R-003, R-004, R-005, R-006, R-010, R-020, R-021, R-022, R-023, R-024, R-025, R-030, R-040, R-041, R-042, R-043, R-044, R-045
 - Objetivo: fechar cada bloco com evidência.
 - Arquivos: `docs/spec.md` (estados e evidências), `docs/VALIDATION.md`
-- Dependências: T-006, T-101, T-206
+- Dependências: T-006, T-101, T-206, T-307
 - Critério de aceite: `bash scripts/check.sh` verde sem skips;
   `spec_check.py --stage a3` limpo (ferramenta da pre-code-pipeline, fora do
   repositório, rodada com `--root .`); revisão independente sem P0/P1 abertos;
