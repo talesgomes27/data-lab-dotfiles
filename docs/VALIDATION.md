@@ -32,6 +32,17 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Aliases eza no openSUSE — 2026-11-09
+
+Na matriz, só o openSUSE Leap 16 falhava em "aliases eza exigem shell
+interativa e componente selecionado" (`tests/shells.bats`, linha 225): o
+`bash.bashrc` da distribuição define `la` e `ll` em toda shell interativa, e o
+teste tratava qualquer atalho existente como criado pelo Data Lab. Reproduzido
+localmente pondo esses aliases no bashrc da fixture: a versão antiga falha na
+mesma linha. O teste passou a comparar os atalhos com os da própria shell sem o
+Data Lab; continua falhando se o `eza` for selecionado (conferido trocando os
+componentes). Sem Docker local, o container openSUSE não foi executado aqui.
+
 ## Setup simplificado — 2026-11-09
 
 Bloco D do [plano](plan.md) (R-040 a R-045). `bash scripts/check.sh` em
