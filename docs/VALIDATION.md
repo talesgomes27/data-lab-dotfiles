@@ -32,6 +32,26 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Matriz e smoke após o Bloco C — 2026-11-09
+
+`workflow_dispatch` na branch do Bloco C, commit b57feba ([execução
+42638571515](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/42638571515)):
+`checks` com os cenários opcionais, `online-smoke` e os containers ubuntu e
+debian passaram. O smoke instalou ruff, pre-commit e ipython com o uv real e
+rede pelas venvs com hash, executou cada um pelo symlink e o `doctor` não
+apontou nenhuma ferramenta. Fedora, arch e opensuse falharam por utilitários
+ausentes nas imagens mínimas, não por código: `cmp` (diffutils) em 3 testes
+anteriores aos Blocos A a C, e `find`/`xargs` (findutils) em 6 testes do
+histórico no opensuse. `tests/Containerfile` passa a instalar diffutils e
+findutils nas quatro famílias; a matriz com essa correção ainda não rodou.
+
+Na migração da HOME real (uv 0.13.5), o `doctor` apontou pre-commit e ipython
+como divergentes: os arquivos vieram em 664 porque o uv, com `--link-mode
+copy`, copia os modos do próprio cache, criado antes com umask 002. O smoke não
+pegou porque começa com cache novo. A instalação passa a tirar a escrita de
+grupo e outros da venv criada na execução, sem seguir symlinks; o stub do
+`setup.bats` reproduz os modos do cache e o teste novo falhou antes da correção.
+
 ## Venv com hash obrigatório para as ferramentas — 2026-11-09
 
 Bloco C do [plano](plan.md) (R-020 a R-025), com o desenho revisto depois de

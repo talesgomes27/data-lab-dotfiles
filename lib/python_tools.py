@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -229,6 +230,16 @@ def commands(row, spec, offline):
              '--require-hashes', '--no-build', '--link-mode', 'copy', '-r', row['lock']]]
 
 
+def drop_shared_write(venv):
+    """Na venv criada nesta execução: o uv copia os modos do cache, que podem ter escrita de grupo."""
+    for root, directories, files in os.walk(venv, followlinks=False):
+        for name in [*directories, *files]:
+            path = os.path.join(root, name)
+            info = os.lstat(path)
+            if not stat.S_ISLNK(info.st_mode) and info.st_mode & 0o022:
+                os.chmod(path, stat.S_IMODE(info.st_mode) & ~0o022)
+
+
 def uv_environment(dirs):
     """Sem venv ativa nem configuração UV_* do usuário além dos diretórios aprovados."""
     removed = ('VIRTUAL_ENV', 'CONDA_PREFIX', 'PYTHONHOME', 'PYTHONPATH')
@@ -261,6 +272,7 @@ def apply(plan, dirs):
                                        stdout=sys.stderr)
                     if not (venv / 'bin' / row['name']).is_file():
                         raise RuntimeError(f"executável {row['name']} não criado na venv")
+                    drop_shared_write(venv)
                 except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
                     shutil.rmtree(venv)
                     raise RuntimeError(f"instalação de {row['name']} falhou e a venv foi removida; "

@@ -33,7 +33,9 @@ inclusive as transitivas. Ela é instalada numa venv própria em
 `tool_python`, por `uv pip install --require-hashes --no-build`: um hash
 divergente, uma dependência ausente do lock ou um pacote que exigiria
 compilação interrompem a instalação. O executável fica num symlink em
-`$UV_TOOL_BIN_DIR` (por padrão `~/.local/bin`). A instalação roda sem a venv
+`$UV_TOOL_BIN_DIR` (por padrão `~/.local/bin`). Depois da instalação, a CLI tira
+a escrita de grupo e outros dos arquivos da venv que acabou de criar, porque o
+uv copia os modos do próprio cache. A instalação roda sem a venv
 ativa nem as variáveis `UV_*` do usuário além dos diretórios do Data Lab.
 O `uv tool install` não é usado porque não aplica os hashes (ADR 004).
 O uv precisa estar na versão 0.13.5 ou superior, a versão em que esse

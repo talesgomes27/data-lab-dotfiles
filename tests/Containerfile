@@ -2,10 +2,10 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 ARG ADAPTER
 RUN case "$ADAPTER" in \
-    apt) apt-get update && apt-get install -y --no-install-recommends bash python3 ca-certificates curl git zsh shellcheck shfmt bats direnv && rm -rf /var/lib/apt/lists/* ;; \
-    dnf) dnf install -y bash python3 ca-certificates curl git zsh ShellCheck shfmt bats direnv && dnf clean all ;; \
-    pacman) pacman -Syu --noconfirm --needed bash python ca-certificates curl git zsh shellcheck shfmt bats direnv ;; \
-    zypper) zypper --non-interactive install bash python3 ca-certificates curl git zsh ShellCheck shfmt bats direnv && zypper clean --all ;; \
+    apt) apt-get update && apt-get install -y --no-install-recommends bash python3 ca-certificates curl git zsh shellcheck shfmt bats direnv diffutils findutils && rm -rf /var/lib/apt/lists/* ;; \
+    dnf) dnf install -y bash python3 ca-certificates curl git zsh ShellCheck shfmt bats direnv diffutils findutils && dnf clean all ;; \
+    pacman) pacman -Syu --noconfirm --needed bash python ca-certificates curl git zsh shellcheck shfmt bats direnv diffutils findutils ;; \
+    zypper) zypper --non-interactive install bash python3 ca-certificates curl git zsh ShellCheck shfmt bats direnv diffutils findutils && zypper clean --all ;; \
     *) exit 2 ;; esac
 WORKDIR /work
 COPY . /work
