@@ -15,7 +15,7 @@ load core_setup
 @test 'python planeja interpretadores sem bin genérico e ferramentas isoladas' {
     run "$FOUNDRY_ROOT/bin/devshell" install --component python --profile science --dry-run --json
     [ "$status" -eq 0 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);c=p["commands"];assert "--no-bin" in c[0];assert any("tool" in r and "install" in r and any("ruff==" in s for s in r) for r in c);assert all("--force" not in r for r in c)'
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);c=p["commands"];assert "--no-bin" in c[0];assert not any("tool" in r for r in c);pip=[r for r in c if "pip" in r];assert len(pip)==3 and all("--require-hashes" in r and r[r.index("-r")+1].endswith(".txt") for r in pip);assert {t["state"] for t in p["tools"]}=={"ausente"};assert all("--force" not in r for r in c)'
     [ -z "$(find "$HOME" -mindepth 1 -print -quit)" ]
 }
 @test 'instalador offline sem cache falha sem baixar ou criar binários' {
@@ -48,7 +48,8 @@ prepare_uv() {
     hash=$("$FOUNDRY_ROOT/bin/devshell" install --component python --profile science --json | python3 -c 'import json,sys,os;p=json.load(sys.stdin);assert p["directories"]["UV_TOOL_BIN_DIR"]==os.environ["XDG_BIN_HOME"];print(p["approval"])')
     run "$FOUNDRY_ROOT/bin/devshell" install --component python --profile science --approve "$hash"
     [ "$status" -eq 0 ]
-    python3 -c 'import json,os;calls=[json.loads(s) for s in open(os.environ["FOUNDRY_UV_LOG"])];assert len(calls)==5;assert all(c["dirs"]["UV_TOOL_BIN_DIR"]==os.environ["XDG_BIN_HOME"] for c in calls)'
+    python3 -c 'import json,os;calls=[json.loads(s) for s in open(os.environ["FOUNDRY_UV_LOG"])];assert len(calls)==8;assert all(c["dirs"]["UV_TOOL_BIN_DIR"]==os.environ["XDG_BIN_HOME"] for c in calls if "python" in c["args"][2:4]);assert all(c["dirs"]["UV_TOOL_BIN_DIR"] is None for c in calls if "venv" in c["args"] or "pip" in c["args"])'
+    for tool in ruff pre-commit ipython; do [ "$(readlink "$XDG_BIN_HOME/$tool")" = "$XDG_DATA_HOME/devshell/tools/$tool/bin/$tool" ]; done
 }
 @test 'instalação Python recusa diretório binário que não cabe no PATH' {
     export UV_TOOL_BIN_DIR="$HOME/bin:outro"

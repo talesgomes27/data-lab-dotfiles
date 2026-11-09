@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# shellcheck disable=SC2030,SC2031,SC2143 # run em helpers do Bats; no Bats, `! grep` não falha o teste, então a ausência é conferida pela saída vazia.
 load core_setup
 
 prepare_setup() {
@@ -30,23 +31,35 @@ if 'python' in args and 'install' in args:
     path.parent.mkdir(parents=True,exist_ok=True);path.write_text(f'#!/bin/sh\nprintf "Python {version}\\n"\n');path.chmod(0o755)
     header=path.parent.parent/'include'/('python'+'.'.join(version.split('.')[:2]))/'patchlevel.h'
     header.parent.mkdir(parents=True,exist_ok=True);header.write_text(f'#define PY_VERSION "{version}"\n')
-elif 'tool' in args and 'install' in args:
-    name,version=args[-1].split('==')
-    receipt=Path(os.environ['UV_TOOL_DIR'])/name/'uv-receipt.toml'
-    receipt.parent.mkdir(parents=True,exist_ok=True)
-    receipt.write_text(f'[tool]\nrequirements = [{{ name = "{name}", specifier = "=={version}" }}]\n')
-    binary=Path(os.environ['UV_TOOL_DIR'])/name/'bin'/name
-    binary.parent.mkdir(parents=True,exist_ok=True);binary.write_text(f'#!/bin/sh\nprintf "{version}\\n"\n');binary.chmod(0o755)
-    entry=Path(os.environ['UV_TOOL_BIN_DIR'])/name
-    entry.parent.mkdir(parents=True,exist_ok=True);entry.symlink_to(binary)
-    dist=binary.parent.parent/'lib/python3.13/site-packages'/f'{name.replace("-", "_")}-{version}.dist-info'
-    dist.mkdir(parents=True,exist_ok=True)
-    (dist/'METADATA').write_text(f'Name: {name}\nVersion: {version}\n')
+if 'venv' in args or 'pip' in args:
+    import json
+    with open(os.environ['SETUP_LOG']+'.env','a') as stream:
+        stream.write(json.dumps(sorted(k for k in os.environ if k.startswith('UV_') or k in ('VIRTUAL_ENV','CONDA_PREFIX')))+'\n')
+if 'venv' in args:
+    venv=Path(args[-1]);version=args[args.index('--python')+1];minor='.'.join(version.split('.')[:2])
+    interpreter=Path(os.environ['UV_PYTHON_INSTALL_DIR'])/f'cpython-{version}-fixture/bin/python3'
+    (venv/'bin').mkdir(parents=True,exist_ok=True);(venv/'bin/python').symlink_to(interpreter)
+    (venv/'pyvenv.cfg').write_text(f'home = {interpreter.parent}\nversion_info = {version}\n')
+    (venv/'lib'/f'python{minor}'/'site-packages').mkdir(parents=True,exist_ok=True)
+elif 'pip' in args and 'install' in args:
+    venv=Path(args[args.index('--python')+1]).parent.parent;lock=Path(args[args.index('-r')+1]);name=lock.stem
+    if os.environ.get('SETUP_UV_PIP_FAIL') in ('1', name):
+        sys.exit(1)
+    site=next((venv/'lib').glob('python*/site-packages'))
+    versions={}
+    for line in lock.read_text().splitlines():
+        if line and not line[0].isspace() and not line.startswith('#') and ';' not in line.split('\\')[0]:
+            dist,version=line.split()[0].split('==');versions[dist]=version
+    for dist,version in versions.items():
+        info=site/f'{dist.replace("-","_")}-{version}.dist-info';info.mkdir(parents=True,exist_ok=True)
+        (info/'METADATA').write_text(f'Name: {dist}\nVersion: {version}\n')
+    binary=venv/'bin'/name;binary.write_text(f'#!{venv}/bin/python\nprintf "{versions[name]}\\n"\n');binary.chmod(0o755)
+    dist=site/f'{name.replace("-","_")}-{versions[name]}.dist-info'
     checksum=base64.urlsafe_b64encode(hashlib.sha256(binary.read_bytes()).digest()).decode().rstrip('=')
     records=[f'../../../bin/{name},sha256={checksum},{binary.stat().st_size}\n']
     required={'pre-commit':['pre_commit/__init__.py','pre_commit/main.py'], 'ipython':['IPython/__init__.py']}.get(name,[])
     for relative in required:
-        module=dist.parent/relative;module.parent.mkdir(parents=True,exist_ok=True);module.write_text('# fixture\n')
+        module=site/relative;module.parent.mkdir(parents=True,exist_ok=True);module.write_text('# fixture\n')
         digest=base64.urlsafe_b64encode(hashlib.sha256(module.read_bytes()).digest()).decode().rstrip('=')
         records.append(f'{relative},sha256={digest},{module.stat().st_size}\n')
     (dist/'RECORD').write_text(''.join(records))
@@ -323,9 +336,13 @@ PY
     python3 - <<'PY'
 import os
 calls=open(os.environ['SETUP_LOG']).read().splitlines()
-assert len(calls)==5,calls
+assert len(calls)==8,calls
 assert sum(' python install --no-bin ' in line for line in calls)==2
-assert sum(' tool install --managed-python --no-python-downloads ' in line for line in calls)==3
+assert sum(' venv --managed-python --no-python-downloads ' in line for line in calls)==3
+tools=os.environ['XDG_DATA_HOME']+'/devshell/tools/'
+pip=[line for line in calls if ' pip install ' in line]
+assert len(pip)==3 and all(f'--python {tools}' in line and ' --require-hashes --no-build --link-mode copy -r ' in line for line in pip),pip
+assert not any(' tool ' in line for line in calls),calls
 assert all('--offline' in line and '--force' not in line for line in calls)
 PY
 }
@@ -350,35 +367,191 @@ PY
     printf '%s' "$output" | python3 -c 'import json,sys;assert any("DuckDB detectado em caminho inseguro" in w for w in json.load(sys.stdin)["warnings"])'
 }
 
-@test 'doctor relata ferramenta uv removida ou com versão divergente' {
+install_science() {
     prepare_setup
     run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
-    /usr/bin/rm "$UV_TOOL_BIN_DIR/ruff"
+    TOOLS="$XDG_DATA_HOME/devshell/tools"
+}
+doctor_issue() {
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
     [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("ferramenta uv ausente: ruff" in s for s in json.load(sys.stdin)["issues"])'
-    printf '#!/usr/bin/env bash\nexit 0\n' >"$UV_TOOL_BIN_DIR/ruff"
-    /usr/bin/chmod +x "$UV_TOOL_BIN_DIR/ruff"
-    printf '[tool]\nrequirements = [{ name = "ruff", specifier = "==0.1.0" }]\n' >"$UV_TOOL_DIR/ruff/uv-receipt.toml"
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
-    [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("versão da ferramenta uv divergente: ruff" in s for s in json.load(sys.stdin)["issues"])'
+    printf '%s' "$output" | python3 -c 'import json,sys;i=json.load(sys.stdin)["issues"];assert any(all(p in s for p in sys.argv[1:]) for s in i),i' "$@"
 }
 
-@test 'doctor identifica recibo inválido e binário uv de versão incorreta' {
+@test 'R-023 doctor relata link ausente e versão divergente do lock' {
+    install_science
+    /usr/bin/rm "$UV_TOOL_BIN_DIR/ruff"
+    doctor_issue 'sem-link' ruff
+    /usr/bin/ln -s "$TOOLS/ruff/bin/ruff" "$UV_TOOL_BIN_DIR/ruff"
+    /usr/bin/sed -i 's/^Version: .*/Version: 0.1.0/' "$TOOLS"/ruff/lib/python3.13/site-packages/ruff-*.dist-info/METADATA
+    doctor_issue divergente 'ruff 0.1.0, lock 0.17.3'
+}
+
+@test 'R-023 doctor relata distribuição fora do lock e dependência do lock ausente' {
+    install_science
+    site=$(printf '%s\n' "$TOOLS"/pre-commit/lib/python3.13/site-packages)
+    /usr/bin/mkdir "$site/estranho-1.0.dist-info"
+    printf 'Name: estranho\nVersion: 1.0\n' >"$site/estranho-1.0.dist-info/METADATA"
+    doctor_issue pre-commit 'estranho 1.0 fora do lock'
+    /usr/bin/rm -r "$site/estranho-1.0.dist-info" "$site"/pyyaml-*.dist-info
+    doctor_issue pre-commit 'pyyaml' 'não instalado'
+}
+
+@test 'R-023 doctor relata interpretador da venv diferente de tool_python' {
+    install_science
+    /usr/bin/sed -i 's/^version_info = .*/version_info = 3.12.12/' "$TOOLS/ruff/pyvenv.cfg"
+    doctor_issue ruff 'Python da venv 3.12.12'
+}
+
+@test 'R-023 doctor recusa interpretador fora do CPython gerenciado' {
+    install_science
+    /usr/bin/rm "$TOOLS/ruff/bin/python"
+    /usr/bin/ln -s "$(command -v python3)" "$TOOLS/ruff/bin/python"
+    doctor_issue ruff 'fora do CPython gerenciado'
+}
+
+@test 'R-023 doctor não executa ferramenta alterada e aponta divergência do RECORD' {
+    install_science
+    printf '#!/bin/sh\ntouch "%s"\nprintf "0.17.3\\n"\n' "$HOME/doctor-executou" >"$TOOLS/ruff/bin/ruff"
+    doctor_issue ruff 'executável diverge do RECORD'
+    [ ! -e "$HOME/doctor-executou" ]
+}
+
+@test 'R-023 doctor detecta interpretador ausente no launcher mesmo com RECORD válido' {
+    install_science
+    printf '#!/caminho/inexistente/python\n' >"$TOOLS/ruff/bin/ruff"
+    python3 - <<'RECORD'
+import base64,hashlib,os
+from pathlib import Path
+root=Path(os.environ['XDG_DATA_HOME'])/'devshell/tools/ruff'
+binary=root/'bin/ruff'
+record=next((root/'lib').glob('python*/site-packages/ruff-*.dist-info/RECORD'))
+checksum=base64.urlsafe_b64encode(hashlib.sha256(binary.read_bytes()).digest()).decode().rstrip('=')
+record.write_text(f'../../../bin/ruff,sha256={checksum},{binary.stat().st_size}\n')
+RECORD
+    doctor_issue ruff 'interpretador do launcher'
+}
+
+@test 'R-023 doctor detecta módulo essencial ausente na venv' {
+    install_science
+    /usr/bin/rm "$TOOLS/pre-commit/lib/python3.13/site-packages/pre_commit/main.py"
+    doctor_issue pre-commit 'módulo essencial'
+}
+
+@test 'R-025 setup science repara permissão de grupo antes de avaliar as ferramentas' {
     prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    /usr/bin/mkdir -p "$HOME/.local/bin"
+    /usr/bin/chmod 775 "$HOME/.local" "$HOME/.local/bin"
+    run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
     [ "$status" -eq 0 ]
-    printf '[tool]\nrequirements = ["ruff"]\n' >"$UV_TOOL_DIR/ruff/uv-receipt.toml"
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["permissions"] and all(i["repairable"] for i in p["permissions"]),p["permissions"];assert not p["blockers"],p["blockers"]'
+    run bash -c 'printf "s\ns\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [ "$(/usr/bin/stat -c %a "$HOME/.local")" = 755 ]
+    [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/ruff")" = "$XDG_DATA_HOME/devshell/tools/ruff/bin/ruff" ]
+}
+
+@test 'R-025 dry-run mostra conflito do uv tool mesmo com reparo de permissão pendente' {
+    prepare_setup
+    /usr/bin/mkdir -p "$UV_TOOL_DIR/ruff/bin" "$UV_TOOL_BIN_DIR"
+    printf '#!/bin/sh\n' >"$UV_TOOL_DIR/ruff/bin/ruff"
+    /usr/bin/ln -s "$UV_TOOL_DIR/ruff/bin/ruff" "$UV_TOOL_BIN_DIR/ruff"
+    /usr/bin/chmod 775 "$HOME/.local"
+    run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["permissions"],p;assert any("uv tool uninstall ruff" in b for b in p["blockers"]),p["blockers"]'
+    [ "$(/usr/bin/stat -c %a "$HOME/.local")" = 775 ]
+}
+
+@test 'R-023 doctor aponta link da ferramenta para fora da venv' {
+    install_science
+    /usr/bin/ln -sfn /usr/bin/true "$UV_TOOL_BIN_DIR/ruff"
+    doctor_issue conflito ruff 'uv tool uninstall ruff'
+}
+
+@test 'R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" install --component python --profile science --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    SETUP_UV_PIP_FAIL=ipython run "$SETUP_REPO/bin/devshell" install --component python --profile science --offline --approve "$hash"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'concluídas: ruff, pre-commit'* ]]
+    [ ! -e "$XDG_DATA_HOME/devshell/tools/ipython" ]
+    [ -L "$UV_TOOL_BIN_DIR/ruff" ]
+    [ -L "$UV_TOOL_BIN_DIR/pre-commit" ]
+}
+
+@test 'R-021 install aprovado com --json emite um único documento' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" install --component python --profile science --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    run bash -c '"$SETUP_REPO/bin/devshell" install --component python --profile science --offline --approve "$1" --json 2>/dev/null' _ "$hash"
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c 'import json,sys;json.load(sys.stdin)'
+    run "$UV_TOOL_BIN_DIR/ruff"
+    [ "$status" -eq 0 ]
+}
+
+@test 'R-025 instalação do uv tool bloqueia setup e install sem alterar nada' {
+    prepare_setup
+    /usr/bin/mkdir -p "$UV_TOOL_DIR/ruff/bin" "$UV_TOOL_DIR/outra/bin" "$UV_TOOL_BIN_DIR"
+    printf '#!/bin/sh\n' >"$UV_TOOL_DIR/ruff/bin/ruff"
+    printf '#!/bin/sh\n' >"$UV_TOOL_DIR/outra/bin/outra"
+    /usr/bin/ln -s "$UV_TOOL_DIR/ruff/bin/ruff" "$UV_TOOL_BIN_DIR/ruff"
+    /usr/bin/ln -s "$UV_TOOL_DIR/outra/bin/outra" "$UV_TOOL_BIN_DIR/outra"
+    /usr/bin/rm "$SETUP_BIN/shellcheck"
+    before=$(/usr/bin/find "$HOME" -printf '%p %l\n' | /usr/bin/sort)
+    run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert p["native_command"],p;b=p["blockers"];assert any("conflito: ruff" in x and "uv tool uninstall ruff" in x for x in b),b'
+    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("recibo" in s and "ruff" in s for s in json.load(sys.stdin)["issues"])'
-    printf '[tool]\nrequirements = [{ name = "ruff", specifier = "==0.17.3" }]\n' >"$UV_TOOL_DIR/ruff/uv-receipt.toml"
-    printf '#!/usr/bin/env bash\nprintf "ruff 0.1.0\\n"\n' >"$UV_TOOL_BIN_DIR/ruff"
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
-    [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("executável uv divergente: ruff" in s for s in json.load(sys.stdin)["issues"])'
+    [ -z "$(/usr/bin/grep -s '^sudo ' "$SETUP_LOG")" ]
+    run "$SETUP_REPO/bin/devshell" install --component python --profile science --json
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'uv tool uninstall ruff'* ]]
+    [ "$(/usr/bin/find "$HOME" -printf '%p %l\n' | /usr/bin/sort)" = "$before" ]
+}
+
+@test 'R-021 instalação preserva venv ativa de outro projeto e não chama uv tool' {
+    prepare_setup
+    /usr/bin/mkdir -p "$HOME/projeto/.venv/bin"
+    printf 'marcador\n' >"$HOME/projeto/.venv/marcador"
+    before=$(/usr/bin/find "$HOME/projeto" -printf '%p %s\n' | /usr/bin/sort)
+    /usr/bin/mkdir -p "$UV_TOOL_DIR/outra/bin" "$UV_TOOL_BIN_DIR"
+    printf '#!/bin/sh\n' >"$UV_TOOL_DIR/outra/bin/outra"
+    /usr/bin/ln -s "$UV_TOOL_DIR/outra/bin/outra" "$UV_TOOL_BIN_DIR/outra"
+    VIRTUAL_ENV="$HOME/projeto/.venv" CONDA_PREFIX="$HOME/conda" UV_VENV_CLEAR=1 UV_INDEX_URL=https://exemplo.invalid \
+        run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
+    [ "$status" -eq 0 ]
+    [ "$(/usr/bin/find "$HOME/projeto" -printf '%p %s\n' | /usr/bin/sort)" = "$before" ]
+    [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/outra")" = "$UV_TOOL_DIR/outra/bin/outra" ]
+    python3 -c 'import json,sys;rows=[json.loads(l) for l in open(sys.argv[1])];assert len(rows)==6,rows;assert all(set(r)=={"UV_CACHE_DIR","UV_PYTHON_INSTALL_DIR"} for r in rows),rows' "$SETUP_LOG.env"
+    [ -z "$(/usr/bin/grep "$HOME/projeto" "$SETUP_LOG")" ]
+    [ -z "$(/usr/bin/grep -E '^uv .* tool ' "$SETUP_LOG")" ]
+    [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/ruff")" = "$XDG_DATA_HOME/devshell/tools/ruff/bin/ruff" ]
+}
+
+@test 'R-021 repetir a instalação conforme não chama o uv para as ferramentas' {
+    install_science
+    hash=$("$SETUP_REPO/bin/devshell" install --component python --profile science --offline --json | python3 -c 'import json,sys;p=json.load(sys.stdin);assert {t["state"] for t in p["tools"]}=={"conforme"},p["tools"];print(p["approval"])')
+    calls=$(/usr/bin/wc -l <"$SETUP_LOG")
+    run "$SETUP_REPO/bin/devshell" install --component python --profile science --offline --approve "$hash"
+    [ "$status" -eq 0 ]
+    [ -z "$(/usr/bin/tail -n "+$((calls + 1))" "$SETUP_LOG" | /usr/bin/grep -E ' (venv|pip) ')" ]
+    run "$SETUP_REPO/bin/devshell" setup --profile science --dry-run --json
+    [ "$status" -eq 0 ]
+    printf '%s' "$output" | python3 -c 'import json,sys;p=json.load(sys.stdin);assert not p["blockers"] and not p["permissions"],p'
+}
+
+@test 'R-022 falha do uv pip install remove só a venv criada e sai com 2' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" install --component python --profile science --offline --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    SETUP_UV_PIP_FAIL=1 run "$SETUP_REPO/bin/devshell" install --component python --profile science --offline --approve "$hash"
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'venv foi removida'* && "$output" == *'concluídas: nenhuma'* ]]
+    [ -z "$(/usr/bin/find "$XDG_DATA_HOME/devshell/tools" -mindepth 1 -print -quit)" ]
+    [ ! -e "$UV_TOOL_BIN_DIR/ruff" ]
+    [ ! -L "$UV_TOOL_BIN_DIR/ruff" ]
 }
 
 @test 'doctor identifica metadado de versão incorreto no interpretador uv' {
@@ -389,46 +562,6 @@ PY
     run "$SETUP_REPO/bin/devshell" doctor --profile science --json
     [ "$status" -eq 3 ]
     printf '%s' "$output" | python3 -c 'import json,sys;assert any("interpretador uv divergente: 3.12.12" in s for s in json.load(sys.stdin)["issues"])'
-}
-
-@test 'doctor não executa ferramenta uv alterada ao verificar sua versão' {
-    prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
-    [ "$status" -eq 0 ]
-    printf '#!/bin/sh\ntouch "%s"\nprintf "0.17.3\\n"\n' "$HOME/doctor-executou" >"$UV_TOOL_BIN_DIR/ruff"
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
-    [ "$status" -eq 3 ]
-    [ ! -e "$HOME/doctor-executou" ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("executável uv divergente: ruff" in s for s in json.load(sys.stdin)["issues"])'
-}
-
-@test 'doctor detecta interpretador ausente no launcher mesmo com RECORD válido' {
-    prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
-    [ "$status" -eq 0 ]
-    printf '#!/caminho/inexistente/python\n' >"$UV_TOOL_BIN_DIR/ruff"
-    python3 - <<'PY'
-import base64,hashlib,os
-from pathlib import Path
-root=Path(os.environ['UV_TOOL_DIR'])/'ruff'
-binary=root/'bin/ruff'
-record=next((root/'lib').glob('python*/site-packages/ruff-*.dist-info/RECORD'))
-checksum=base64.urlsafe_b64encode(hashlib.sha256(binary.read_bytes()).digest()).decode().rstrip('=')
-record.write_text(f'../../../bin/ruff,sha256={checksum},{binary.stat().st_size}\n')
-PY
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
-    [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("interpretador do launcher" in s for s in json.load(sys.stdin)["issues"])'
-}
-
-@test 'doctor detecta módulo essencial ausente em ferramenta uv' {
-    prepare_setup
-    run bash -c 'printf "s\ns\ns\n" | "$SETUP_REPO/bin/devshell" setup --profile science --offline'
-    [ "$status" -eq 0 ]
-    /usr/bin/rm "$UV_TOOL_DIR/pre-commit/lib/python3.13/site-packages/pre_commit/main.py"
-    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
-    [ "$status" -eq 3 ]
-    printf '%s' "$output" | python3 -c 'import json,sys;assert any("módulo essencial" in s and "pre-commit" in s for s in json.load(sys.stdin)["issues"])'
 }
 
 @test 'doctor detecta alteração dos arquivos essenciais de plugin e fonte' {

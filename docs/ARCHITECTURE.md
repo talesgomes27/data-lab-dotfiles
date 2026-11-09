@@ -26,7 +26,7 @@ flowchart LR
   C --> I[install explícito]
   I --> V[HTTPS + versão + SHA-256]
   V --> L[binários de usuário / plugins / fontes]
-  I --> UV[uv python install / uv tool install]
+  I --> UV[uv python install / venv por ferramenta com hash]
   P --> M[comando administrativo exibido]
   M --> S[setup: confirmação separada]
   S --> N[gerenciador da distribuição]
@@ -160,6 +160,13 @@ O fluxo guiado tem confirmações separadas para permissões, comando
 administrativo, componentes e aplicação. Conflitos exigem a palavra
 `substituir`. Uma aprovação de arquivos é usada como foi apresentada; a
 orquestração não gera outro hash para contornar alteração concorrente.
+
+As CLI Python ficam em `lib/python_tools.py`: lê os locks de
+`manifests/python-tools/`, classifica cada ferramenta (ausente, sem link,
+conforme, link órfão, divergente, conflito) com a mesma função para o plano de
+instalação, o `setup inspect` e o `doctor`, e instala sob o lock da CLI com
+`uv venv` e `uv pip install --require-hashes`. Os estados que pedem ação manual
+bloqueiam o plano e o setup antes de qualquer comando administrativo.
 
 O histórico de transações é lido por uma enumeração única em `lib/state.py`,
 que classifica cada entrada sem lançar exceção: `rollback --list` mostra as

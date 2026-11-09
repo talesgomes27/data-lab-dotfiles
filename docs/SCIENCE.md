@@ -11,19 +11,20 @@ Quarto ou Astro no prompt não significa que seu runtime tenha sido instalado.
 | Escopo | Exemplo | Efeito |
 |---|---|---|
 | Interpretador por usuário | `uv python install --no-bin 3.13.11` | Instala CPython gerenciado sem criar python/python3 genérico no PATH. |
-| CLI isolada | `uv tool install ruff==0.17.3` | Cria ambiente da ferramenta e disponibiliza seu executável. |
+| CLI do projeto | `devshell install --component python` | Cria a venv da ferramenta com o lock e hash obrigatório e liga o executável em `~/.local/bin`. |
+| CLI sua, fora do Data Lab | `uv tool install NOME` | Ambiente isolado gerido pelo uv; não use para ruff, pre-commit ou ipython, que o projeto já instala. |
 | Dependência do estudo | `uv add pandas` | Altera pyproject.toml, uv.lock e a `.venv` do projeto. |
 | Ferramenta eventual | `uvx --from ruff==0.17.3 ruff check .` | Usa ambiente isolado/cache; pode baixar pacotes. |
 
 O [manifesto Python](../manifests/python.json) fixa interpretadores e ferramentas
 administrados pelo projeto. O instalador não usa `--default` ou `--force`, nem
-substitui o Python da distribuição. Dependências transitivas das CLI uv não têm
-lock único; o lock do exemplo científico é separado.
+substitui o Python da distribuição. Cada CLI tem um lock com hashes em
+`manifests/python-tools/`; o lock do exemplo científico é separado.
 
 Antes de alterar um estudo existente, leia seu README e preserve o gerenciador
 e o lock adotados. Não aponte UV_PROJECT_ENVIRONMENT de vários estudos para o
-mesmo ambiente. Use `uv python list --only-installed` e `uv tool list` para
-consultar os recursos disponíveis.
+mesmo ambiente. Use `uv python list --only-installed` e `./bin/devshell doctor
+--profile science` para consultar os recursos disponíveis.
 
 ## Ambiente pessoal e troca automática por projeto
 

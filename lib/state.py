@@ -623,6 +623,14 @@ def prune(keep):
 VERSION_FLOORS = {'uv': (0, 9, 0), 'chezmoi': (2, 62, 0), 'zsh': (5, 9, 0), 'nu': (0, 116, 1)}
 
 
+# D-010: o hash obrigatório das ferramentas foi provado a partir do uv 0.13.5.
+UV_HASH_FLOOR = (0, 13, 5)
+
+
+def version_floors():
+    return VERSION_FLOORS | ({'uv': UV_HASH_FLOOR} if 'python-tools' in COMPONENTS else {})
+
+
 def command_version(tool):
     executable = shutil.which(tool)
     if not executable:
@@ -640,7 +648,7 @@ def command_version(tool):
 
 def version_issues():
     versions, issues = {}, []
-    for tool, floor in VERSION_FLOORS.items():
+    for tool, floor in version_floors().items():
         if tool not in COMPONENTS or not shutil.which(tool):
             continue
         try:

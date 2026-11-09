@@ -25,10 +25,41 @@ SHA-256, correspondente ao submódulo versionado. Sua instalação não executa 
 script. Criar um projeto exige um comando explícito; autorizar o `.envrc`
 continua manual e exige revisar todo o conteúdo.
 
-A instalação de interpretadores/ferramentas é delegada a uv com versões
-fixadas e sem `--force`. As versões das CLI raiz são fixas; suas dependências
-transitivas são resolvidas por uv em cada instalação, sem um lock separado de
-ferramentas. O lock científico, por outro lado, fixa a resolução do projeto. O lock do exemplo científico contém os hashes de
+A instalação de interpretadores é delegada a uv com versões fixadas e sem
+`--force`. Cada CLI Python (Ruff, pre-commit, IPython) tem um lock em
+`manifests/python-tools/` com a versão e o SHA-256 de todas as dependências,
+inclusive as transitivas. Ela é instalada numa venv própria em
+`$XDG_DATA_HOME/devshell/tools/NOME`, com o CPython gerenciado de
+`tool_python`, por `uv pip install --require-hashes --no-build`: um hash
+divergente, uma dependência ausente do lock ou um pacote que exigiria
+compilação interrompem a instalação. O executável fica num symlink em
+`$UV_TOOL_BIN_DIR` (por padrão `~/.local/bin`). A instalação roda sem a venv
+ativa nem as variáveis `UV_*` do usuário além dos diretórios do Data Lab.
+O `uv tool install` não é usado porque não aplica os hashes (ADR 004).
+O uv precisa estar na versão 0.13.5 ou superior, a versão em que esse
+comportamento foi testado.
+
+Se a instalação de uma ferramenta falhar, a CLI remove só a venv que ela criou
+naquela execução e não cria o symlink; as ferramentas anteriores do mesmo plano
+ficam. Uma interrupção por sinal pode deixar uma venv parcial: o plano seguinte
+a classifica como divergente e pede revisão manual, sem apagá-la.
+
+Instalações anteriores feitas pelo `uv tool` bloqueiam o plano até você as
+remover, porque a CLI nunca chama `uv tool` (isso afetaria outras ferramentas
+suas). A migração é:
+
+```bash
+uv tool uninstall ruff
+uv tool uninstall pre-commit
+uv tool uninstall ipython
+./bin/devshell install --component python --profile science --json
+# Revise o plano, então:
+./bin/devshell install --component python --profile science --approve HASH
+```
+
+Os hashes protegem contra troca de arquivo no transporte ou no índice depois da
+revisão do lock; não auditam o que o PyPI publicou nessa revisão. O lock
+científico, por outro lado, fixa a resolução do projeto. O lock do exemplo científico contém os hashes de
 artefatos de dependências resolvidos. Fontes oficiais e checksums reduzem o
 risco de transporte/substituição, mas não equivalem a auditoria do fornecedor.
 
@@ -117,7 +148,10 @@ e use doctor para detectá-los. Essas verificações não impedem alterações
 concorrentes por root ou processos do mesmo UID. Rollback preserva a extensão.
 
 O `doctor` verifica arquivos esperados, presença e hashes de arquivos essenciais
-dos plugins e da fonte, e metadados/RECORD de ferramentas uv. Para CPython,
+dos plugins e da fonte e, para cada ferramenta Python, a venv, o interpretador
+dela, as distribuições instaladas contra o lock e o RECORD do executável e dos
+módulos essenciais, sem executá-la. Distribuições com marcador de plataforma
+ausentes não geram alerta, porque o doctor não avalia marcadores. Para CPython,
 verifica caminho executável e a versão declarada no cabeçalho instalado: isso
 não prova integridade do binário. O RECORD também não é uma assinatura contra
 um invasor capaz de alterar tanto o executável quanto os metadados locais.

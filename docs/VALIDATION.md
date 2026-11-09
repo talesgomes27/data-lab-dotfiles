@@ -13,6 +13,7 @@ O resultado de cada execução vale para o commit correspondente.
 
 | Verificação | Resultado e alcance |
 |---|---|
+| Suíte local com ferramentas em venv com hash | 196 testes Bats e 65 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Smoke online, ci-setup e matriz não executados. |
 | Suíte local com histórico e poda | 180 testes Bats e 56 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local após guarda estática e Python isolado | 164 testes Bats e 45 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local da candidata de pin | 160 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui o novo smoke de recusa de configuração IDE vinculada pelo pyinit distribuído; sem estender a evidência histórica da matriz. |
@@ -30,6 +31,72 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Venv com hash obrigatório para as ferramentas — 2026-11-09
+
+Bloco C do [plano](plan.md) (R-020 a R-025), com o desenho revisto depois de
+Q-001. `bash scripts/check.sh` em HOME/XDG temporários saiu com 0: 196 Bats,
+65 unittest, Ruff limpo, sem skips. uv local: 0.13.5.
+
+- Portão (T-201, `tests/uv_constraints.bats`, uv 0.13.5, offline, wheels
+  locais): `uv tool install --constraints` instalou com o hash de uma
+  dependência transitiva errado; o teste registra isso sem falhar. Por
+  observação manual, fora da suíte, o mesmo valeu com `UV_REQUIRE_HASHES=1` e
+  `--with-requirements`, e `uv pip sync --require-hashes` instalou sem a
+  dependência ausente. `uv pip install --require-hashes -r LOCK` recusou o
+  hash errado e o lock sem a dependência, e instalou com o lock correto, sem
+  hardlink para o cache. `uv venv` cria em diretório vazio e recusa diretório
+  com conteúdo.
+- Locks (T-202): gerados do PyPI com cache temporário e sem configuração local;
+  ruff com 1 pacote, pre-commit com 11 e ipython com 17 (um só no Windows).
+  `uv pip install --dry-run --no-build --require-hashes` passou nas quatro
+  plataformas x86_64/aarch64 com glibc e musl. Isso é resolução, não execução:
+  aarch64 e musl seguem sem CI.
+- CLI (T-203 a T-205): leitura dos locks com continuações, comentários,
+  marcadores e nomes PEP 503, e recusa de lock ausente, sem hash, sem `==`,
+  duplicado, com versão raiz ou minor do Python divergentes; estados ausente,
+  link órfão, conflito e divergente em teste unitário, e sem link, conforme e
+  repetição sem chamadas ao uv em Bats; bloqueio da instalação do `uv tool` no
+  `setup --dry-run`, no `setup` (antes de qualquer `sudo`) e no plano, com a
+  HOME idêntica; venv ativa de outro projeto e outra ferramenta do `uv tool`
+  intactas, sem chamada `tool`; falha do `uv pip install` simulada remove a venv
+  criada, não cria link e sai com 2; doctor aponta link ausente, versão
+  divergente, distribuição fora do lock, dependência do lock ausente,
+  interpretador diferente, RECORD divergente sem executar, launcher sem
+  interpretador e módulo essencial ausente.
+- A revisão do código achou e corrigiu: `safe_path` no lock recusaria checkouts
+  com permissão de grupo; `python-done` recalculava o plano depois da
+  instalação; quatro asserções `! comando` do Bats não falhavam o teste.
+- Os testes de T-203 a T-205 foram escritos junto com o código, não antes,
+  diferente do que o plano pede; só o portão T-201 veio antes. Como evidência
+  substituta, os testes novos rodaram contra a `main` extraída por `git
+  archive` numa pasta temporária: os 12 de R-021 a R-025 no `setup.bats`, os
+  2 reescritos do `install.bats` e os unitários (o módulo nem existe lá)
+  falharam.
+- Revisão independente: um P1 corrigido (com `science`, uma permissão de grupo
+  reparável virava bloqueio antes do reparo; agora as ferramentas são
+  avaliadas depois dele, com teste) e os P2 e P3: plano em texto com estado,
+  venv e link; piso do uv numa constante, com teste que recusa 0.13.4 só com
+  `python-tools`; stub que registra o ambiente recebido, com mutação conferida
+  (o teste falha se o ambiente do usuário vazar); guarda do caminho da venv
+  antes de criar diretórios; interpretador obrigatoriamente no CPython
+  gerenciado; RECORD lido com `csv`; mensagem própria para `sem-link`; filtro
+  do smoke mais amplo.
+- Segunda revisão independente, sem P0/P1. Entraram, cada um com teste que
+  falhou antes da correção quando havia defeito: o `setup --dry-run` mostra o
+  conflito do `uv tool` mesmo com reparo de permissão pendente (só lendo os
+  links); `install --approve --json` volta a emitir um único documento, com o
+  resumo das ferramentas no stderr; o teste do bloqueio antes do `sudo` agora
+  tem um comando nativo pendente; e há testes de link para fora da venv no
+  doctor, de falha na terceira ferramenta listando as concluídas e de execução
+  pelo symlink. `RuntimeError` e `csv.Error` de uma venv corrompida viram
+  diagnóstico, e os nomes do manifesto são validados antes de virar alvo de
+  `chmod`. Não rodou uma terceira revisão sobre esses ajustes.
+
+Não executados: o fluxo com uv real e rede (smoke online), o `ci-setup.sh` com o
+Ruff na venv do CI e a matriz de containers, todos dependentes de um
+`workflow_dispatch`; e a migração das instalações atuais na sua HOME, que é
+manual.
 
 ## Execução semanal do CI — 2026-11-09
 

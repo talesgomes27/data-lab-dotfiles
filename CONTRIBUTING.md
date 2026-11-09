@@ -63,7 +63,32 @@ pública. Retire material obsoleto depois de incorporar a informação útil.
 Versões/checksums de artefatos mudam por revisão da fonte oficial e nova
 validação; não há consulta automática a latest. Dependências das ferramentas uv
 e o lock científico têm escopos distintos. Atualize o changelog para mudanças
-perceptíveis ao usuário. Preserve as atribuições da licença MIT e as licenças
+perceptíveis ao usuário.
+
+Cada ferramenta de `manifests/python.json` tem um lock com hashes em
+`manifests/python-tools/NOME.txt`. Ao mudar a versão em `python.json`, gere o
+lock de novo com cache temporário e sem a configuração local do uv, usando o
+minor de `tool_python` em `--python-version`:
+
+```bash
+printf 'ruff==0.17.3\n' | env -i PATH="$PATH" HOME="$(mktemp -d)" UV_CACHE_DIR="$(mktemp -d)" \
+    uv --no-config pip compile --universal --python-version 3.13 --generate-hashes \
+    --index-url https://pypi.org/simple --no-python-downloads -o manifests/python-tools/ruff.txt -
+```
+
+Depois, confira que o lock instala sem compilar nada nas quatro plataformas,
+trocando `PLATAFORMA` por `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`,
+`x86_64-unknown-linux-musl` e `aarch64-unknown-linux-musl`:
+
+```bash
+uv --no-config pip install --dry-run --no-build --require-hashes --index-url https://pypi.org/simple \
+    --no-python-downloads --python-platform PLATAFORMA --python-version 3.13 \
+    --target "$(mktemp -d)" -r manifests/python-tools/ruff.txt
+```
+
+O uv não grava `--index-url` no cabeçalho do lock; a origem é a do comando
+acima, `https://pypi.org/simple`. Revise o diff do lock como revisa um
+checksum: versões novas de dependências transitivas aparecem ali. Preserve as atribuições da licença MIT e as licenças
 dos componentes externos.
 
 ## Atualizar o template Python

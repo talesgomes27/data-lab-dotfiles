@@ -25,16 +25,32 @@ aprovacoes:
     por: usuario
     em: "2026-11-09"
     evidencia: "resposta 'aceito a entrega, pode realizar o commit' na conversa"
+  - item: novo desenho do Bloco C após Q-001 (spec v3, D-007, D-008, D-010 a D-013, ADR 004 revisto)
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'Aprovar o desenho' na conversa"
+  - item: plano revisto do Bloco C (A1, T-201 a T-206), com os achados do plan-reviewer incorporados
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'Aprovar o plano' na conversa"
+  - item: entrega do Bloco C (A3, T-201 a T-206), com os testes de T-203 a T-205 escritos junto com o código e a rodada contra a main como evidência substituta
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'aceito' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
   resultado: "pronto com ressalvas; P1 e P2 incorporados (spec v2, D-003/D-004 ajustadas, D-009/D-010 novas)"
+revisao_do_bloco_c:
+  por: subagente plan-reviewer
+  em: "2026-11-09"
+  resultado: "não pronto; 4 P1, 9 P2 e 7 P3 incorporados (D-008, D-010, D-012 detalhadas; T-204 e T-205 reordenadas)"
 dispensas:
   - gate: PC-1
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: Bloco C (T-201) pela execution-pipeline, quando o usuário pedir; R-010 verificado na primeira execução agendada
+proximo_passo: commit, PR e workflow_dispatch do Bloco C (cada um com autorização); R-010 e R-024 verificados nas execuções remotas
 pendencias: [Q-001, Q-002, Q-003]
 ```
 
@@ -161,101 +177,143 @@ Onde cada verificação roda:
   `workflow_dispatch` na branch com os sete jobs, e a primeira execução
   agendada após o merge (planejada).
 
-## Bloco C: lock das ferramentas uv (item 4)
+## Bloco C: venv com hash obrigatório para as ferramentas (item 4)
 
-### T-201 Prova de que o uv aplica os hashes das constraints
+Revisto em 2026-11-09 depois de Q-001: o `uv tool install` não aplica hashes,
+e o bloco passa a usar uma venv por ferramenta com `uv pip install
+--require-hashes` (D-008, ADR 004).
+
+### T-201 Prova offline do comportamento de hash do uv
 - Requisitos: R-022
-- Objetivo: responder Q-001 antes de qualquer outra tarefa do lock.
-- Arquivos: `tests/uv_constraints.bats` (novo)
+- Objetivo: fixar em teste o comportamento do uv de que o desenho depende.
+- Arquivos: `tests/uv_constraints.bats` (reescrito)
 - Dependências: nenhuma
-- Critério de aceite: o teste monta com `zipfile` dois wheels mínimos, A
-  (com entry point) dependendo de B, e roda `uv tool install A` com
-  `--offline --no-index --find-links`, `--python "$(command -v python3)"` sem
-  Python gerenciado, e HOME/UV_* temporários. Com o hash de B errado em
-  `--constraints`: falha, stderr menciona hash, `UV_TOOL_DIR/A` não existe.
-  Com os hashes certos: instala. Registra também, sem exigir resultado, o que
-  acontece ao instalar com constraints sobre A já instalada sem elas e com um
-  pacote ausente do lock; os resultados entram no ADR 004 e no SECURITY.
-- Verificação: `bats tests/uv_constraints.bats`, inclusive na matriz com
-  `--network none`. Se o hash errado instalar, parar o bloco C e reabrir PC-3
-  com o usuário (D-008).
+- Critério de aceite: usa o `setup` de `core_setup.bash` (HOME, XDG e UV_*
+  temporários). Com dois wheels locais (A depende de B), `--offline --no-index
+  --find-links` e o Python do sistema: `uv pip install --python VENV/bin/python
+  --require-hashes --no-build --link-mode copy -r LOCK` recusa o hash errado de
+  B e o lock sem B, e instala com o lock correto; confere que `uv venv` recusa
+  diretório não vazio sem `--clear`. O comportamento do `uv tool install
+  --constraints` é registrado na saída (`>&3`) com aviso para rever o ADR 004
+  se o uv passar a aplicar o hash, sem falhar a suíte.
+- Verificação: `bats tests/uv_constraints.bats`, também na matriz com
+  `--network none` (via `workflow_dispatch`).
 
-### T-202 Gerar os arquivos de lock
+### T-202 Gerar os locks e conferir as plataformas
 - Requisitos: R-020
 - Objetivo: criar `manifests/python-tools/{ruff,pre-commit,ipython}.txt` (D-007).
-- Arquivos: `manifests/python-tools/*.txt`, `CONTRIBUTING.md`
+- Arquivos: `manifests/python-tools/*.txt`, `CONTRIBUTING.md`, `docs/VALIDATION.md`
 - Dependências: T-201
 - Critério de aceite: cada arquivo vem de `uv --no-config pip compile
   --universal --python-version 3.13 --generate-hashes --index-url
-  https://pypi.org/simple --no-python-downloads` sobre `NOME==VERSÃO` do
-  manifesto, com `UV_CACHE_DIR` temporário; o comando exato fica no
-  CONTRIBUTING. Q-002: para cada requisito, há wheel com hash no lock para
-  x86_64 e aarch64, glibc e musl (ou wheel `py3-none-any`); faltando algum,
-  parar e levar ao usuário.
-- Verificação: precisa de rede (PyPI); conferir que todo requisito tem `==` e
-  `--hash=sha256:`, que a versão raiz bate com `manifests/python.json` e a
-  cobertura de plataformas acima.
+  https://pypi.org/simple --no-python-downloads` sobre `NOME==VERSÃO`, com
+  `UV_CACHE_DIR` temporário; o cabeçalho guarda o comando (com
+  `--python-version`), e o CONTRIBUTING também. Q-002: para cada
+  `{x86_64,aarch64}-unknown-linux-{gnu,musl}`, `uv pip install --dry-run
+  --no-build --require-hashes --python-platform P --python-version 3.13
+  --target TMP -r LOCK` passa; faltando wheel em alguma, parar e levar ao
+  usuário. VALIDATION registra o resultado sem declarar suporte além disso.
+- Verificação: precisa de rede (PyPI); conferir `==`, `--hash=sha256:`, versão
+  raiz igual à do manifesto e as quatro plataformas.
 
 ### T-203 Validação dos locks no plano de instalação
 - Requisitos: R-020
 - Objetivo: `python_spec()` recusa lock ausente, requisito sem `==`, sem hash
-  sha256 ou versão raiz divergente, só quando `python-tools` está nos
-  componentes.
+  sha256, versão raiz divergente ou `--python-version` do cabeçalho diferente
+  do minor de `tool_python`, só quando `python-tools` está nos componentes.
 - Arquivos: `tests/test_boundaries.py` (antes), `lib/artifacts.py`
 - Dependências: T-202
 - Critério de aceite: o leitor junta continuações `\`, ignora comentários e
   linhas vazias, guarda marcadores sem avaliá-los e normaliza nomes (PEP 503);
-  cada recusa sai com 2 no plano, sem instalar; perfil sem `python-tools` não
-  exige lock.
-- Verificação: testes unitários novos com locks artificiais com marcadores e
-  nomes com `_` e `-`; testes de plano com `--profile science`.
+  cada recusa sai com 2 no plano; perfil sem `python-tools` não exige lock.
+- Verificação: testes unitários com locks artificiais com marcadores e nomes
+  com `_` e `-`; testes de plano com `--profile science`.
 
-### T-204 Instalação com `--constraints` e `--no-build`
-- Requisitos: R-021
-- Objetivo: incluir o arquivo e `--no-build` nos comandos do plano e em
-  `install_python`.
-- Arquivos: `tests/setup.bats` (asserção do stub de uv, antes),
-  `lib/artifacts.py`, `lib/uv.sh`
+### T-204 Conferência da venv contra o lock e doctor
+- Requisitos: R-023, R-025
+- Objetivo: uma função única classifica cada ferramenta e é usada pelo plano
+  de instalação, pelo `setup inspect` e pelo `doctor`.
+- Arquivos: `tests/test_boundaries.py` (antes), `lib/artifacts.py`, `lib/state.py`
 - Dependências: T-203
-- Critério de aceite: a asserção nova do stub falha antes da mudança; o plano
-  mostra os argumentos; o stub registra `--constraints` e `--no-build`; alterar
-  um lock muda o hash de aprovação; `check()` recusa uv abaixo de 0.13.5 com
-  ferramentas no plano (D-010), com teste do piso.
-- Verificação: `bats tests/setup.bats` e teste de hash em `test_boundaries`.
+- Critério de aceite: estados e ação:
 
-### T-205 Doctor compara o ambiente com o lock
-- Requisitos: R-023
-- Objetivo: ler os `METADATA` das distribuições do ambiente de cada ferramenta
-  e comparar nome e versão com o lock.
-- Arquivos: `tests/test_boundaries.py` (antes), `lib/artifacts.py`
-- Dependências: T-203
-- Critério de aceite: compara cada distribuição instalada com o lock, por nome
-  normalizado; versão diferente ou distribuição ausente do lock gera o
-  diagnóstico de R-023 e saída 3; linha do lock sem distribuição instalada não
-  gera alerta; nenhuma execução de código da ferramenta, nenhuma reinstalação.
-- Verificação: teste com ambiente de ferramenta artificial em HOME temporária.
+  | Venv `devshell/tools/NOME` | `$UV_TOOL_BIN_DIR/NOME` | Estado | Instalação |
+  |---|---|---|---|
+  | ausente | ausente | ausente | cria venv e symlink |
+  | conforme | ausente | sem link | cria só o symlink |
+  | conforme | symlink exato para a venv | conforme | nada |
+  | ausente | symlink para a venv | link órfão | bloqueia (revisar e remover o link) |
+  | divergente ou parcial | qualquer | divergente | bloqueia (revisar e mover a venv) |
+  | qualquer | outro executável ou symlink (ex.: `uv tool`) | conflito | bloqueia com `uv tool uninstall NOME` |
 
-### T-206 Smoke online e documentação do bloco C
+  "Conforme": `pyvenv.cfg` regular com a versão de `tool_python`;
+  `bin/python` resolvido com `resolve()`, depois `safe_path` e `patchlevel.h`
+  como hoje; cada `dist-info` instalada no lock com a mesma versão (nomes PEP
+  503), e cada linha do lock sem marcador instalada; RECORD do executável e
+  dos módulos essenciais conferido. O symlink é lido com `lstat`/`readlink`,
+  com `safe_path` só no diretório pai. A conferência não chama o uv nem executa
+  a ferramenta. `doctor` traz o estado de cada ferramenta e, no conflito, a dica
+  de migração; `VERSION_FLOORS` usa 0.13.5 para o uv com `python-tools`.
+- Verificação: testes com venv artificial em HOME temporária para cada linha da
+  tabela e cada caso de R-023.
+
+### T-205 Instalação em venv sob o lock
+- Requisitos: R-021, R-022, R-025
+- Objetivo: trocar `uv tool install` pelo fluxo de D-008 e D-012 num helper
+  Python chamado por `lib/uv.sh`.
+- Arquivos: `tests/setup.bats` e `tests/test_boundaries.py` (antes),
+  `lib/artifacts.py`, `lib/uv.sh`, `lib/setup.py`, `lib/setup.sh`
+- Dependências: T-204
+- Critério de aceite:
+  - o plano mostra comandos, venv, symlink e o estado de cada ferramenta, e o
+    hash muda com o lock ou com o estado;
+  - sob `fs.locked()`, o estado é reclassificado e precisa bater com o plano;
+  - comandos: `uv --no-config --no-progress venv --managed-python
+    --no-python-downloads --python TOOL_PYTHON VENV` e `uv --no-config pip
+    install --python VENV/bin/python --require-hashes --no-build --link-mode
+    copy -r LOCK`, com `--offline` no modo offline, sem `VIRTUAL_ENV`,
+    `CONDA_PREFIX` e `UV_*` do usuário além dos diretórios;
+  - o stub de uv registra essas flags, e o log não tem nenhuma chamada `tool`;
+  - uma venv ativa de outro projeto, uma ferramenta estranha em `UV_TOOL_DIR` e
+    em `UV_TOOL_BIN_DIR` saem intactas;
+  - falha simulada do `uv pip install` remove só a venv criada (`os.mkdir`
+    exclusivo), não cria symlink, sai com 2 e lista as ferramentas já feitas;
+  - repetir com tudo conforme não altera nada;
+  - `target_paths` do setup inclui só `devshell/tools` e `devshell/tools/NOME`,
+    e um `setup` repetido depois da instalação não bloqueia;
+  - os bloqueios de T-204 entram em `blockers` do `setup inspect`, visíveis no
+    `--dry-run` e antes do comando administrativo.
+- Verificação: testes novos; `bats tests/setup.bats`. O fluxo com uv real e
+  rede fica para T-206, porque o CPython gerenciado não existe offline.
+
+### T-206 Smoke online, ci-setup e documentação
 - Requisitos: R-024, R-030
-- Objetivo: o smoke instala com os locks e confere o doctor; SECURITY, ADR 004
-  (status adotada), ARCHITECTURE, CHANGELOG e VALIDATION.
-- Arquivos: `scripts/online-smoke.sh`, `scripts/ci-setup.sh`, `docs/SECURITY.md`,
-  `docs/ADR/004-lock-ferramentas-uv.md`, `docs/ADR/README.md`,
-  `docs/ARCHITECTURE.md`, `CHANGELOG.md`, `docs/VALIDATION.md`
-- Dependências: T-204, T-205
-- Critério de aceite: o smoke roda `doctor --profile science` e confere que a
-  saída não contém "fora do lock"; `ci-setup.sh` instala o Ruff com
-  `manifests/python-tools/ruff.txt`; a lacuna das transitivas sai do SECURITY,
-  com os limites que restam (confiança no PyPI e no uv, pacote fora do lock sem
-  hash, piso do uv) e a recuperação `uv tool uninstall NOME` seguida de
-  `install --component python` aprovado.
-- Verificação: remota, `workflow_dispatch` na branch com `online-smoke` verde;
-  local, `bash scripts/check.sh`.
+- Objetivo: exercitar o fluxo real com rede e documentar a mudança.
+- Arquivos: `scripts/online-smoke.sh`, `scripts/ci-setup.sh`,
+  `docs/SECURITY.md`, `docs/ADR/003-uv.md`, `docs/ADR/004-lock-ferramentas-uv.md`,
+  `docs/ADR/README.md`, `docs/ARCHITECTURE.md`, `docs/INSTALLATION.md`,
+  `docs/SCIENCE.md`, `CHANGELOG.md`, `docs/VALIDATION.md`
+- Dependências: T-205
+- Critério de aceite:
+  - o smoke instala as três ferramentas, executa cada uma pelo symlink e
+    confere que `doctor --profile science` não aponta ferramenta;
+  - `ci-setup.sh` instala o Ruff com o lock e `--require-hashes` numa venv
+    própria do CI (`$HOME/.cache/ci-ruff`), com o PATH ajustado só ali, fora de
+    `UV_TOOL_BIN_DIR` e de `devshell/tools`, para não bloquear o smoke;
+  - SECURITY: sem a lacuna das transitivas; com os limites (marcadores não
+    avaliados, confiança no PyPI na revisão, piso do uv), a migração (`uv tool
+    uninstall NOME` e `install --component python` aprovado) e a revisão manual
+    de venv parcial após interrupção;
+  - CHANGELOG avisa que o doctor aponta as ferramentas antigas até a migração;
+  - INSTALLATION atualiza o piso do uv e os diretórios; ADR 003 aponta o 004;
+    ADR 004 adotado.
+- Verificação: remota, `workflow_dispatch` na branch com `online-smoke` e
+  `containers` verdes; local, `bash scripts/check.sh`.
 
 ## Encerramento
 
 ### T-900 Verificação final e revisão independente
-- Requisitos: R-001, R-002, R-003, R-004, R-005, R-006, R-010, R-020, R-021, R-022, R-023, R-024, R-030
+- Requisitos: R-001, R-002, R-003, R-004, R-005, R-006, R-010, R-020, R-021, R-022, R-023, R-024, R-025, R-030
 - Objetivo: fechar cada bloco com evidência.
 - Arquivos: `docs/spec.md` (estados e evidências), `docs/VALIDATION.md`
 - Dependências: T-006, T-101, T-206
@@ -269,10 +327,11 @@ Onde cada verificação roda:
 
 | Efeito | Tarefa | Destino |
 |---|---|---|
-| Consulta ao PyPI com cache temporário | T-202 | pypi.org, via `uv pip compile` |
+| Consulta ao PyPI com cache temporário (geração dos locks e conferência das quatro plataformas) | T-202 | pypi.org, via `uv pip compile` e `uv pip install --dry-run` |
 | Commit na branch de trabalho | cada bloco | repositório local |
 | Push da branch e PR | cada bloco | `origin` (talesgomes27/data-lab-dotfiles) |
-| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-206 | GitHub Actions do repositório |
+| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206 | GitHub Actions do repositório |
+| Migração das suas instalações atuais (`uv tool uninstall` e nova instalação) | depois do merge do Bloco C | sua HOME; feita por você, não pela CLI |
 | Execução semanal após o merge, sem prazo, com os mesmos downloads e notificação de falha para quem editou o cron | T-101 | GitHub Actions; desativada após 60 dias sem atividade |
 
 Aceitar este plano não autoriza nenhum desses efeitos: cada um pede autorização
