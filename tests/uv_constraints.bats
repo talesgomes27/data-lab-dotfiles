@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# shellcheck disable=SC2030,SC2031 # run em helpers do Bats preenche status e output.
+# shellcheck disable=SC2030,SC2031,SC2154 # run em helpers do Bats preenche status e output; $stderr vem de run --separate-stderr, que o ShellCheck antigo do CI não conhece.
 bats_require_minimum_version 1.5.0
 # R-022: comportamento do uv de que o lock com hash depende, sem rede.
 load core_setup
