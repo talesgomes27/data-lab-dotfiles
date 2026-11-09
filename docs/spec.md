@@ -207,8 +207,8 @@ Fatos observados (2026-11-09):
   a saída de `doctor --profile science` não aponta nenhuma ferramenta; o Ruff
   de `scripts/ci-setup.sh` também é instalado com o lock e `--require-hashes`.
 - Prioridade: média
-- Estado: implementado
-- Evidência: scripts/online-smoke.sh; scripts/ci-setup.sh; execução remota pendente de workflow_dispatch
+- Estado: verificado
+- Evidência: scripts/online-smoke.sh no workflow_dispatch 42638571515 (sucesso); scripts/ci-setup.sh no job checks da mesma execução (sucesso)
 
 ### R-025 Migração explícita das instalações antigas
 - Enunciado: a CLI não remove nem substitui instalações que não criou.

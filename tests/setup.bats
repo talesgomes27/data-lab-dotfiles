@@ -52,7 +52,7 @@ elif 'pip' in args and 'install' in args:
             dist,version=line.split()[0].split('==');versions[dist]=version
     for dist,version in versions.items():
         info=site/f'{dist.replace("-","_")}-{version}.dist-info';info.mkdir(parents=True,exist_ok=True)
-        (info/'METADATA').write_text(f'Name: {dist}\nVersion: {version}\n')
+        (info/'METADATA').write_text(f'Name: {dist}\nVersion: {version}\n');(info/'METADATA').chmod(0o664)
     binary=venv/'bin'/name;binary.write_text(f'#!{venv}/bin/python\nprintf "{versions[name]}\\n"\n');binary.chmod(0o755)
     dist=site/f'{name.replace("-","_")}-{versions[name]}.dist-info'
     checksum=base64.urlsafe_b64encode(hashlib.sha256(binary.read_bytes()).digest()).decode().rstrip('=')
@@ -529,6 +529,13 @@ RECORD
     [ -z "$(/usr/bin/grep "$HOME/projeto" "$SETUP_LOG")" ]
     [ -z "$(/usr/bin/grep -E '^uv .* tool ' "$SETUP_LOG")" ]
     [ "$(/usr/bin/readlink "$UV_TOOL_BIN_DIR/ruff")" = "$XDG_DATA_HOME/devshell/tools/ruff/bin/ruff" ]
+}
+
+@test 'R-021 instalação tira escrita de grupo dos arquivos copiados do cache do uv' {
+    install_science
+    [ -z "$(/usr/bin/find "$TOOLS" -perm /022 ! -type l -print -quit)" ]
+    run "$SETUP_REPO/bin/devshell" doctor --profile science --json
+    printf '%s' "$output" | python3 -c 'import json,sys;i=[s for s in json.load(sys.stdin)["issues"] if "ferramenta" in s];assert not i,i'
 }
 
 @test 'R-021 repetir a instalação conforme não chama o uv para as ferramentas' {
