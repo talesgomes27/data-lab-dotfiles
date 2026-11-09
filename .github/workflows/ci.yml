@@ -3,6 +3,9 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  # Segunda 09:17 UTC: mesma cobertura do disparo manual, fora da hora cheia.
+  schedule:
+    - cron: '17 9 * * 1'
 permissions:
   contents: read
 jobs:
@@ -24,7 +27,7 @@ jobs:
           sudo apt-get install -y zsh shellcheck shfmt bats fzf zoxide curl direnv eza
           bash scripts/ci-setup.sh
       - name: Preparar runtimes para os cinco cenários opcionais
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         env:
           HOME: /tmp/foundry-ci
         run: |
@@ -49,8 +52,8 @@ jobs:
           command -v starship
           set -o pipefail
           bash scripts/check.sh | tee /tmp/foundry-checks.log
-      - name: Exigir cobertura dos cenários opcionais no disparo manual
-        if: github.event_name == 'workflow_dispatch'
+      - name: Exigir cobertura dos cenários opcionais na execução completa
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
         run: |
           if grep -E '^ok .* # skip' /tmp/foundry-checks.log; then
             echo 'A execução completa não pode pular testes.' >&2
@@ -58,7 +61,7 @@ jobs:
           fi
   containers:
     timeout-minutes: 30
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -79,7 +82,7 @@ jobs:
         run: docker run --rm --network none 'foundry-test:${{ matrix.name }}'
   online-smoke:
     timeout-minutes: 30
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

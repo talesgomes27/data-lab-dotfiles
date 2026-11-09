@@ -21,6 +21,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-09"
     evidencia: "resposta 'Pode manter como está' na conversa"
+  - item: entrega do Bloco B (A3, T-101) e commit na branch
+    por: usuario
+    em: "2026-11-09"
+    evidencia: "resposta 'aceito a entrega, pode realizar o commit' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -30,7 +34,7 @@ dispensas:
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: Bloco B (T-101) pela execution-pipeline, quando o usuário pedir
+proximo_passo: Bloco C (T-201) pela execution-pipeline, quando o usuário pedir; R-010 verificado na primeira execução agendada
 pendencias: [Q-001, Q-002, Q-003]
 ```
 

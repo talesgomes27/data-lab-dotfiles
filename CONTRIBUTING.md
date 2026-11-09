@@ -23,7 +23,8 @@ real e Starship para os cenários de prompt; uma
 verificação com skips não comprova esses cenários. Os
 [pré-requisitos dos testes opcionais](docs/INSTALLATION.md#pré-requisitos-para-reproduzir-todos-os-testes)
 incluem fzf, zoxide, R/renv, Node.js e Quarto. O disparo manual do workflow
-prepara essas dependências no runner e exige execução sem skips.
+e a execução semanal agendada preparam essas dependências no runner e exigem
+execução sem skips.
 
 Clone com `--recurse-submodules`; em uma cópia existente, execute
 `git submodule update --init --recursive` antes dos testes.
@@ -158,7 +159,13 @@ e [regras disponíveis](https://docs.github.com/en/repositories/configuring-bran
 
 O workflow em `.github/workflows/ci.yml` prepara ferramentas em runner
 Ubuntu 24.04 e executa a suíte em push/PR com o nome estável `checks`. Containers e smoke online dependem de
-`workflow_dispatch`. A configuração do workflow não é prova de execução remota.
+`workflow_dispatch` ou da execução semanal (`schedule`, segunda 09:17 UTC, 06:17
+em Brasília), que roda na `main` com a mesma cobertura e os mesmos downloads do
+disparo manual. O GitHub envia a notificação de falha da execução agendada para
+quem modificou o `cron` por último; em repositório público, desativa o
+agendamento depois de 60 dias sem atividade, e ele precisa ser reativado em
+Actions. Em horários de carga, o GitHub pode atrasar ou descartar uma execução
+agendada. A configuração do workflow não é prova de execução remota.
 Após o envio, confira os jobs antes de declarar o resultado do CI.
 
 Uma release deve registrar alterações, compatibilidade, instruções de migração

@@ -31,6 +31,25 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Execução semanal do CI — 2026-11-09
+
+Bloco B do [plano](plan.md) (R-010). `tests/test_ci_workflow.py` lê o workflow
+como texto: falhou nos 2 casos antes da mudança e passou depois. Ele confere o
+`cron` `17 9 * * 1` em `on:` e que as quatro condições de `workflow_dispatch`
+(dois passos de `checks`, `containers` e `online-smoke`) aceitam também
+`schedule`.
+
+Não executados: a primeira execução agendada, que só existe depois do merge na
+`main`, e um `workflow_dispatch` nesta branch. O teste não valida a sintaxe
+YAML; o PyYAML do Python da distribuição leu o arquivo sem erro, com o `cron` e
+as condições dos jobs, mas a validação final é a do GitHub ao rodar.
+
+Revisão independente sem P0/P1/P2. Entraram: igualdade exata da condição no
+teste, gatilhos com linha em branco aceitos, nome do passo de zero skips sem
+"disparo manual", e o aviso de atraso ou descarte em alta carga no
+CONTRIBUTING. Fica fora deste bloco: o passo de zero skips só reconhece skips
+do Bats, não do unittest.
+
 ## Histórico e poda de transações — 2026-11-09
 
 Bloco A do [plano](plan.md) (R-001 a R-006). Testes escritos antes do código:
