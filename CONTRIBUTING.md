@@ -63,7 +63,44 @@ fica no README. Evite inventários de máquina ou relatos de sessão como instru
 pública. Retire material obsoleto depois de incorporar a informação útil.
 
 Versões/checksums de artefatos mudam por revisão da fonte oficial e nova
-validação; não há consulta automática a latest. Dependências das ferramentas uv
+validação; a CLI dos usuários nunca consulta versões novas.
+
+### Revisão assistida de manifestos
+
+`scripts/review-manifests.py` é uma ferramenta de mantenedor e roda à mão.
+Ela consulta:
+- as releases oficiais no GitHub (uv, chezmoi, nu, FiraCode);
+- as tags estáveis dos plugins;
+- o PyPI (ruff, pre-commit, ipython);
+- a lista de CPython do uv fixado.
+
+Ela grava só num diretório temporário um relatório e um patch, e não muda o
+checkout nem a HOME:
+
+```bash
+python3 -I -B scripts/review-manifests.py            # todos os grupos
+python3 -I -B scripts/review-manifests.py --only python-tools --json
+```
+
+Cada artefato novo é baixado, o SHA-256 é calculado do arquivo, e o conteúdo
+passa pela mesma validação do `install`. Nada baixado é executado. Os locks
+novos são gerados com `--no-build` e conferidos nas quatro plataformas. O
+CPython só é revisado com o `uv` da versão fixada no PATH.
+
+Fluxo:
+1. **Rode o script** e leia o relatório. Para cada componente, confira o
+   status, as notas da release e a variação de tamanho. Lembre que um
+   checksum que bate só prova o transporte.
+2. **Revise e aplique o patch:**
+   `git apply /tmp/review-manifests-XXXX/manifests.patch`.
+3. **Atualize as referências antigas** que o relatório lista em testes,
+   fixtures, documentação e exemplos.
+4. **Valide:** rode `bash scripts/check.sh` e o `workflow_dispatch`, e
+   registre na VALIDATION.
+
+O script nunca roda no `check.sh` nem no CI. Saídas: 0 com ou sem proposta;
+2 em divergência, artefato inválido, 404 ou downgrade; 3 sem rede, com o
+limite da API do GitHub esgotado ou sem o `uv` exigido. Dependências das ferramentas uv
 e o lock científico têm escopos distintos. Atualize o changelog para mudanças
 perceptíveis ao usuário.
 
@@ -74,7 +111,7 @@ minor de `tool_python` em `--python-version`:
 
 ```bash
 printf 'ruff==0.17.3\n' | env -i PATH="$PATH" HOME="$(mktemp -d)" UV_CACHE_DIR="$(mktemp -d)" \
-    uv --no-config pip compile --universal --python-version 3.13 --generate-hashes \
+    uv --no-config pip compile --universal --python-version 3.13 --generate-hashes --no-build \
     --index-url https://pypi.org/simple --no-python-downloads -o manifests/python-tools/ruff.txt -
 ```
 
@@ -89,7 +126,8 @@ uv --no-config pip install --dry-run --no-build --require-hashes --index-url htt
 ```
 
 O uv não grava `--index-url` no cabeçalho do lock; a origem é a do comando
-acima, `https://pypi.org/simple`. Revise o diff do lock como revisa um
+acima, `https://pypi.org/simple`. O `--no-build` impede que a resolução rode o
+backend de build de uma dependência que só publica código-fonte (D-042). Revise o diff do lock como revisa um
 checksum: versões novas de dependências transitivas aparecem ali. Preserve as atribuições da licença MIT e as licenças
 dos componentes externos.
 

@@ -218,7 +218,12 @@ a cadeia com a mesma regra de cada passo (`check_transaction`). A
 único lock, porque o `flock` não é reentrante (D-038). O `leave`
 (`lib/leave.sh` e `lib/leave.py`) coordena os `uninstall` e o `rollback --all`
 como o `setup`: calcula todos os planos antes, recalcula o da cadeia antes de
-cada etapa e pede uma confirmação por etapa. Os exemplos em `examples/`
+cada etapa e pede uma confirmação por etapa.
+
+`scripts/review-manifests.py` fica fora da CLI (D-039): é a revisão de
+manifestos do mantenedor. Ele grava só no diretório que recebe, reaproveita
+de `lib/` apenas `artifacts.members` e `python_tools.read_lock`, e usa um
+download próprio que valida cada redirecionamento. Os exemplos em `examples/`
 têm ambientes próprios. Os testes e os scripts de verificação ficam em `tests/`
 e `scripts/`. Consulte o [guia de contribuição](../CONTRIBUTING.md) para validar
 mudanças e a [instalação](INSTALLATION.md) para operar a CLI.

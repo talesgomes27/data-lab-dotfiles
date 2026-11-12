@@ -2,6 +2,11 @@
 
 ## Não publicado
 
+- Para quem mantém o projeto: `scripts/review-manifests.py` propõe, como um
+  patch revisável, as versões e os checksums novos dos manifestos. Ele confere
+  cada artefato baixado e regenera os locks das ferramentas Python. O comando
+  de geração do lock no CONTRIBUTING passa a usar `--no-build`.
+
 - Comando novo `leave`, para a saída completa. Ele desinstala os componentes
   e desfaz a cadeia inteira de transações, com uma confirmação por etapa, e
   para antes de tocar em qualquer coisa se algum plano recusa. Com

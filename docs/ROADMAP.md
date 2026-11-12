@@ -33,7 +33,7 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 | 1 | Retirada de arquivos órfãos (implementado) | N-009, D-013, D-022 | médio | 0 |
 | 2 | Desinstalação de componentes (implementado) | N-005, N-009 | médio | 1 |
 | 2b | Saída completa (implementado) | N-016 | médio | 2 |
-| 3 | Revisão assistida de manifestos | N-005 | médio | — |
+| 3 | Revisão assistida de manifestos (implementado) | N-005 | médio | — |
 | 4 | Poda dos demais diretórios de estado | N-001 | pequeno a médio | — |
 | 5 | Quarto como componente | N-005 | médio | 3 (recomendado) |
 | 6 | Configuração Git gerenciada | N-005 | médio | — |
@@ -138,7 +138,11 @@ remove o estado nem os backups: isso continua sendo da poda.
 
 **Depende de 2.**
 
-### 3. Revisão assistida de manifestos
+### 3. Revisão assistida de manifestos (implementado)
+
+Feito no Bloco H (R-080 a R-084): `scripts/review-manifests.py`, ferramenta de
+mantenedor fora da CLI.
+
 
 **Problema:** atualizar versões e checksums de `manifests/artifacts.json`,
 `manifests/python.json` e `manifests/python-tools/` é trabalho manual e
