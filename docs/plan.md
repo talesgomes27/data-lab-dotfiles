@@ -49,6 +49,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "resposta 'Siga o plano até o final. Só peça autorização para o merge.' na conversa"
+  - item: Q-003 respondida (manter a notificação padrão do GitHub) e correção dos P3 da revisão do T-900
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "resposta 'Opção 1. Após pode corrigir os P3' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -71,7 +75,7 @@ dispensas:
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
 proximo_passo: merge do PR #16 e da branch do T-900 pelo usuário; conferir a primeira execução agendada na main (2026-11-16)
-pendencias: [Q-003, "R-010: execução agendada na main"]
+pendencias: ["R-010: execução agendada na main"]
 ```
 
 # Plano: histórico de transações, CI agendado e lock das ferramentas uv

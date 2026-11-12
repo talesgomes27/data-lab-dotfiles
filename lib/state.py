@@ -431,10 +431,13 @@ def apply_configuration():
         raise ValueError('dotfiles existentes em conflito: revise diff e use --replace-existing explicitamente')
     changed = [entry for entry in plan['files'] if entry['action'] == 'write']
     if not changed:
-        _, transaction = latest_transaction()
-        if transaction and transaction['status'] in ('pending', 'rolling-back'):
-            raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
         with locked():
+            # Replanejar e conferir a transação sob o lock, como no caminho com escrita.
+            if build_plan()['approval'] != plan['approval']:
+                raise RuntimeError('o ambiente mudou durante a revisão; planeje novamente')
+            _, transaction = latest_transaction()
+            if transaction and transaction['status'] in ('pending', 'rolling-back'):
+                raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
             if read_profiles_record() != os.environ['DEVSHELL_PROFILES']:
                 restore_profiles(os.environ['DEVSHELL_PROFILES'])
         report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis registrados.'})
@@ -529,8 +532,11 @@ def rollback():
     with locked():
         if rollback_plan()[0]['approval'] != plan['approval']:
             raise RuntimeError('estado mudou antes do rollback')
+        restores_profiles = 'previous_profiles' in tx and isinstance(tx['previous_profiles'], (str, type(None)))
         # Falha cedo: um registro de perfis inseguro não pode deixar a transação no meio do caminho.
-        safe_path(profiles_record())
+        # Sem previous_profiles o registro não é tocado, então não precisa bloquear.
+        if restores_profiles:
+            safe_path(profiles_record())
         tx['status'] = 'rolling-back'
         atomic(directory / 'manifest.json', encode(tx))
         reviewed = {entry['path']: entry['before'] for entry in plan['files']}
@@ -544,7 +550,7 @@ def rollback():
         # D-004: a transação anterior pode ter sido podada; latest nunca aponta para ela.
         previous = tx['previous_latest'] if isinstance(tx['previous_latest'], str) and TRANSACTION_ID.fullmatch(tx['previous_latest']) else None
         warnings = []
-        if 'previous_profiles' in tx and isinstance(tx['previous_profiles'], (str, type(None))):
+        if restores_profiles:
             restore_profiles(tx['previous_profiles'])
         else:
             warnings.append('perfis anteriores desconhecidos; informe --profile no próximo setup')
@@ -804,7 +810,13 @@ def next_step(issues, profiles, source):
     if manual:
         return {'kind': 'manual', 'command': None, 'reason': manual[0]}
     if issues:
-        command = ['./bin/devshell', 'setup'] + (['--profile', profiles] if source == 'informados' else [])
+        # --profile só quando os informados não são os lembrados (R-044); leitura sem gravar nada.
+        try:
+            remembered = read_own_regular(profiles_record())
+        except ValueError:
+            remembered = None
+        same = remembered is not None and canonical_profiles(remembered.strip()) == canonical_profiles(profiles)
+        command = ['./bin/devshell', 'setup'] + (['--profile', profiles] if source == 'informados' and not same else [])
         return {'kind': 'setup', 'command': command, 'reason': issues[0]}
     return None
 

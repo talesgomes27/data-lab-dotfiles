@@ -183,7 +183,7 @@ Fatos observados (2026-11-09):
   fluxo da CLI com uv real só roda com rede, no smoke (R-024).
 - Prioridade: alta
 - Estado: verificado
-- Evidência: tests/uv_constraints.bats (uv real, offline); tests/setup.bats::R-022 falha do uv pip install remove só a venv criada e sai com 2 (uv simulado); tests/setup.bats::R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
+- Evidência: tests/uv_constraints.bats (uv real, offline); tests/test_boundaries.py::PythonToolLocks.test_r022_mode_fix_failure_removes_created_venv; tests/setup.bats::R-022 falha do uv pip install remove só a venv criada e sai com 2 (uv simulado); tests/setup.bats::R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-023 Doctor confere a ferramenta contra o lock
 - Enunciado: `doctor` confere a venv, o interpretador, as distribuições
@@ -250,7 +250,7 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   um registro inválido só gera aviso.
 - Prioridade: alta
 - Estado: verificado
-- Evidência: tests/profiles.bats (14 testes R-040); tests/test_boundaries.py::RememberedProfiles (inclui test_r040_unsafe_record_refuses_apply_without_creating_transaction); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
+- Evidência: tests/profiles.bats (14 testes R-040); tests/test_boundaries.py::RememberedProfiles (inclui test_r040_unsafe_record_refuses_apply_without_creating_transaction, test_r040_rollback_without_previous_profiles_ignores_unsafe_record e test_r040_apply_without_changes_replans_under_lock); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-041 Resumo do setup antes da primeira confirmação
 - Enunciado: o `setup` mostra, antes de qualquer pergunta, o que vai fazer.
@@ -298,7 +298,7 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   manual da mensagem; sem pendências, `next_step` é `null`.
 - Prioridade: alta
 - Estado: verificado
-- Evidência: tests/test_boundaries.py::DoctorNextStep; tests/setup.bats (dois testes R-044); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
+- Evidência: tests/test_boundaries.py::DoctorNextStep (inclui test_r044_informed_profiles_equal_to_remembered_omit_profile); tests/setup.bats (dois testes R-044); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-045 Documentação do caminho comum
 - Enunciado: README e INSTALLATION abrem com o caminho comum de instalar e
@@ -552,3 +552,8 @@ perfis aplicados (D-015). A alternativa é lembrar só no `setup`. Respondida em
 
 ### Q-003 A notificação semanal para quem editou o cron por último atende?
 Por padrão, você recebe; se outra pessoa editar o cron, passa a ser ela.
+Respondida em 2026-11-12 pelo usuário: atende. Com um mantenedor só, fica o
+padrão do GitHub e a N-006 continua valendo. Se outra pessoa passar a editar o
+workflow, reabrir e avaliar uma issue aberta por um job de falha do `schedule`,
+com `issues: write` só nesse job. A desativação após 60 dias sem atividade não
+gera falha e fica fora desse alerta.

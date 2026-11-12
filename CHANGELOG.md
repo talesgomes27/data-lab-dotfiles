@@ -2,6 +2,15 @@
 
 ## Não publicado
 
+- O `next_step` do `doctor` deixa de sugerir `--profile` quando os perfis
+  informados são os mesmos que estão lembrados.
+- `rollback` de uma transação antiga, sem `previous_profiles`, não é mais
+  recusado por um registro de perfis inseguro, que ele não altera.
+- `apply` sem arquivos a alterar replaneja e confere a transação interrompida
+  sob o lock antes de gravar os perfis.
+- Se o ajuste de modos da venv recém-criada detectar um item trocado, a venv é
+  removida, como nas demais falhas da instalação.
+
 - CPython gerenciado com escrita de grupo/outros (ou outro caminho inseguro) em
   `UV_PYTHON_INSTALL_DIR` deixa de aparecer como "venv divergente, mova a venv":
   `doctor`, `install` e `setup` apontam o diretório do interpretador e o
