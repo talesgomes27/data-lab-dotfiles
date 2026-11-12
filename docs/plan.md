@@ -93,6 +93,10 @@ revisao_do_bloco_e:
   por: subagente revisor de plano
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 7 P2 e 9 P3 incorporados (spec v7: R-055 e D-027 novos, R-050 a R-054 detalhados, D-014 ajustada)"
+revisao_do_bloco_g:
+  por: subagente revisor de desenho
+  em: "2026-11-12"
+  resultado: "pronto com ressalvas; 6 P2 e 6 P3 incorporados (spec v14: D-038 undo_transaction sem lock, D-035 com a regra do rollback_plan, cadeia inválida, bloqueios do leave, replanejamento entre etapas)"
 revisao_do_bloco_f:
   por: subagente revisor de desenho
   em: "2026-11-12"
@@ -883,14 +887,25 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
   - **Falha no meio:** as transações já desfeitas ficam `rolled-back`, e o
     plano seguinte continua;
   - **Opções:** `--all` com `--list`, `--prune` ou `--keep` sai com 2;
-  - **Estado de outra configuração:** recusado pelo R-047.
+  - **Estado de outra configuração:** recusado pelo R-047;
+  - **Topo interrompido:** topo `pending` ou `rolling-back` aceito pela
+    regra do `rollback_plan`; `pending` fora do topo recusado; transação
+    `rolled-back` ou `failed-restored` dentro da cadeia recusada;
+  - **Cadeia inválida:** cadeia com transação `invalida` sai com 2; `latest`
+    ausente com transações `committed` sai com 2, e não "nada a fazer";
+  - **Manifestos antigos:** sem `applied` e sem `previous_profiles`; neste
+    último caso, perfis "desconhecidos";
+  - **Modo alterado:** recusado com a mensagem de modo;
+  - **Saída:** um JSON só com `--json`;
+  - **Sem gravar:** plano e `--dry-run` não criam `STATE` nem o lock.
 - Verificação: os testes novos falham só nos casos novos.
 
 ### T-602 `rollback --all`
 - Requisitos: R-070
 - Objetivo: D-035.
 - Arquivos: `bin/devshell` (opção `--all`), `lib/state.py`
-  (`chain_rollback_plan`, `chain_rollback`, reaproveitando `rollback`)
+  (`undo_transaction` extraído do `rollback`, D-038; `chain_rollback_plan`;
+  `chain_rollback`)
 - Dependências: T-601
 - Critério de aceite: os casos de T-601 passam; o `rollback` sem `--all`
   continua igual.
@@ -910,6 +925,15 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
   - **`--dry-run`:** não grava nada, e `--json` traz o resumo;
   - **Ordem:** o lançador é a última desinstalação e o `rollback --all` vem
     depois;
+  - **Bloqueios:** qualquer plano com erro (uninstall, backup ausente,
+    caminho fora do checkout) para o `leave` antes da primeira pergunta e
+    lista todos os bloqueios;
+  - **Editado entre etapas:** um arquivo editado entre etapas para o `leave`
+    com a mensagem do que foi feito e de como continuar; uma falha de um
+    uninstall no meio também;
+  - **Etapa vazia:** etapa sem nada a fazer é pulada sem pergunta;
+  - **Opções:** `--profile`, `--approve` e `--replace-existing` saem com 2,
+    e `--json` exige `--dry-run`;
   - **Mensagem final:** lista o que fica;
   - **Estado de outra configuração:** recusado pelo R-047;
   - **R-074, `--purge-state`:**

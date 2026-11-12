@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 13
+versao_spec: 14
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -676,13 +676,31 @@ decidido pelo usuário em 2026-11-12:
     (D-035). Se algum arquivo foi editado depois do apply que o escreveu, ou
     se um backup falta ou não bate, o plano sai com 2, aponta o arquivo e a
     transação e não muda nada.
-  - **Cadeia podada:** se a cadeia termina antes da primeira transação, o
-    plano avisa que os originais anteriores não podem mais ser restaurados.
-  - **Com `--approve HASH`:** sob o lock, a CLI replaneja e desfaz as
-    transações uma a uma, com a lógica do `rollback` atual. Uma falha no meio
-    deixa as já desfeitas como `rolled-back`, e o plano seguinte continua de
-    onde parou.
-  - `--all` não se combina com `--list`, `--prune` ou `--keep`.
+  - **Cadeia podada:** só conta como poda um `previous_latest` que não existe
+    mais. Nesse caso o plano avisa que os originais anteriores não podem mais
+    ser restaurados e lista o que continua gerenciado (o `previous_registry`
+    da mais antiga) e os perfis que ficam lembrados.
+  - **Cadeia inválida:** uma transação inválida ou ilegível na cadeia, um
+    `previous_latest` presente e ilegível, ou `latest` ausente com
+    transações `committed` fora da cadeia saem com 2. Nunca são tratados como
+    "nada a fazer". A validação é uma só, a de `transaction_entry`.
+  - **Estados:** `pending` ou `rolling-back` só são aceitos na transação do
+    topo, com a mesma regra do `rollback_plan`. Em outra posição, saem com 2,
+    assim como uma transação `rolled-back` ou `failed-restored` dentro da
+    cadeia, cada caso com mensagem própria.
+  - **Perfis desconhecidos:** um manifesto sem `previous_profiles` faz o
+    plano dizer que os perfis que voltam são desconhecidos.
+  - **Com `--approve HASH`:** sob um único lock, a CLI replaneja a cadeia,
+    confere o hash e desfaz as transações uma a uma com a mesma rotina do
+    `rollback` (D-038). Cada passo ainda confere a própria transação. Uma
+    falha no meio deixa as já desfeitas como `rolled-back`, e o plano
+    seguinte continua de onde parou. A saída é um relatório só, inclusive em
+    `--json`.
+  - **Modo alterado:** uma divergência só de modo, como um `chmod` depois do
+    apply, bloqueia como edição, com a mensagem "modo alterado" e o `chmod`
+    sugerido.
+  - `--all` não se combina com `--list`, `--prune` ou `--keep`. Nem o plano
+    nem `--dry-run` criam o diretório de estado ou o arquivo de lock.
 - Prioridade: alta
 - Estado: proposto
 
@@ -690,8 +708,15 @@ decidido pelo usuário em 2026-11-12:
 - Enunciado: `leave` coordena a saída: desinstala os componentes e desfaz a
   cadeia, com uma confirmação por etapa.
 - Critério:
-  - **Ordem:** o `leave` primeiro calcula o plano do `rollback --all`. Se ele
-    recusa por arquivo editado, o `leave` sai com 2 antes de qualquer etapa.
+  - **Ordem:** o `leave` primeiro calcula todos os planos: o `rollback --all`
+    e cada `uninstall`. Se qualquer um sai com erro (arquivo editado, backup
+    ausente, caminho fora do checkout, R-047), o `leave` sai com 2 antes de
+    qualquer pergunta e lista todos os bloqueios de uma vez.
+  - **Entre etapas:** antes de cada etapa, o plano do `rollback --all` é
+    recalculado (só leitura). Se ele passou a recusar, ou se uma etapa falha,
+    o `leave` para e diz o que já foi feito e o comando para continuar. Uma
+    etapa cujo plano recalculado não tem mais nada a fazer é pulada sem
+    pergunta.
   - **Resumo:** mostra o que cada etapa fará — os `uninstall` de `python`,
     `plugins`, `firacode`, `pyinit` e `devshell`, nessa ordem, só os que têm
     algo a remover, e por último o `rollback --all`.
@@ -700,7 +725,13 @@ decidido pelo usuário em 2026-11-12:
     resposta nunca aprova outra etapa, e não há `--yes`.
   - **Cancelamento:** recusar uma etapa cancela as seguintes; as já feitas
     ficam.
-  - **`--dry-run`:** só mostra o resumo; com `--json`, o resumo vem em JSON.
+  - **`--dry-run`:** só mostra o resumo, sem criar estado nem lock; com
+    `--json`, o resumo vem em JSON.
+  - **Perfis:** o `leave` não lê o registro de perfis para decidir, como o
+    `rollback` e o `uninstall`, e recusa `--profile`, `--approve` e
+    `--replace-existing`. O aviso do `uninstall` de que o próximo `setup`
+    reinstalaria o componente é explicado no resumo: o `rollback --all`
+    restaura os perfis de antes.
   - A checagem do R-047 vale também aqui.
 - Prioridade: alta
 - Estado: proposto
@@ -711,11 +742,15 @@ decidido pelo usuário em 2026-11-12:
   - o diretório de estado, com as transações e os backups;
   - o cache de artefatos;
   - os itens `manual` de cada `uninstall`;
+  - os diretórios que a CLI criou e que ficaram (D-025), o `.zshenv.local` e
+    o original do lançador em `launcher-backups`;
   - o `uv`, o `chezmoi` e o `nu`, se presentes;
   - o CPython do uv;
   - os pacotes do sistema.
 
-  Para cada um, mostra o comando ou o caminho para remover à mão. Sem
+  Para cada um, mostra o comando ou o caminho para remover à mão, usando
+  `./bin/devshell`, porque o lançador já saiu. O SECURITY traz o caminho
+  manual para um dotfile que saiu do checkout e bloqueia a cadeia. Sem
   `--purge-state`, o `leave` não apaga nada disso; com a opção, só o
   diretório de estado sai (R-074).
 - Prioridade: média
@@ -1110,8 +1145,20 @@ para cada caminho, o conteúdo esperado naquele ponto. Começa pelo snapshot
 atual. Em cada transação, o esperado precisa ser igual ao `applied` (ou
 `after`) da entrada, e passa a ser o `before` dela. Os backups com `before` são
 conferidos por SHA-256. Assim, um arquivo editado é encontrado antes de
-qualquer gravação, e não só quando o rollback chegasse nele. O hash cobre a
-lista de transações, os arquivos, os snapshots atuais e os perfis que voltam.
+qualquer gravação, e não só quando o rollback chegasse nele. A comparação usa
+exatamente a regra do `rollback_plan`: o snapshot inteiro (SHA-256, modo, uid,
+gid) contra o `applied` e, nos manifestos antigos, só o SHA-256 contra o
+`after`. Na transação do topo em `pending` ou `rolling-back`, o `before` também
+é aceito, inclusive para os backups. O hash cobre os manifestos inteiros, como
+`encode(tx)` no `rollback_plan`, e os snapshots atuais.
+
+### D-038 Desfazer uma transação sem lock próprio
+O lock da CLI não é reentrante: `flock(LOCK_EX|LOCK_NB)` num segundo `open()`
+do mesmo processo falha. A lógica do `rollback()` passa para
+`undo_transaction(plan, directory, tx)`, que não pega o lock, não confere
+aprovação e não chama `report`, e devolve os avisos. O `rollback` e o
+`rollback --all` a chamam sob o próprio lock. Achado P2 da revisão do
+desenho.
 
 ### D-036 Etapas do `leave` e confirmação por etapa
 O `leave` reaproveita os comandos públicos (`uninstall`, `rollback --all`),
