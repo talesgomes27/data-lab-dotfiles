@@ -45,6 +45,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-09"
     evidencia: "resposta 'Aprovar o plano' na conversa"
+  - item: execução do T-900 até o fim (commit, push e workflow_dispatch na branch), sem o merge
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "resposta 'Siga o plano até o final. Só peça autorização para o merge.' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -57,13 +61,17 @@ revisao_do_bloco_d:
   por: subagente plan-reviewer
   em: "2026-11-09"
   resultado: "não pronto; 5 P1, 8 P2 e 6 P3 incorporados (spec v5: R-040 e D-014 a D-019 detalhadas)"
+revisao_t900:
+  por: subagente revisor independente
+  em: "2026-11-12"
+  resultado: "sem P0/P1; 2 P2 e 4 P3. P2 do apply (transação vazia) corrigido; o P2 do interpretador gerenciado com escrita de grupo e os P3 ficam registrados em docs/VALIDATION.md"
 dispensas:
   - gate: PC-1
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: implementar o Bloco D pela execution-pipeline, começando por T-301, quando o usuário pedir
-pendencias: [Q-003]
+proximo_passo: merge do PR #16 e da branch do T-900 pelo usuário; conferir a primeira execução agendada na main (2026-11-16)
+pendencias: [Q-003, "R-010: execução agendada na main", "P2 do interpretador gerenciado (lib/python_tools.py)"]
 ```
 
 # Plano: histórico de transações, CI agendado e lock das ferramentas uv

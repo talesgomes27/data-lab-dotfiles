@@ -17,6 +17,7 @@ O resultado de cada execução vale para o commit correspondente.
 | Suíte local com histórico e poda | 180 testes Bats e 56 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local após guarda estática e Python isolado | 164 testes Bats e 45 unittest, ShellCheck, shfmt, Ruff 0.17.3 e sintaxe Zsh/Python passaram, sem skips, em HOME/XDG temporários. Matriz de containers e smoke online não executados. |
 | Suíte local da candidata de pin | 160 testes Bats e 42 unittest, ShellCheck, shfmt e sintaxe Zsh/Python passaram, sem skips. Inclui o novo smoke de recusa de configuração IDE vinculada pelo pyinit distribuído; sem estender a evidência histórica da matriz. |
+| CI completo do encerramento (T-900) | Sete jobs aprovados no commit `3d7bfec`: runner Ubuntu 24.04 com 226 Bats e 76 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#encerramento-do-plano-t-900--2026-11-12). |
 | CI manual completo | Sete jobs aprovados: runner Ubuntu 24.04 com 93 Bats e 35 unittest sem skips, cinco imagens de containers e smoke online. [Execução e alcance](#matriz-smoke-online-e-cenários-opcionais). |
 | Configuração | Chezmoi real, aplicação, idempotência, conflitos, backup e rollback exercitados em HOME temporária. |
 | Recuperação e guardas | Testes de interrupção/retomada de rollback, edição concorrente, backups corrompidos, symlinks/hardlinks, permissões e hashes. |
@@ -31,6 +32,51 @@ As bibliotecas científicas foram verificadas em ambientes temporários; essa
 evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
+
+## Encerramento do plano (T-900) — 2026-11-12
+
+Fecha os Blocos A a D do [plano](plan.md). A branch parte do commit `b8a83f3`
+(PR #16, aliases eza no openSUSE), sem o qual a matriz da `main` falha no
+openSUSE Leap 16 (execução 42665398454).
+
+- **CI completo:** o [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822),
+  no commit `3d7bfec` (após o merge do #16, rebaseado como `149455d`, com a
+  mesma árvore `1560c85`), aprovou os sete jobs. No runner Ubuntu 24.04 passaram
+  ShellCheck, shfmt, Ruff, 226 Bats e 76 unittest, sem skips, e o passo que
+  exige zero skips também passou. Passaram ainda as cinco imagens (Debian 13,
+  Ubuntu 24.04, Fedora 44, Arch e openSUSE Leap 16.0, todas x86_64/glibc) e o
+  smoke online.
+- **Local (sessão remota sem ShellCheck, shfmt, Bats, Zsh, Nushell, Chezmoi e
+  direnv):** `check.sh` sai com 3 por pré-requisito ausente; nada foi instalado
+  no sistema. Ruff 0.17.3, instalado do lock com hash numa venv temporária, e a
+  checagem AST passaram, assim como os 76 unittest em HOME/XDG temporários.
+  `--help`, `rollback --list`, `rollback --prune --keep 3`, `doctor --json` e
+  `status` saíram com 0 numa HOME vazia e não criaram nenhum arquivo.
+- **Revisão independente** (subagente, só leitura, `a9c49b7..HEAD`): sem P0 ou
+  P1. Os contratos de não persistência, aprovação por hash, poda restrita a
+  `transactions/` e `pruning/`, setup sem `--yes` e instalação com
+  `--require-hashes` foram conferidos. A revisão encontrou dois P2:
+  - **Corrigido:** `apply` recusado por registro de perfis ou `current.json`
+    inseguro deixava uma transação vazia, que bloqueava a poda.
+    `RememberedProfiles.test_r040_unsafe_record_refuses_apply_without_creating_transaction`
+    falhou antes da correção e passa depois.
+  - **Pendente:** um interpretador gerenciado pelo uv com escrita de grupo
+    (`UV_PYTHON_INSTALL_DIR`, fora da venv) faz `doctor` e `setup` classificarem
+    a ferramenta como divergente e pedirem para mover a venv, o que não resolve.
+    A revisão de permissões do setup só olha a raiz desse diretório.
+    (`lib/python_tools.py`, `lib/setup.py`)
+  - **P3 registrados, sem correção:** o `ValueError` do ajuste de modos não
+    remove a venv criada; o `next_step` sugere `--profile` mesmo quando os
+    perfis informados são os lembrados; o rollback recusa um registro inseguro
+    mesmo sem `previous_profiles`; o `apply` sem arquivos a alterar confere a
+    transação interrompida fora do lock.
+- **Spec:** os requisitos com evidência passaram a `verificado`. R-010 continua
+  `implementado` até a primeira execução agendada na `main` (segunda,
+  2026-11-16, 09:17 UTC). `spec_check.py --stage a3` não foi executado porque é
+  ferramenta da pre-code-pipeline, fora do repositório e indisponível nesta
+  sessão.
+- **Aviso do CI:** `actions/checkout` v4.2.2 ainda declara Node.js 20, que o
+  runner força para Node.js 24. Atualizar o pin é revisão própria.
 
 ## Aliases eza no openSUSE — 2026-11-09
 

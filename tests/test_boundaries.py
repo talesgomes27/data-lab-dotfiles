@@ -431,6 +431,19 @@ class RememberedProfiles(unittest.TestCase):
                 self.apply()
         self.assertFalse(record.exists())
 
+    def test_r040_unsafe_record_refuses_apply_without_creating_transaction(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        latest = (state.STATE / 'latest').read_text()
+        before = sorted(p.name for p in (state.STATE / 'transactions').iterdir())
+        record.unlink()
+        record.symlink_to(self.home / 'outro')
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        with self.assertRaisesRegex(ValueError, 'symlink'):
+            self.apply()
+        self.assertEqual(sorted(p.name for p in (state.STATE / 'transactions').iterdir()), before)
+        self.assertEqual((state.STATE / 'latest').read_text(), latest)
+
     def test_r040_rollback_shows_profiles_and_refuses_unsafe_record_before_restoring(self):
         record = state.STATE / 'profiles'
         self.apply()
