@@ -1313,13 +1313,16 @@ class OrphanRetirement(unittest.TestCase):
         registry = json.loads((state.STATE / 'current.json').read_text())
         registry[weird] = 'b' * 64
         self.write_registry(registry)
-        real_lstat = Path.lstat
+        real_lstat, real_stat = os.lstat, os.stat
 
-        def guarded(path, *args, **kwargs):
-            if str(path) == weird:
-                raise AssertionError('caminho fora do universo foi consultado no disco')
-            return real_lstat(path, *args, **kwargs)
-        with patch.object(Path, 'lstat', guarded), patch.object(state, 'path_issues', side_effect=lambda p: (
+        def guarded(real):
+            def call(path, *args, **kwargs):
+                if str(path) == weird:
+                    raise AssertionError('caminho fora do universo foi consultado no disco')
+                return real(path, *args, **kwargs)
+            return call
+        with patch.object(state.os, 'lstat', guarded(real_lstat)), patch.object(state.os, 'stat', guarded(real_stat)), \
+                patch.object(state, 'path_issues', side_effect=lambda p: (
                 (_ for _ in ()).throw(AssertionError('path_issues fora do universo')) if str(p) == weird else state_path_issues(p))):
             rows = self.retire()
         self.assertEqual(rows[weird]['action'], 'forget-outside')
@@ -1576,6 +1579,80 @@ class OrphanRetirement(unittest.TestCase):
             paths = guided.target_paths()
         self.assertIn(self.nu, paths)
         self.assertIn(self.starship, paths)
+
+
+    def test_r050_permission_error_while_inspecting_is_forget_unsafe(self):
+        real = state.path_issues
+
+        def denied(path):
+            if str(path) == str(self.nu):
+                raise PermissionError(13, 'Permission denied', str(self.nu.parent))
+            return real(path)
+        with patch.object(state, 'path_issues', side_effect=denied):
+            self.assertEqual(self.retire()[str(self.nu)]['action'], 'forget-unsafe')
+
+    def test_r052_interrupted_before_backup_can_still_be_rolled_back(self):
+        """Morte entre o manifesto e a cópia do backup: pending, arquivos intactos e sem backup."""
+        self.retire_only()
+        registry = self.registry_now()
+        copying = []
+        real_atomic = state.atomic
+
+        class Killed(BaseException):
+            pass
+
+        def copy(*args, **kwargs):
+            copying.append(True)
+            raise Killed()
+
+        def atomic(path, *args, **kwargs):
+            if copying:
+                raise Killed()
+            return real_atomic(path, *args, **kwargs)
+        with patch.object(state.shutil, 'copy2', side_effect=copy), patch.object(state, 'atomic', side_effect=atomic):
+            with self.assertRaises(Killed):
+                self.apply_tracking_render()
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['status'], 'pending')
+        self.assertTrue(self.starship.exists())
+        plan = state.rollback_plan()[0]
+        os.environ['DEVSHELL_APPROVAL'] = plan['approval']
+        state.rollback()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r053_orphan_without_repair_stays_out_of_the_permission_review(self):
+        import setup as guided
+        moved = self.home / 'nushell-real'
+        self.nu.parent.rename(moved)
+        self.nu.parent.symlink_to(moved, target_is_directory=True)
+        with patch.object(guided.artifacts, 'BIN', self.home / '.local/bin'), \
+                patch.object(guided.artifacts, 'DATA', self.home / '.local/share'), \
+                patch.object(guided.artifacts, 'CACHE', self.home / '.cache/devshell'):
+            paths = guided.target_paths()
+        self.assertNotIn(self.nu, paths)
+        self.assertIn(self.starship, paths)
+        self.assertEqual(self.retire()[str(self.nu)]['action'], 'forget-unsafe')
+
+    def test_r051_removal_refuses_a_file_swapped_after_the_content_check(self):
+        self.retire_only()
+        registry = self.registry_now()
+        real_rename = state.os.rename
+        calls = []
+
+        def rename(source, target, *args, **kwargs):
+            if not calls:
+                calls.append(target)
+                # Um editor salva por rename logo antes da retirada.
+                replacement = self.starship.with_name('.editor-tmp')
+                replacement.write_text('salvo agora pelo editor\n')
+                real_rename(replacement, self.starship)
+            return real_rename(source, target, *args, **kwargs)
+        with patch.object(state.os, 'rename', side_effect=rename):
+            with self.assertRaises(RuntimeError):
+                self.apply_tracking_render()
+        self.assertEqual(self.starship.read_text(), 'salvo agora pelo editor\n')
+        self.assertEqual(self.registry_now(), registry)
 
 
 state_path_issues = state.path_issues

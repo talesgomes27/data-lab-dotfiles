@@ -288,7 +288,11 @@ def classify_orphan(target, recorded, universe):
     if target not in universe:
         return row | {'action': 'forget-outside', 'reason': 'fora dos alvos deste checkout; remova manualmente se quiser'}
     path = Path(target)
-    issues = list(path_issues(path))
+    try:
+        issues = list(path_issues(path))
+    except OSError as exc:
+        # Diretório sem permissão de busca, por exemplo: inseguro, nunca exceção (R-050).
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
     if issues:
         return row | {'action': 'forget-unsafe', 'reason': issues[0]['message']}
     try:
@@ -556,14 +560,30 @@ def remove_checked(entry):
         if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
             raise RuntimeError(f'diretório trocado durante a retirada: {path.parent}')
         info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+        expected = entry['before']
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid() \
+                or stat.S_IMODE(info.st_mode) != expected['mode'] or info.st_gid != expected['gid']:
             raise RuntimeError(f'alvo trocado durante a retirada: {path}')
-        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
-        with os.fdopen(descriptor, 'rb') as stream:
-            seen = os.fstat(stream.fileno())
-            if (seen.st_dev, seen.st_ino) != (info.st_dev, info.st_ino) or digest(stream.read()) != entry['before']['sha256']:
-                raise RuntimeError(f'alvo alterado durante a retirada: {path}')
-        os.unlink(path.name, dir_fd=parent)
+        # Renomear antes de conferir: o que é apagado é exatamente o que foi conferido.
+        import uuid
+        hidden = f'.devshell-retire-{uuid.uuid4().hex}'
+        os.rename(path.name, hidden, src_dir_fd=parent, dst_dir_fd=parent)
+        moved = os.stat(hidden, dir_fd=parent, follow_symlinks=False)
+        same = (moved.st_dev, moved.st_ino) == (info.st_dev, info.st_ino) and stat.S_ISREG(moved.st_mode)
+        if same:
+            descriptor = os.open(hidden, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            with os.fdopen(descriptor, 'rb') as stream:
+                same = digest(stream.read()) == expected['sha256']
+        if not same:
+            # Devolve ao nome original sem sobrescrever nada (link falha se o nome já existe).
+            try:
+                os.link(hidden, path.name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+                os.unlink(hidden, dir_fd=parent)
+            except FileExistsError:
+                raise RuntimeError(f'alvo alterado durante a retirada: {path}; a versão encontrada ficou em '
+                                   f'{path.parent / hidden}') from None
+            raise RuntimeError(f'alvo alterado durante a retirada: {path}; nada foi removido')
+        os.unlink(hidden, dir_fd=parent)
     finally:
         os.close(parent)
 
@@ -649,6 +669,8 @@ def apply_configuration():
             raise
     result = {'operation': 'apply', 'transaction': name, 'changed': len(changed),
               'removed': len(removals), 'forgotten': len(tx['forgotten'])}
+    if removals or tx['forgotten']:
+        result['message'] = f"{len(removals)} arquivo(s) retirado(s) com backup; {len(tx['forgotten'])} só saíram do registro."
     if not changed and not retired:
         result['message'] = f"Configuração já corresponde ao plano; perfis {os.environ['DEVSHELL_PROFILES']} registrados nesta transação."
     report(result)
@@ -661,16 +683,19 @@ def rollback_plan():
     allowed = desired_files(all_components=True)
     entries = []
     for entry in tx['files']:
-        if entry['path'] not in allowed or not entry['backup'].isdigit():
-            # R-052: um dotfile retirado que saiu do checkout só volta à mão, a partir do backup.
-            raise ValueError(f"manifesto de rollback fora do escopo gerenciado: {entry['path']} não é mais alvo deste checkout; "
-                             f"o backup está em {directory / str(entry.get('backup', ''))}")
+        if not str(entry.get('backup', '')).isdigit():
+            raise ValueError('manifesto de rollback fora do escopo gerenciado: backup inválido')
+        if entry['path'] not in allowed:
+            # R-052: um dotfile que saiu do checkout só volta à mão, a partir do backup, se houver.
+            where = f"o backup está em {directory / entry['backup']}" if entry.get('before') else 'não há backup (o arquivo não existia)'
+            raise ValueError(f"manifesto de rollback fora do escopo gerenciado: {entry['path']} não é mais alvo deste checkout; {where}")
         before = snapshot(Path(entry['path']))
         after_hash = before['sha256'] if before else None
         matches_applied = before == entry['applied'] if 'applied' in entry else after_hash == entry['after']
         if not matches_applied and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
             raise RuntimeError(f"arquivo editado após aplicação: {entry['path']}; preserve/mescle manualmente")
-        if entry['before']:
+        # Interrompida antes da cópia: o arquivo está como antes e o rollback não precisa do backup.
+        if entry['before'] and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
             backup = directory / entry['backup']
             saved = snapshot(backup)
             if not saved or saved['sha256'] != entry['before']['sha256']:

@@ -34,6 +34,7 @@ setup_path() {
 setup_environment() {
     local inspection plan hash target answer count dry_run=$1
     local -a packages components options=(--profile "$DEVSHELL_PROFILES") replacement=()
+    local removals forgets retire_note
     [[ "$DEVSHELL_OFFLINE" == 0 ]] || options+=(--offline)
     setup_path
     # R-041: o resumo vem antes de qualquer pergunta; cada etapa recalcula o próprio plano depois.

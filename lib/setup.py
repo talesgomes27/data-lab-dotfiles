@@ -26,7 +26,16 @@ def target_paths():
     except (OSError, ValueError):
         managed = {}
     universe, desired = fs.desired_files(all_components=True), fs.desired_files()
-    paths.update(Path(key) for key in managed if key in universe and key not in desired)
+    for key in managed:
+        if key not in universe or key in desired:
+            continue
+        # Só entra o que o reparo de modos resolve; symlink, dono ou hardlink viram forget-unsafe sem bloquear.
+        try:
+            kinds = {issue['kind'] for issue in fs.path_issues(Path(key))}
+        except OSError:
+            continue
+        if kinds <= {'permissions'}:
+            paths.add(Path(key))
     paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
         paths.add(artifacts.BIN / 'uvx')
