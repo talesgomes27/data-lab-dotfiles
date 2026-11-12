@@ -109,6 +109,7 @@ o novo hash e aprovando conflitos com `--replace-existing` e backup.
 | Checksum divergente | Não execute o arquivo; confira release, manifesto e caminho do cache informado. Preserve a cópia para inspeção. |
 | Offline sem cache | Prepare os arquivos oficiais exatos e o cache uv, ou retome em modo online. |
 | Ferramenta Python em conflito, divergente ou com link órfão | Leia a mensagem do `doctor`: `uv tool uninstall NOME` para a instalação antiga, ou revise e mova a venv ou o link indicado. O projeto não remove nem substitui o que não criou. |
+| CPython gerenciado com caminho inseguro, fora da venv | O `doctor` aponta o diretório `cpython-*` em `UV_PYTHON_INSTALL_DIR`. Confira dono e origem; se só houver escrita de grupo/outros, `chmod -R go-w` nesse diretório e planeje de novo. Não mova a venv: o problema é do interpretador, e o setup não altera esse diretório. |
 | DuckDB ausente ou inseguro | É opcional. Confira origem, dono e modos dos diretórios e do executável; não aplique chmod recursivo. O reparo genérico do setup pode não abranger sua árvore externa. |
 
 ## Recuperação e outros limites

@@ -84,6 +84,27 @@ def record_hash(content):
     return 'sha256=' + base64.urlsafe_b64encode(bytes.fromhex(fs.digest(content))).decode().rstrip('=')
 
 
+class ManagedPythonUnsafe(ValueError):
+    """Recusa no CPython gerenciado, fora da venv: mover a venv não resolve."""
+
+    def __init__(self, root, exc):
+        super().__init__(str(exc))
+        self.root = root
+
+
+def managed_python_hint(root, message):
+    fix = f' (escrita de grupo/outros: `chmod -R go-w {root}`)' if message.startswith('permissões inseguras') else ''
+    return (f'CPython gerenciado com caminho inseguro, fora da venv: {message}; corrija {root}{fix} '
+            'e planeje de novo; a venv não precisa ser movida')
+
+
+def managed_safe_path(path, root):
+    try:
+        fs.safe_path(path)
+    except ValueError as exc:
+        raise ManagedPythonUnsafe(root, exc) from exc
+
+
 def venv_issues(name, venv, lock, tool_python, python_dir):
     """Conferência da venv sem executar a ferramenta nem chamar o uv (R-023)."""
     fs.safe_path(venv)
@@ -99,11 +120,13 @@ def venv_issues(name, venv, lock, tool_python, python_dir):
         return [f"Python da venv {values.get('version_info')}; esperado {tool_python}"]
     minor = '.'.join(tool_python.split('.')[:2])
     interpreter = (venv / 'bin/python').resolve(strict=True)
-    fs.safe_path(interpreter)
     if not python_dir or not interpreter.is_relative_to(Path(python_dir).resolve()):
         return ['interpretador da venv fora do CPython gerenciado (UV_PYTHON_INSTALL_DIR)']
-    header = interpreter.parent.parent / 'include' / f'python{minor}' / 'patchlevel.h'
-    fs.safe_path(header)
+    # Interpretador e cabeçalho ficam em UV_PYTHON_INSTALL_DIR, fora da venv.
+    cpython = interpreter.parent.parent
+    managed_safe_path(interpreter, cpython)
+    header = cpython / 'include' / f'python{minor}' / 'patchlevel.h'
+    managed_safe_path(header, cpython)
     match = re.search(r'^#define\s+PY_VERSION\s+"([^"]+)"', header.read_text(), re.M) if header.is_file() else None
     if not match or match.group(1) != tool_python:
         return ['interpretador da venv não é o CPython gerenciado de tool_python']
@@ -170,10 +193,12 @@ def tool_state(name, lock, dirs, tool_python):
         link_state = 'nosso'
     else:
         link_state = 'outro'
-    detail, modes_only = [], False
+    detail, modes_only, managed = [], False, None
     if os.path.lexists(venv):
         try:
             detail = venv_issues(name, venv, lock, tool_python, dirs.get('UV_PYTHON_INSTALL_DIR'))
+        except ManagedPythonUnsafe as exc:
+            detail, managed = [str(exc)], managed_python_hint(exc.root, str(exc))
         except (OSError, ValueError, RuntimeError, csv.Error) as exc:
             detail = [str(exc)]
             # Só modos: o setup corrige (D-018), diferente de uma venv divergente.
@@ -187,7 +212,9 @@ def tool_state(name, lock, dirs, tool_python):
         detail = [f'{link} já existe ({target}); se for do uv tool, rode `uv tool uninstall {name}` e planeje de novo']
     elif venv_state == 'divergente':
         state = 'divergente'
-        if modes_only:
+        if managed:
+            detail = [f'{venv}: {managed}']
+        elif modes_only:
             detail = [f'{venv}: modos inseguros na venv (escrita de grupo/outros); rode ./bin/devshell setup, que corrige']
         else:
             detail = [f'{venv}: ' + '; '.join(detail) + '; revise e mova a venv para fora de devshell/tools']

@@ -64,14 +64,14 @@ revisao_do_bloco_d:
 revisao_t900:
   por: subagente revisor independente
   em: "2026-11-12"
-  resultado: "sem P0/P1; 2 P2 e 4 P3. P2 do apply (transação vazia) corrigido; o P2 do interpretador gerenciado com escrita de grupo e os P3 ficam registrados em docs/VALIDATION.md"
+  resultado: "sem P0/P1; 2 P2 e 4 P3. P2 do apply (transação vazia) corrigido; o P2 do interpretador gerenciado foi corrigido depois (D-020); os P3 ficam registrados em docs/VALIDATION.md"
 dispensas:
   - gate: PC-1
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
 proximo_passo: merge do PR #16 e da branch do T-900 pelo usuário; conferir a primeira execução agendada na main (2026-11-16)
-pendencias: [Q-003, "R-010: execução agendada na main", "P2 do interpretador gerenciado (lib/python_tools.py)"]
+pendencias: [Q-003, "R-010: execução agendada na main"]
 ```
 
 # Plano: histórico de transações, CI agendado e lock das ferramentas uv

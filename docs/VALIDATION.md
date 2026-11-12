@@ -33,6 +33,29 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## CPython gerenciado inseguro (D-020) — 2026-11-12
+
+Corrige o P2 pendente da revisão do T-900. Antes, quando o interpretador ou o
+`patchlevel.h` do CPython gerenciado (em `UV_PYTHON_INSTALL_DIR`, fora da venv)
+tinham escrita de grupo, a ferramenta virava "venv divergente; revise e mova a
+venv". Agora a ferramenta continua `divergente` e bloqueante, mas a mensagem
+aponta o diretório `cpython-*` e o `chmod -R go-w` a aplicar. O doctor mostra
+`interpretador uv com caminho inseguro`, como ação manual. O setup não altera
+esse diretório.
+
+- Testes novos em `PythonToolLocks`, que falharam antes da correção pelo motivo
+  esperado:
+  - `test_r023_unsafe_managed_python_points_to_interpreter_not_venv`: cobre
+    interpretador, cabeçalho e o diretório `cpython-*`;
+  - `test_r023_unsafe_managed_python_is_manual_in_doctor`: o `next_step` é
+    `manual`.
+- Local: Ruff 0.17.3 e 78 unittest passaram em HOME temporária. Bats,
+  ShellCheck e shfmt não estão disponíveis nesta sessão; nenhum script shell
+  mudou.
+- CI: o [workflow_dispatch 43198735204](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43198735204),
+  no commit `722afac`, aprovou os sete jobs: 226 Bats e 78 unittest sem
+  skips, cinco imagens e smoke online.
+
 ## Encerramento do plano (T-900) — 2026-11-12
 
 Fecha os Blocos A a D do [plano](plan.md). A branch parte do commit `b8a83f3`
@@ -60,7 +83,7 @@ openSUSE Leap 16 (execução 42665398454).
     inseguro deixava uma transação vazia, que bloqueava a poda.
     `RememberedProfiles.test_r040_unsafe_record_refuses_apply_without_creating_transaction`
     falhou antes da correção e passa depois.
-  - **Pendente:** um interpretador gerenciado pelo uv com escrita de grupo
+  - **Corrigido depois (D-020, seção acima):** um interpretador gerenciado pelo uv com escrita de grupo
     (`UV_PYTHON_INSTALL_DIR`, fora da venv) faz `doctor` e `setup` classificarem
     a ferramenta como divergente e pedirem para mover a venv, o que não resolve.
     A revisão de permissões do setup só olha a raiz desse diretório.
