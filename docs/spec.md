@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 10
+versao_spec: 11
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -545,9 +545,15 @@ completa fica para depois (N-016).
     hardlink, conteúdo diferente).
 
   O comando sai com 0, mostra o hash de aprovação e não grava nada; `--json`
-  traz a lista. Se X ainda está nos perfis lembrados, o plano avisa que o
-  próximo `setup` o reinstalaria. `uv`, `chezmoi` e `nu` são recusados com
-  saída 2 (N-014). A checagem do R-047 vale também aqui.
+  traz a lista. O plano só lê o cache (`CACHE/SHA256` já existente e
+  conferido contra o manifesto): nunca baixa nem grava. Se X ainda está nos
+  perfis lembrados (`python` corresponde a `python-tools`), o plano avisa que
+  o próximo `setup` o reinstalaria. A lista de ferramentas vem do manifesto
+  inteiro, sem depender dos perfis, e o comando não passa pela checagem do
+  R-046. `uv`, `chezmoi` e `nu` são recusados com saída 2 (N-014). A checagem
+  do R-047 vale também aqui. Restos de uma desinstalação interrompida em
+  `DATA/devshell/uninstalling/` aparecem no plano e entram no hash; restos
+  inesperados ali são `manual`.
 - Prioridade: alta
 - Estado: proposto
 
@@ -556,20 +562,34 @@ completa fica para depois (N-016).
   removido.
 - Critério:
   - **`devshell`:** `~/.local/bin/devshell` e `STATE/launcher.json` iguais,
-    byte a byte, ao que a CLI geraria para este checkout.
+    byte a byte, ao que a CLI geraria para este checkout. Se o install usou
+    `--replace-existing`, o original do usuário em `launcher-backups/ID/N`
+    aparece como `manual`, com o comando de restauração; ele não é devolvido
+    sozinho, porque pode estar desatualizado.
   - **`python`:** para cada ferramenta do manifesto, a venv em
-    `devshell/tools/NOME` no estado `conforme` ou `sem-link` (D-012) e o
-    symlink em `UV_TOOL_BIN_DIR/NOME` que aponta para ela (`conforme` ou
-    `link-orfao`). Venv `divergente` ou link de outro dono é `manual`. O
-    CPython do uv nunca é removido.
-  - **`pyinit`:** `~/.local/bin/pyinit` com o SHA-256 do manifesto.
+    `devshell/tools/NOME` no estado `conforme` ou `sem-link` (D-012) **e** com
+    inventário completo (D-033): cada arquivo da árvore está no RECORD de uma
+    distribuição do lock, com o hash certo, ou numa lista fixa da venv. O
+    digest do inventário entra no hash. Qualquer outro arquivo deixa a venv
+    `manual`. Isso inclui um módulo editado, um `.pth`, um script em `bin/` e
+    `share/` ou `etc/`. O symlink em `UV_TOOL_BIN_DIR/NOME` sai quando aponta
+    para essa venv (`conforme` ou `link-orfao`). Com o link de outro dono, a
+    venv conforme sai e o link fica `manual`. Venv `divergente` é `manual`,
+    com a dica do reparo do setup quando o problema é só de modos. O CPython
+    do uv nunca é removido. Se `UV_TOOL_BIN_DIR` ou `XDG_DATA_HOME` mudaram
+    desde o install, o plano avisa que os caminhos antigos não são vistos.
+  - **`pyinit`:** `~/.local/bin/pyinit` com o SHA-256 do manifesto atual ou
+    com o SHA-256 gravado no recibo, que cobre uma versão anterior.
   - **`plugins` e `firacode`:** cada arquivo com o SHA-256 gravado no recibo
-    do install (R-062). Sem recibo, cada arquivo é comparado com o membro do
-    pacote em cache (`CACHE/SHA256`, conferido pelo manifesto). Sem recibo e
-    sem cache, o item é `manual`.
+    do install (R-062), que vale mesmo depois de o manifesto mudar. Sem recibo,
+    cada arquivo é comparado com o membro do pacote em cache (`CACHE/SHA256`,
+    conferido pelo manifesto atual); uma instalação de versão anterior sem
+    recibo é `manual`. Sem recibo e sem cache, o item é `manual`. Na pasta
+    da fonte, só saem os arquivos com prova; fontes do usuário ficam.
 
-  Diretórios só são removidos quando ficam vazios e foram criados pela
-  instalação: `devshell/plugins/NOME`, `fonts/FiraCodeNerdFont` e as venvs.
+  Diretórios seguem a D-034: só são removidos de baixo para cima, com
+  `rmdir`, quando ficam vazios e estão dentro de `devshell/plugins/NOME`,
+  `fonts/FiraCodeNerdFont` ou da venv.
 - Prioridade: alta
 - Estado: proposto
 
@@ -577,10 +597,17 @@ completa fica para depois (N-016).
 - Enunciado: o `install` desses componentes grava o que escreveu.
 - Critério: Dado um `install --component X` aprovado e concluído, Quando ele
   termina, Então `STATE/install-receipts/X.json` registra cada arquivo
-  escrito ou conferido, com o SHA-256 e o SHA-256 do pacote de origem. A
-  gravação é atômica, sob o lock, e o arquivo é privado (0600). Um install sem
-  mudança regrava o recibo se ele faltar. O `doctor` não acusa a falta de
-  recibo.
+  escrito ou conferido, com o SHA-256 e o SHA-256 do pacote de origem, e um
+  campo `version`. Os caminhos são relativos ao destino do componente, sem
+  `..`. O uninstall recusa um recibo que fuja disso e trata o componente como
+  sem recibo. A gravação é atômica, sob o lock, depois de todas as escritas,
+  e o arquivo é privado (0600). Um install sem mudança regrava o recibo se ele
+  faltar, e um install que falha não grava recibo. A falta de recibo não torna
+  o install `pending` nem é acusada pelo `doctor`. Um arquivo que já existia
+  igual entra no recibo como "conferido": ao desinstalar ele sai, e ao
+  reinstalar volta com os mesmos bytes e modo 0644. Instalações antigas só
+  ganham recibo com um `install --approve` manual; o `setup` não o roda sem
+  mudanças (R-042).
 - Prioridade: média
 - Estado: proposto
 
@@ -591,11 +618,14 @@ completa fica para depois (N-016).
   HASH` roda, Então, sob o lock, a CLI replaneja e confere o hash e remove
   cada item pelo descritor do diretório pai, sem seguir symlinks, conferindo
   identidade e conteúdo como na D-026. As venvs são renomeadas para
-  `STATE/uninstalling/` e só então apagadas, como na poda. O recibo do
-  componente sai por último. Itens `manual` não são tocados. Para `firacode`,
-  `fc-cache -f` roda depois, se existir. A saída diz que desfazer é `install
-  --component X`. Uma interrupção deixa só itens inteiros, e o plano seguinte
-  continua de onde parou.
+  `DATA/devshell/uninstalling/` (irmão de `tools/`, no mesmo sistema de
+  arquivos), conferidas de novo contra o inventário e só então apagadas por
+  um apagador recursivo por `dir_fd`, que não segue links. Se o inventário
+  não bate depois de renomear, a venv volta ao lugar. O recibo do componente
+  sai por último. Itens `manual` não são tocados. Para `firacode`, `fc-cache
+  -f` roda depois, se existir. A saída diz que desfazer é `install
+  --component X`. Uma interrupção deixa só itens inteiros, mais algum resto em
+  `uninstalling/`, que o plano seguinte mostra e o apply aprovado limpa.
 - Prioridade: alta
 - Estado: proposto
 
@@ -637,15 +667,15 @@ completa fica para depois (N-016).
 ### N-002 Poda automática ou por idade, sem aprovação
 ### N-003 Reinstalação automática, `--force` ou remoção pela CLI de ferramentas fora do lock ou instaladas pelo `uv tool`
 ### N-004 Lock do próprio uv, do Chezmoi ou do Nushell (já fixados por SHA-256 em `artifacts.json`)
-### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa)
+### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa); a desinstalação passou ao Bloco F
 ### N-006 Alerta por canal além da notificação padrão do GitHub
 ### N-007 `git pull`, atualização do checkout ou verificação de versões nova pela CLI
 ### N-008 `--yes` ou aprovação automática no setup
-### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta)
+### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta); a desinstalação passou ao Bloco F
 
 ### N-010 Manifesto de migrações declarativas (`manifests/migrations.json`): sem caso que o registro não cubra (D-022)
 ### N-011 Migração automática das instalações pelo `uv tool` (a D-013 continua manual)
-### N-012 Remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte
+### N-012 No Bloco E, remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte (o Bloco F trata dos componentes, com a regra de diretórios da D-034)
 ### N-013 Remoção de arquivo fora do universo ou editado, mesmo com `--replace-existing`
 
 ### N-014 Desinstalar `uv`, `chezmoi` ou `nu`: a CLI depende deles, e eles podem ter vindo de outra fonte
@@ -941,9 +971,27 @@ ocuparia disco e complicaria a poda, sem proteger nada que a reinstalação não
 proteja. Decidido pelo usuário em 2026-11-12.
 
 ### D-032 Recibo em `STATE/install-receipts`
-Um JSON por componente, com `files` (caminho → SHA-256) e `artifacts`
-(SHA-256 dos pacotes). Fica no estado, não em `transactions/`: não entra na
-poda nem no rollback, e só o `uninstall` o remove.
+Um JSON por componente: `{"version": 1, "component": X, "destination":
+CAMINHO, "files": {RELATIVO: SHA-256}, "artifacts": [SHA-256]}`. Fica no
+estado, não em `transactions/`: não entra na poda nem no rollback, e só o
+`uninstall` o remove.
+
+### D-033 Inventário completo da venv
+O estado `conforme` (D-012) prova os metadados, não a árvore. Para remover,
+a CLI percorre a venv sem seguir links. Cada arquivo regular precisa estar no
+RECORD de uma distribuição do lock, com hash igual (ou sem hash no RECORD,
+como o próprio RECORD e o INSTALLER), ou numa lista fixa da venv:
+`pyvenv.cfg`, `bin/activate*`, `bin/python*`, `lib64`, `CACHEDIR.TAG`,
+`.gitignore` e `__pycache__/*.pyc` de módulos listados. Os symlinks precisam
+ser os da venv (`bin/python*`, `lib64`). Qualquer outra entrada torna a venv
+`manual`. Achado P1 da revisão do desenho.
+
+### D-034 Diretórios de baixo para cima, só dentro do destino
+Não há registro de quem criou cada diretório. Por isso só são removidos, com
+`rmdir` de baixo para cima, os diretórios que ficam vazios dentro de
+`devshell/plugins/NOME`, de `fonts/FiraCodeNerdFont` e da venv, incluindo
+esses três. `rmdir` falha se o diretório não está vazio, então nada do
+usuário sai. Os demais diretórios ficam, como na D-025.
 
 ## Restrições
 

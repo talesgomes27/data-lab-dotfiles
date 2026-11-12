@@ -81,6 +81,10 @@ revisao_do_bloco_e:
   por: subagente revisor de plano
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 7 P2 e 9 P3 incorporados (spec v7: R-055 e D-027 novos, R-050 a R-054 detalhados, D-014 ajustada)"
+revisao_do_bloco_f:
+  por: subagente revisor de desenho
+  em: "2026-11-12"
+  resultado: "não pronto; 1 P1 (inventário da venv) e 8 P2 incorporados (spec v11: D-033, D-034, R-060 a R-063 detalhados, N-005/N-009/N-012 revistos)"
 revisao_t900:
   por: subagente revisor independente
   em: "2026-11-12"
@@ -746,15 +750,27 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
   - o aviso quando o componente está nos perfis lembrados;
   - o plano e o `--dry-run` deixam a árvore idêntica;
   - o hash muda com a lista;
-  - a recusa do R-047 com estado de outra configuração.
-- Verificação: os testes novos falham só nos casos novos.
+  - a recusa do R-047 com estado de outra configuração;
+  - arquivo extra numa venv conforme (módulo editado, `.pth`, script em
+    `bin/`, `share/`) vira `manual`; o digest do inventário entra no hash;
+  - venv divergente só por modos indica o reparo do setup;
+  - recibo com caminho absoluto, `..` ou fora do destino é tratado como sem
+    recibo;
+  - plano sem cache deixa a árvore idêntica e não chama `download` (patch
+    que falha se chamado);
+  - `python` com o perfil padrão encontra as ferramentas do manifesto;
+  - backup do `--replace-existing` do lançador listado como `manual`;
+  - restos em `DATA/devshell/uninstalling/` aparecem no plano.
+- Verificação: os testes novos falham só nos casos novos. O formato do recibo
+  (D-032) já está fixado, então os casos "com recibo" usam recibos escritos
+  pelo teste.
 
 ### T-502 Plano e CLI
 - Requisitos: R-060, R-061, R-064
 - Objetivo: D-030.
 - Arquivos: `bin/devshell` (comando `uninstall`, ajuda), `lib/uninstall.py`
   (novo; reaproveita `python_tools.tool_state`, `launcher.contents`,
-  `artifacts.members` e `state`)
+  `artifacts.members` sobre o cache, sem `download`, e `state`)
 - Dependências: T-501
 - Critério de aceite: os casos de T-501 passam. O comando passa pela checagem
   do R-047, mas não pela do R-046, porque não depende dos perfis para
@@ -784,6 +800,12 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
     `manual` e remove os diretórios vazios criados pela instalação;
   - o recibo sai por último;
   - hash vencido não remove nada;
+  - a venv é renomeada para `DATA/devshell/uninstalling/` e conferida de novo;
+    se o inventário mudar, volta ao lugar;
+  - o apagador recursivo não segue symlinks (`bin/python` aponta para o
+    CPython, que fica);
+  - os diretórios intermediários dos plugins (`highlighters/main/`) saem de
+    baixo para cima, e um arquivo do usuário na pasta da fonte fica;
   - arquivo trocado entre o plano e a remoção é recusado pela identidade;
   - falha no meio: só itens inteiros saem, e o plano seguinte continua;
   - a venv passa por `STATE/uninstalling/`;
@@ -793,8 +815,8 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 
 ### T-505 Remoção aprovada
 - Requisitos: R-063
-- Arquivos: `lib/uninstall.py`, `lib/state.py` (reaproveitar
-  `remove_checked` e a remoção por renomeação da poda)
+- Arquivos: `lib/uninstall.py` (apagador recursivo por `dir_fd`, sem seguir
+  links), `lib/state.py` (reaproveitar `remove_checked`)
 - Dependências: T-504
 - Critério de aceite: os casos de T-504 passam; nenhum caminho fora dos
   listados é tocado (árvore comparada antes e depois).
