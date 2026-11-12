@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 11
+versao_spec: 12
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -653,6 +653,80 @@ completa fica para depois (N-016).
 - Estado: verificado
 - Evidência: docs/USAGE.md (Desinstalar um componente, com saída executada); docs/SECURITY.md (seção e duas linhas na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
 
+**Saída completa (Bloco G)**
+
+Contexto: item 2b do [ROADMAP](ROADMAP.md). Sair do Data Lab hoje exige rodar
+`uninstall` por componente e repetir `rollback` uma vez por transação. Numa
+HOME real são umas dezesseis transações, cada uma com o próprio hash. Escopo
+decidido pelo usuário em 2026-11-12:
+- um comando `leave`, por etapas, como o `setup`;
+- se algum dotfile foi editado, nada é tocado;
+- o estado da CLI fica.
+
+### R-070 Rollback da cadeia inteira num só plano
+- Enunciado: `rollback --all` planeja, com um só hash, desfazer todas as
+  transações da cadeia, da atual até a primeira.
+- Critério:
+  - **Plano, sem `--approve`:** sem gravar nada, lista as transações em ordem
+    e, para cada arquivo, o que ele volta a ser: o original do backup ou
+    removido. Também mostra os perfis que voltam.
+  - **Conferência antes de qualquer gravação:** a cadeia inteira é simulada
+    (D-035). Se algum arquivo foi editado depois do apply que o escreveu, ou
+    se um backup falta ou não bate, o plano sai com 2, aponta o arquivo e a
+    transação e não muda nada.
+  - **Cadeia podada:** se a cadeia termina antes da primeira transação, o
+    plano avisa que os originais anteriores não podem mais ser restaurados.
+  - **Com `--approve HASH`:** sob o lock, a CLI replaneja e desfaz as
+    transações uma a uma, com a lógica do `rollback` atual. Uma falha no meio
+    deixa as já desfeitas como `rolled-back`, e o plano seguinte continua de
+    onde parou.
+  - `--all` não se combina com `--list`, `--prune` ou `--keep`.
+- Prioridade: alta
+- Estado: proposto
+
+### R-071 Comando `leave` por etapas
+- Enunciado: `leave` coordena a saída: desinstala os componentes e desfaz a
+  cadeia, com uma confirmação por etapa.
+- Critério:
+  - **Ordem:** o `leave` primeiro calcula o plano do `rollback --all`. Se ele
+    recusa por arquivo editado, o `leave` sai com 2 antes de qualquer etapa.
+  - **Resumo:** mostra o que cada etapa fará — os `uninstall` de `python`,
+    `plugins`, `firacode`, `pyinit` e `devshell`, nessa ordem, só os que têm
+    algo a remover, e por último o `rollback --all`.
+  - **Uma confirmação por etapa (`[s/N]`):** cada etapa mostra o próprio
+    plano, pergunta e aplica com o próprio hash, recalculado na hora. Uma
+    resposta nunca aprova outra etapa, e não há `--yes`.
+  - **Cancelamento:** recusar uma etapa cancela as seguintes; as já feitas
+    ficam.
+  - **`--dry-run`:** só mostra o resumo; com `--json`, o resumo vem em JSON.
+  - A checagem do R-047 vale também aqui.
+- Prioridade: alta
+- Estado: proposto
+
+### R-072 O que fica depois da saída
+- Enunciado: o `leave` termina dizendo o que continua na máquina.
+- Critério: a mensagem final lista:
+  - o diretório de estado, com as transações e os backups;
+  - o cache de artefatos;
+  - os itens `manual` de cada `uninstall`;
+  - o `uv`, o `chezmoi` e o `nu`, se presentes;
+  - o CPython do uv;
+  - os pacotes do sistema.
+
+  Para cada um, mostra o comando ou o caminho para remover à mão. O `leave`
+  não apaga nada disso (N-018).
+- Prioridade: média
+- Estado: proposto
+
+### R-073 Documentação da saída
+- Enunciado: README, USAGE, SECURITY e CHANGELOG explicam o `leave` e o
+  `rollback --all`.
+- Critério: a USAGE traz um exemplo executado em HOME temporária; a ajuda do
+  `devshell` lista os dois; o SECURITY diz o que a saída restaura e o que não
+  restaura (originais podados, arquivos editados).
+- Prioridade: média
+- Estado: proposto
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -688,6 +762,10 @@ completa fica para depois (N-016).
 ### N-015 Remover o CPython do uv, pacotes do sistema ou ambientes de projeto
 ### N-016 Saída completa (desinstalar tudo e voltar os dotfiles ao estado anterior ao Data Lab): item próprio no ROADMAP
 ### N-017 Backup do que é desinstalado; desfazer é reinstalar
+
+### N-018 Apagar o diretório de estado, o cache de artefatos ou os backups na saída (decidido pelo usuário: o estado fica)
+### N-019 Desinstalar `uv`, `chezmoi`, `nu`, o CPython do uv ou pacotes do sistema na saída
+### N-020 Restaurar originais de transações já podadas
 
 ## Decisões
 
@@ -998,6 +1076,28 @@ Não há registro de quem criou cada diretório. Por isso só são removidos, co
 `devshell/plugins/NOME`, de `fonts/FiraCodeNerdFont` e da venv, incluindo
 esses três. `rmdir` falha se o diretório não está vazio, então nada do
 usuário sai. Os demais diretórios ficam, como na D-025.
+
+### D-035 Simulação da cadeia antes de qualquer gravação
+A conferência percorre as transações da mais nova para a mais antiga e mantém,
+para cada caminho, o conteúdo esperado naquele ponto. Começa pelo snapshot
+atual. Em cada transação, o esperado precisa ser igual ao `applied` (ou
+`after`) da entrada, e passa a ser o `before` dela. Os backups com `before` são
+conferidos por SHA-256. Assim, um arquivo editado é encontrado antes de
+qualquer gravação, e não só quando o rollback chegasse nele. O hash cobre a
+lista de transações, os arquivos, os snapshots atuais e os perfis que voltam.
+
+### D-036 Etapas do `leave` e confirmação por etapa
+O `leave` reaproveita os comandos públicos (`uninstall`, `rollback --all`),
+como o `setup` faz com o `install` e o `apply`. Cada etapa recalcula o próprio
+plano e só aplica com o próprio hash, depois de uma confirmação. Os
+componentes saem antes da cadeia, para que o rollback dos dotfiles seja o
+último passo, e o lançador sai por último entre os componentes. Decidido pelo
+usuário em 2026-11-12.
+
+### D-037 O estado fica
+O diretório de estado guarda o histórico e os backups. Mantê-lo deixa
+consultar o que foi feito e recuperar um original. Remover é uma decisão da
+pessoa, à mão. Decidido pelo usuário em 2026-11-12.
 
 ## Restrições
 
