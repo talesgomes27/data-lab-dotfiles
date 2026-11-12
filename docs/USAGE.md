@@ -12,7 +12,10 @@ Depois de atualizar o checkout, `./bin/devshell setup` faz o que faltar, com uma
 confirmação por etapa, e `./bin/devshell doctor` termina com o próximo passo
 quando encontra pendências. Os comandos sem `--profile` usam os perfis do último
 `apply`; a linha `Perfis:` da saída mostra quais e de onde vieram (`lembrados`,
-`informados` ou `padrão`). Em JSON, o `doctor` traz o campo `next_step`.
+`informados` ou `padrão`). Se os perfis lembrados tirariam componentes que já
+estão aplicados, os comandos param com saída 2 e pedem
+`./bin/devshell setup --profile PERFIS` uma vez, com os perfis que você usa.
+Em JSON, o `doctor` traz o campo `next_step`.
 
 ## Navegar entre pastas
 

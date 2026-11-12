@@ -2,6 +2,11 @@
 
 ## Não publicado
 
+- Comandos sem `--profile` param com saída 2 quando os perfis lembrados
+  tirariam componentes já aplicados em `~/.config/devshell/components`, e pedem
+  `setup --profile ...` uma vez. Antes, um registro errado reduzia a HOME com
+  um diff comum.
+
 - O `next_step` do `doctor` deixa de sugerir `--profile` quando os perfis
   informados são os mesmos que estão lembrados.
 - `rollback` de uma transação antiga, sem `previous_profiles`, não é mais

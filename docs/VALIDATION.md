@@ -33,6 +33,19 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Guarda dos perfis lembrados (R-046) — 2026-11-12
+
+Incidente na HOME do mantenedor: o registro dizia `minimal`, a HOME estava
+aplicada com `personal,science,extras`, e um `setup` reescreveu `components`
+com 5 dos 29 componentes depois de uma confirmação de diff comum (transação
+`c7209d5c`, recuperável). A origem do registro errado não foi apurada; os
+testes rodam com HOME e XDG temporários. Agora os comandos sem `--profile` saem
+com 2 antes de qualquer plano quando os perfis lembrados tirariam componentes
+aplicados (D-021). `bash scripts/check.sh` em HOME/XDG temporários saiu com 0:
+228 Bats, 82 unittest, sem skips. Os dois testes R-046 foram escritos antes e
+o primeiro falhou pelo motivo esperado (`plan` saía com 0). Não executados:
+matriz de containers e smoke online.
+
 ## P3 da revisão do T-900 e Q-003 — 2026-11-12
 
 A Q-003 foi respondida: fica a notificação padrão do GitHub, com um mantenedor
