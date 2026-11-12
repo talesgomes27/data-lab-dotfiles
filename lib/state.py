@@ -489,11 +489,14 @@ def apply_configuration():
             _, transaction = latest_transaction()
             if transaction and transaction['status'] in ('pending', 'rolling-back'):
                 raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
-            if read_profiles_record() != os.environ['DEVSHELL_PROFILES']:
-                restore_profiles(os.environ['DEVSHELL_PROFILES'])
-        report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis registrados.'})
-        return
-    chezmoi_render()
+            recorded = read_profiles_record()
+            same = recorded is not None and canonical_profiles(recorded) == canonical_profiles(os.environ['DEVSHELL_PROFILES'])
+        if same:
+            report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis já registrados.'})
+            return
+        # R-048: mudar os perfis sem arquivos também é uma transação (D-028), para deixar rastro e permitir rollback.
+    else:
+        chezmoi_render()
     with locked():
         if build_plan()['approval'] != plan['approval']:
             raise RuntimeError('o ambiente mudou durante a revisão; planeje novamente')
@@ -739,7 +742,8 @@ def prune_plan(keep):
         warnings.append('não há transação atual: todas as transações listadas serão removidas')
     for entry in entries:
         action = 'keep' if entry['id'] in kept else 'delete'
-        if action == 'delete' and entry['previous_latest'] is None:
+        # Uma primeira transação sem arquivos (só perfis, R-048) não guarda dotfiles originais.
+        if action == 'delete' and entry['previous_latest'] is None and entry.get('files'):
             warnings.append(f"remove a primeira transação ({entry['id']}), que guarda os dotfiles de antes do primeiro apply")
         elif action == 'delete' and entry['originals']:
             warnings.append(f"remove a transação {entry['id']}, única cópia dos originais substituídos: {', '.join(entry['originals'])}")

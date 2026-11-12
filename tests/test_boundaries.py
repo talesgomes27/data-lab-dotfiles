@@ -483,6 +483,99 @@ class RememberedProfiles(unittest.TestCase):
                     state.apply_configuration()
         self.assertEqual((state.STATE / 'profiles').read_text().strip(), 'minimal')
 
+    def latest_manifest(self):
+        return json.loads((state.STATE / 'transactions' / (state.STATE / 'latest').read_text() / 'manifest.json').read_text())
+
+    def test_r048_profile_change_without_files_opens_a_transaction(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        registry = json.loads((state.STATE / 'current.json').read_text())
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'chezmoi_render') as render:
+            os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+            state.apply_configuration()
+            render.assert_not_called()
+        tx = self.latest_manifest()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), first)
+        self.assertEqual(tx['status'], 'committed')
+        self.assertEqual(tx['files'], [])
+        self.assertEqual(tx['previous_latest'], first)
+        self.assertEqual(tx['previous_profiles'], 'minimal')
+        self.assertEqual(tx['previous_registry'], registry)
+        self.assertIn('created', tx)
+        self.assertEqual(record.read_text().strip(), 'personal')
+        listed = [row['id'] for row in state.history()['transactions']]
+        self.assertIn((state.STATE / 'latest').read_text(), listed)
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+        self.assertEqual((state.STATE / 'latest').read_text(), first)
+
+    def test_r048_rollback_with_null_previous_profiles_removes_the_record(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        record.unlink()
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), first)
+        self.assertIsNone(self.latest_manifest()['previous_profiles'])
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertFalse(record.exists())
+
+    def test_r048_same_or_equivalent_profiles_write_nothing(self):
+        self.apply()
+
+        def tree():
+            return sorted((str(p), p.read_bytes() if p.is_file() else b'') for p in state.STATE.rglob('*') if p.name != 'lock')
+        before = tree()
+        self.apply()
+        self.assertEqual(tree(), before)
+        (state.STATE / 'profiles').write_text('minimal,personal\n')
+        before = tree()
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        self.assertEqual(tree(), before)
+
+    def test_r048_failed_profile_transaction_restores_the_record(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        real_atomic = state.atomic
+
+        def fail_on_commit(path, content, *args, **kwargs):
+            if path.name == 'manifest.json' and b'"committed"' in content:
+                raise OSError('falha injetada no commit')
+            return real_atomic(path, content, *args, **kwargs)
+
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'atomic', side_effect=fail_on_commit):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+        self.assertEqual((state.STATE / 'latest').read_text(), first)
+        statuses = {row['id']: row['status'] for row in state.history()['transactions']}
+        self.assertEqual(sorted(statuses.values()), ['committed', 'failed-restored'])
+
+    def test_r048_prune_does_not_call_a_profile_only_transaction_the_original_backup(self):
+        record = state.STATE / 'profiles'
+        record.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        record.write_text('minimal\n')
+        # Primeira transação sem arquivos: só perfis (HOME já em dia antes do primeiro apply).
+        for target, content in state.desired_files().items():
+            Path(target).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            Path(target).write_bytes(content)
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        first = (state.STATE / 'latest').read_text()
+        self.assertEqual(self.latest_manifest()['files'], [])
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        plan = state.prune_plan(1)
+        self.assertIn(first, [row['id'] for row in plan['transactions'] if row['action'] == 'delete'])
+        self.assertFalse(any('antes do primeiro apply' in warning for warning in plan.get('warnings', [])), plan.get('warnings'))
+
     def test_r040_rollback_shows_profiles_and_refuses_unsafe_record_before_restoring(self):
         record = state.STATE / 'profiles'
         self.apply()
