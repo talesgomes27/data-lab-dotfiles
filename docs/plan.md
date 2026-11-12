@@ -57,6 +57,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
+  - item: opção para apagar o estado da CLI por completo no Bloco G (R-074, --purge-state)
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "mensagem 'adicionar uma opção para excluir completamente o estado da CLI (transações, backups, registros)' na conversa"
   - item: escopo do Bloco G (leave por etapas; parar antes de tocar se houver arquivo editado; o estado fica)
     por: usuario
     em: "2026-11-12"
@@ -853,7 +857,8 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 Item 2b do ROADMAP. Escopo decidido em 2026-11-12:
 - comando `leave` por etapas, com uma confirmação por etapa;
 - se algum dotfile foi editado, nada é tocado;
-- o estado fica.
+- o estado fica por padrão; com `--purge-state`, uma etapa final o apaga
+  (R-074).
 
 Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 `workflow_dispatch`.
@@ -906,11 +911,19 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
   - **Ordem:** o lançador é a última desinstalação e o `rollback --all` vem
     depois;
   - **Mensagem final:** lista o que fica;
-  - **Estado de outra configuração:** recusado pelo R-047.
+  - **Estado de outra configuração:** recusado pelo R-047;
+  - **R-074, `--purge-state`:**
+    - a etapa só aparece com a opção e depois da cadeia inteira desfeita;
+    - com `latest` restante ou transação interrompida, ela não é oferecida;
+    - resposta diferente de `apagar` ou EOF mantém o estado;
+    - com `apagar`, o diretório some e nada fora dele muda (árvore
+      comparada);
+    - diretório de estado symlink é recusado;
+    - o cache de artefatos fica.
 - Verificação: os testes novos falham só nos casos novos (Bats no CI).
 
 ### T-604 Comando `leave`
-- Requisitos: R-071, R-072
+- Requisitos: R-071, R-072, R-074
 - Objetivo: D-036 e D-037.
 - Arquivos: `bin/devshell`, `lib/leave.sh` (novo, no estilo de
   `lib/setup.sh`), `lib/leave.py` (resumo e mensagem final)
@@ -929,7 +942,7 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 - Verificação: links locais conferidos.
 
 ### T-690 Encerramento do Bloco G
-- Requisitos: R-070 a R-073
+- Requisitos: R-070 a R-074
 - Arquivos: `docs/spec.md`, `docs/VALIDATION.md`
 - Dependências: T-605
 - Critério de aceite: `workflow_dispatch` com os sete jobs verdes e zero

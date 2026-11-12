@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 12
+versao_spec: 13
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -661,7 +661,9 @@ HOME real são umas dezesseis transações, cada uma com o próprio hash. Escopo
 decidido pelo usuário em 2026-11-12:
 - um comando `leave`, por etapas, como o `setup`;
 - se algum dotfile foi editado, nada é tocado;
-- o estado da CLI fica.
+- o estado da CLI fica por padrão;
+- com `--purge-state`, o estado pode ser apagado por completo numa etapa
+  final (R-074).
 
 ### R-070 Rollback da cadeia inteira num só plano
 - Enunciado: `rollback --all` planeja, com um só hash, desfazer todas as
@@ -713,8 +715,33 @@ decidido pelo usuário em 2026-11-12:
   - o CPython do uv;
   - os pacotes do sistema.
 
-  Para cada um, mostra o comando ou o caminho para remover à mão. O `leave`
-  não apaga nada disso (N-018).
+  Para cada um, mostra o comando ou o caminho para remover à mão. Sem
+  `--purge-state`, o `leave` não apaga nada disso; com a opção, só o
+  diretório de estado sai (R-074).
+- Prioridade: média
+- Estado: proposto
+
+### R-074 Apagar o estado da CLI, por opção
+- Enunciado: com `leave --purge-state`, a última etapa apaga o diretório de
+  estado inteiro.
+- Critério:
+  - **Quando aparece:** só com a opção, e só depois de o `rollback --all` ter
+    desfeito a cadeia inteira (sem `latest` e sem transação
+    `pending`/`rolling-back`). Se algo ficou para trás, a etapa não é
+    oferecida e a mensagem diz por quê.
+  - **Plano:** mostra o diretório, o tamanho e o que ele contém
+    (transações e backups, `launcher-backups`, `permission-repairs`,
+    `install-receipts`, perfis, `current.json`). Avisa que é irreversível e
+    que os backups somem.
+  - **Confirmação:** a etapa só segue se a pessoa digitar `apagar`.
+    Qualquer outra resposta ou EOF mantém tudo.
+  - **Remoção:** sob o lock, o diretório é renomeado para um nome
+    temporário ao lado dele e só então apagado, sem seguir symlinks. Se o
+    diretório for symlink ou tiver ancestral inseguro, a etapa recusa.
+  - **O que não sai:** o cache de artefatos e o CPython do uv; a mensagem
+    final mostra como removê-los à mão.
+  - **Sem a opção:** nada muda no estado, e `--purge-state` com `--dry-run`
+    só mostra o plano.
 - Prioridade: média
 - Estado: proposto
 
@@ -763,7 +790,7 @@ decidido pelo usuário em 2026-11-12:
 ### N-016 Saída completa (desinstalar tudo e voltar os dotfiles ao estado anterior ao Data Lab): item próprio no ROADMAP
 ### N-017 Backup do que é desinstalado; desfazer é reinstalar
 
-### N-018 Apagar o diretório de estado, o cache de artefatos ou os backups na saída (decidido pelo usuário: o estado fica)
+### N-018 Apagar o cache de artefatos, ou apagar o estado sem `--purge-state` ou antes de desfazer a cadeia inteira
 ### N-019 Desinstalar `uv`, `chezmoi`, `nu`, o CPython do uv ou pacotes do sistema na saída
 ### N-020 Restaurar originais de transações já podadas
 
@@ -1094,10 +1121,13 @@ componentes saem antes da cadeia, para que o rollback dos dotfiles seja o
 último passo, e o lançador sai por último entre os componentes. Decidido pelo
 usuário em 2026-11-12.
 
-### D-037 O estado fica
-O diretório de estado guarda o histórico e os backups. Mantê-lo deixa
-consultar o que foi feito e recuperar um original. Remover é uma decisão da
-pessoa, à mão. Decidido pelo usuário em 2026-11-12.
+### D-037 O estado fica, salvo `--purge-state`
+O diretório de estado guarda o histórico e os backups. Mantê-lo por padrão
+deixa consultar o que foi feito e recuperar um original. Com
+`--purge-state`, o usuário pediu (2026-11-12) uma etapa final para apagá-lo
+por completo. Ela só existe depois da saída completa, porque antes disso os
+backups ainda são necessários, e pede a palavra `apagar`, como `substituir` e
+`retirar`. A opção não aprova nada: só faz a pergunta aparecer.
 
 ## Restrições
 
