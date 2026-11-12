@@ -546,6 +546,28 @@ def restore_entry(directory, entry):
         atomic(path, backup.read_bytes(), entry['before'], backup)
 
 
+def remove_checked(entry):
+    """R-051: remove um órfão pelo descritor do diretório pai, conferindo identidade e conteúdo, sem seguir symlinks."""
+    path = Path(entry['path'])
+    safe_path(path.parent)
+    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened, current = os.fstat(parent), os.lstat(path.parent)
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            raise RuntimeError(f'diretório trocado durante a retirada: {path.parent}')
+        info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+            raise RuntimeError(f'alvo trocado durante a retirada: {path}')
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+        with os.fdopen(descriptor, 'rb') as stream:
+            seen = os.fstat(stream.fileno())
+            if (seen.st_dev, seen.st_ino) != (info.st_dev, info.st_ino) or digest(stream.read()) != entry['before']['sha256']:
+                raise RuntimeError(f'alvo alterado durante a retirada: {path}')
+        os.unlink(path.name, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
 def apply_configuration():
     plan = build_plan()
     if os.environ['DEVSHELL_APPROVAL'] != plan['approval']:
@@ -553,6 +575,7 @@ def apply_configuration():
     if any(e['conflict'] for e in plan['files']) and os.environ['DEVSHELL_REPLACE'] != '1':
         raise ValueError('dotfiles existentes em conflito: revise diff e use --replace-existing explicitamente')
     changed = [entry for entry in plan['files'] if entry['action'] == 'write']
+    retired = plan['retire']
     if changed:
         chezmoi_render()
     with locked():
@@ -561,7 +584,7 @@ def apply_configuration():
         old_dir, old_tx = latest_transaction()
         if old_tx and old_tx['status'] in ('pending', 'rolling-back'):
             raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
-        if not changed:
+        if not changed and not retired:
             # R-048: decidir e gravar sob o mesmo lock; perfis novos sem arquivos também são uma transação (D-028).
             recorded = read_profiles_record()
             if recorded is not None and canonical_profiles(recorded) == canonical_profiles(os.environ['DEVSHELL_PROFILES']):
@@ -571,20 +594,28 @@ def apply_configuration():
         name = uuid.uuid4().hex
         directory = STATE / 'transactions' / name
         # Ler registro e perfis antes do mkdir: recusa aqui não deixa transação vazia.
-        tx = {'status': 'pending', 'files': changed, 'previous_registry': registry(),
+        # D-026: cada remove entra em files com before, after nulo e backup; os forget-* só no relatório.
+        removals = [{'path': row['path'], 'action': 'remove', 'before': row['before'], 'after': None,
+                     'conflict': False, 'managed': True} for row in retired if row['action'] == 'remove']
+        tx = {'status': 'pending', 'files': changed + removals, 'previous_registry': registry(),
               'previous_latest': old_dir.name if old_dir else None,
               'previous_profiles': read_profiles_record(),
+              'forgotten': [row['path'] for row in retired if row['action'] != 'remove'],
               'created': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
         directory.mkdir(parents=True, mode=0o700)
         contents = desired_files()
-        for index, entry in enumerate(changed):
+        for index, entry in enumerate(tx['files']):
             entry['backup'] = str(index)
-            if entry['before']:
-                shutil.copy2(entry['path'], directory / str(index))
         atomic(directory / 'manifest.json', encode(tx))
         atomic(STATE / 'latest', name.encode())
         written = []
         try:
+            # Backups dentro do bloco protegido: uma cópia que falha cai no caminho de falha, sem transação vazia.
+            for entry in tx['files']:
+                if entry['before']:
+                    shutil.copy2(entry['path'], directory / entry['backup'])
+                    if entry['action'] == 'remove' and digest((directory / entry['backup']).read_bytes()) != entry['before']['sha256']:
+                        raise RuntimeError(f"backup divergente de {entry['path']}; nada foi removido")
             for entry in changed:
                 if snapshot(Path(entry['path'])) != entry['before']:
                     raise RuntimeError('alvo alterado durante a aplicação')
@@ -592,7 +623,14 @@ def apply_configuration():
                 written.append(entry)
                 entry['applied'] = snapshot(Path(entry['path']))
                 atomic(directory / 'manifest.json', encode(tx))
-            current = tx['previous_registry'] | {entry['path']: entry['after'] for entry in changed}
+            for entry in removals:
+                remove_checked(entry)
+                written.append(entry)
+                entry['applied'] = None
+                atomic(directory / 'manifest.json', encode(tx))
+            gone = {row['path'] for row in retired}
+            current = {key: value for key, value in tx['previous_registry'].items() if key not in gone} \
+                | {entry['path']: entry['after'] for entry in changed}
             atomic(STATE / 'current.json', encode(current))
             restore_profiles(os.environ['DEVSHELL_PROFILES'])
             tx['status'] = 'committed'
@@ -609,8 +647,9 @@ def apply_configuration():
             tx['status'] = 'failed-restored'
             atomic(directory / 'manifest.json', encode(tx))
             raise
-    result = {'operation': 'apply', 'transaction': name, 'changed': len(changed)}
-    if not changed:
+    result = {'operation': 'apply', 'transaction': name, 'changed': len(changed),
+              'removed': len(removals), 'forgotten': len(tx['forgotten'])}
+    if not changed and not retired:
         result['message'] = f"Configuração já corresponde ao plano; perfis {os.environ['DEVSHELL_PROFILES']} registrados nesta transação."
     report(result)
 
@@ -623,7 +662,9 @@ def rollback_plan():
     entries = []
     for entry in tx['files']:
         if entry['path'] not in allowed or not entry['backup'].isdigit():
-            raise ValueError('manifesto de rollback fora do escopo gerenciado')
+            # R-052: um dotfile retirado que saiu do checkout só volta à mão, a partir do backup.
+            raise ValueError(f"manifesto de rollback fora do escopo gerenciado: {entry['path']} não é mais alvo deste checkout; "
+                             f"o backup está em {directory / str(entry.get('backup', ''))}")
         before = snapshot(Path(entry['path']))
         after_hash = before['sha256'] if before else None
         matches_applied = before == entry['applied'] if 'applied' in entry else after_hash == entry['after']
@@ -705,7 +746,7 @@ def readable_manifest(directory):
 def transaction_entry(directory):
     """Classifica uma entrada de transactions/ sem seguir symlinks e sem lançar exceção."""
     entry = {'id': directory.name, 'status': 'invalida', 'files': None, 'created': None,
-             'previous_latest': None, 'reason': None, 'items': [], 'originals': []}
+             'previous_latest': None, 'reason': None, 'items': [], 'originals': [], 'retired': []}
     try:
         if not TRANSACTION_ID.fullmatch(directory.name):
             entry['reason'] = 'nome fora do padrão de 32 hexadecimais'
@@ -727,7 +768,10 @@ def transaction_entry(directory):
                           'created': manifest.get('created'), 'previous_latest': manifest.get('previous_latest'),
                           # Arquivo preexistente não gerenciado: o original só existe nesta transação.
                           'originals': sorted(item['path'] for item in manifest['files']
-                                              if isinstance(item, dict) and item.get('conflict') and item.get('before'))}
+                                              if isinstance(item, dict) and item.get('conflict') and item.get('before')),
+                          # Arquivo retirado (Bloco E): a transação é a única cópia dele.
+                          'retired': sorted(item['path'] for item in manifest['files']
+                                            if isinstance(item, dict) and item.get('action') == 'remove')}
     except (OSError, ValueError) as exc:
         entry['reason'] = str(exc)
     return entry
@@ -817,6 +861,8 @@ def prune_plan(keep):
             warnings.append(f"remove a primeira transação ({entry['id']}), que guarda os dotfiles de antes do primeiro apply")
         elif action == 'delete' and entry['originals']:
             warnings.append(f"remove a transação {entry['id']}, única cópia dos originais substituídos: {', '.join(entry['originals'])}")
+        if action == 'delete' and entry.get('retired'):
+            warnings.append(f"remove a transação {entry['id']}, única cópia dos arquivos retirados: {', '.join(entry['retired'])}")
         rows.append({'id': entry['id'], 'status': entry['status'], 'action': action, 'items': entry['items'],
                      'chain': chain.index(entry['id']) if entry['id'] in chain else None})
     rows.sort(key=lambda row: (row['chain'] is None, row['chain'] or 0, row['id']))

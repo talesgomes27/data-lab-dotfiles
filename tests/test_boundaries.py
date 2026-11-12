@@ -1373,6 +1373,179 @@ class OrphanRetirement(unittest.TestCase):
                     state.build_plan()
 
 
+    def apply_tracking_render(self):
+        os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+        with patch.object(state, 'chezmoi_render') as render:
+            state.apply_configuration()
+        return render
+
+    def registry_now(self):
+        return json.loads((state.STATE / 'current.json').read_text())
+
+    def latest_tx(self):
+        directory = state.STATE / 'transactions' / (state.STATE / 'latest').read_text()
+        return directory, json.loads((directory / 'manifest.json').read_text())
+
+    def test_r051_apply_removes_orphans_with_backup_and_keeps_directories(self):
+        content, mode = self.starship.read_bytes(), self.starship.stat().st_mode & 0o777
+        self.apply()
+        self.assertFalse(self.starship.exists())
+        self.assertFalse(self.nu.exists())
+        self.assertTrue(self.nu.parent.is_dir())
+        registry = self.registry_now()
+        self.assertNotIn(str(self.starship), registry)
+        self.assertNotIn(str(self.nu), registry)
+        directory, tx = self.latest_tx()
+        removed = {entry['path']: entry for entry in tx['files'] if entry.get('action') == 'remove'}
+        self.assertEqual(set(removed), {str(self.starship), str(self.nu)})
+        backup = directory / removed[str(self.starship)]['backup']
+        self.assertEqual(backup.read_bytes(), content)
+        self.assertEqual(removed[str(self.starship)]['before']['mode'], mode)
+        self.assertIsNone(removed[str(self.starship)]['after'])
+        self.assertIsNone(removed[str(self.starship)]['applied'])
+
+    def retire_only(self):
+        """Perfis já em minimal; um alvo do universo registrado e no disco, sem nada a escrever."""
+        self.apply()
+        self.starship.write_text('format = "x"\n')
+        self.starship.chmod(0o640)
+        registry = self.registry_now()
+        registry[str(self.starship)] = state.digest(self.starship.read_bytes())
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        self.assertFalse([entry for entry in state.build_plan()['files'] if entry['action'] == 'write'])
+
+    def test_r051_retire_only_plan_opens_transaction_without_chezmoi(self):
+        self.retire_only()
+        before_latest = (state.STATE / 'latest').read_text()
+        render = self.apply_tracking_render()
+        render.assert_not_called()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), before_latest)
+        self.assertFalse(self.starship.exists())
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['status'], 'committed')
+
+    def test_r051_forget_only_touches_no_file_and_rollback_restores_registry(self):
+        self.apply()
+        ghost = str(self.home / '.config/nushell/env.nu')
+        (self.root / 'dotfiles/dot_config/nushell/env.nu').write_text('# env\n')
+        registry = self.registry_now()
+        registry[ghost] = 'd' * 64
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        before = self.registry_now()
+        self.apply()
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['files'], [])
+        self.assertEqual(tx['forgotten'], [ghost])
+        self.assertNotIn(ghost, self.registry_now())
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(self.registry_now(), before)
+
+    def test_r051_file_changed_after_plan_invalidates_approval(self):
+        self.retire_only()
+        os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+        self.starship.write_text('editado depois do plano\n')
+        registry = self.registry_now()
+        with self.assertRaises(ValueError), patch.object(state, 'chezmoi_render'):
+            state.apply_configuration()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r051_failure_after_first_removal_restores_everything(self):
+        registry = self.registry_now()
+        real_remove = state.remove_checked
+        calls = []
+
+        def fail_second(entry):
+            calls.append(entry['path'])
+            if len(calls) == 2:
+                raise OSError('falha injetada na segunda remoção')
+            return real_remove(entry)
+        content = {path: path.read_bytes() for path in (self.starship, self.nu)}
+        with patch.object(state, 'remove_checked', side_effect=fail_second):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        for path, data in content.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertEqual(self.registry_now(), registry)
+        statuses = sorted(row['status'] for row in state.history()['transactions'])
+        self.assertIn('failed-restored', statuses)
+
+    def test_r051_bad_backup_removes_nothing(self):
+        self.retire_only()
+        registry = self.registry_now()
+        real_copy = state.shutil.copy2
+
+        def corrupt(source, target, *args, **kwargs):
+            result = real_copy(source, target, *args, **kwargs)
+            if str(source) == str(self.starship):
+                Path(target).write_text('backup corrompido\n')
+            return result
+        with patch.object(state.shutil, 'copy2', side_effect=corrupt):
+            with self.assertRaisesRegex(RuntimeError, 'backup'):
+                self.apply_tracking_render()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r051_parent_swapped_by_symlink_is_refused(self):
+        self.apply()
+        # Órfão em diretório próprio, para trocar só ele.
+        self.nu.write_text('# nu\n')
+        registry = self.registry_now()
+        registry[str(self.nu)] = state.digest(self.nu.read_bytes())
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        elsewhere = self.home / 'outro-lugar'
+        elsewhere.mkdir(mode=0o700)
+        (elsewhere / 'config.nu').write_text('# nu\n')
+        real_copy = state.shutil.copy2
+
+        def swap(source, target, *args, **kwargs):
+            result = real_copy(source, target, *args, **kwargs)
+            if str(source) == str(self.nu):
+                moved = self.home / 'nushell-original'
+                self.nu.parent.rename(moved)
+                self.nu.parent.symlink_to(elsewhere, target_is_directory=True)
+            return result
+        with patch.object(state.shutil, 'copy2', side_effect=swap):
+            with self.assertRaises((OSError, ValueError, RuntimeError)):
+                self.apply_tracking_render()
+        self.assertTrue((elsewhere / 'config.nu').exists())
+
+    def test_r052_rollback_restores_removed_files_and_registry(self):
+        registry = self.registry_now()
+        content, mode = self.starship.read_bytes(), self.starship.stat().st_mode & 0o777
+        self.apply()
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(self.starship.read_bytes(), content)
+        self.assertEqual(self.starship.stat().st_mode & 0o777, mode)
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r052_rollback_refuses_recreated_and_edited_path(self):
+        self.apply()
+        self.starship.write_text('recriado e editado\n')
+        with self.assertRaisesRegex(RuntimeError, 'editado'):
+            state.rollback_plan()
+
+    def test_r052_rollback_after_dotfile_left_checkout_points_to_backup(self):
+        self.apply()
+        directory, _ = self.latest_tx()
+        (self.root / 'dotfiles/dot_config/starship.toml').unlink()
+        with self.assertRaises(ValueError) as error:
+            state.rollback_plan()
+        self.assertIn(str(directory), str(error.exception))
+        self.assertIn(str(self.starship), str(error.exception))
+
+    def test_r052_prune_lists_and_warns_about_only_copy_of_retired_file(self):
+        self.apply()
+        retired_tx = (state.STATE / 'latest').read_text()
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        self.apply()
+        self.assertIn(retired_tx, [row['id'] for row in state.history()['transactions']])
+        plan = state.prune_plan(1)
+        self.assertTrue(any(retired_tx in warning and 'retirad' in warning for warning in plan['warnings']), plan['warnings'])
+
+
 state_path_issues = state.path_issues
 
 
