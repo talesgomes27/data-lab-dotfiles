@@ -676,11 +676,10 @@ def apply_configuration():
     report(result)
 
 
-def rollback_plan():
-    directory, tx = latest_transaction()
-    if not tx:
-        return {'operation': 'rollback', 'files': [], 'message': 'Nenhuma transação para restaurar.'}, directory, tx
-    allowed = desired_files(all_components=True)
+def check_transaction(directory, tx, current_of, top=True, allowed=None):
+    """Regra do rollback para uma transação, contra o estado real ou simulado (D-035)."""
+    allowed = desired_files(all_components=True) if allowed is None else allowed
+    interrupted = top and tx['status'] in ('pending', 'rolling-back')
     entries = []
     for entry in tx['files']:
         if not str(entry.get('backup', '')).isdigit():
@@ -689,19 +688,31 @@ def rollback_plan():
             # R-052: um dotfile que saiu do checkout só volta à mão, a partir do backup, se houver.
             where = f"o backup está em {directory / entry['backup']}" if entry.get('before') else 'não há backup (o arquivo não existia)'
             raise ValueError(f"manifesto de rollback fora do escopo gerenciado: {entry['path']} não é mais alvo deste checkout; {where}")
-        before = snapshot(Path(entry['path']))
+        before = current_of(entry['path'])
         after_hash = before['sha256'] if before else None
         matches_applied = before == entry['applied'] if 'applied' in entry else after_hash == entry['after']
-        if not matches_applied and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
-            raise RuntimeError(f"arquivo editado após aplicação: {entry['path']}; preserve/mescle manualmente")
+        if not matches_applied and not (interrupted and before == entry['before']):
+            applied = entry.get('applied')
+            if before and applied and before['sha256'] == applied['sha256']:
+                raise RuntimeError(f"arquivo editado (modo alterado) após aplicação: {entry['path']} (transação {directory.name}); "
+                                   f"volte com chmod {applied['mode']:o} ou preserve manualmente")
+            raise RuntimeError(f"arquivo editado após aplicação: {entry['path']} (transação {directory.name}); preserve/mescle manualmente")
         # Interrompida antes da cópia: o arquivo está como antes e o rollback não precisa do backup.
-        if entry['before'] and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
+        if entry['before'] and not (interrupted and before == entry['before']):
             backup = directory / entry['backup']
             saved = snapshot(backup)
             if not saved or saved['sha256'] != entry['before']['sha256']:
-                raise RuntimeError('backup ausente ou corrompido')
+                raise RuntimeError(f"backup ausente ou corrompido: {entry['path']} (transação {directory.name})")
         entries.append({'path': entry['path'], 'before': before, 'action': 'restore',
                         'after': entry['before']['sha256'] if entry['before'] else None})
+    return entries
+
+
+def rollback_plan():
+    directory, tx = latest_transaction()
+    if not tx:
+        return {'operation': 'rollback', 'files': [], 'message': 'Nenhuma transação para restaurar.'}, directory, tx
+    entries = check_transaction(directory, tx, lambda path: snapshot(Path(path)))
     data = {'operation': 'rollback', 'transaction': directory.name, 'files': entries}
     if 'previous_profiles' in tx:
         data['profiles_restore'] = tx['previous_profiles']
@@ -719,37 +730,129 @@ def rollback():
     with locked():
         if rollback_plan()[0]['approval'] != plan['approval']:
             raise RuntimeError('estado mudou antes do rollback')
-        restores_profiles = 'previous_profiles' in tx and isinstance(tx['previous_profiles'], (str, type(None)))
-        # Falha cedo: um registro de perfis inseguro não pode deixar a transação no meio do caminho.
-        # Sem previous_profiles o registro não é tocado, então não precisa bloquear.
-        if restores_profiles:
-            safe_path(profiles_record())
-        tx['status'] = 'rolling-back'
-        atomic(directory / 'manifest.json', encode(tx))
-        reviewed = {entry['path']: entry['before'] for entry in plan['files']}
-        for entry in reversed(tx['files']):
-            current = snapshot(Path(entry['path']))
-            if current != reviewed[entry['path']]:
-                raise RuntimeError(f"alvo alterado durante rollback: {entry['path']}")
-            if current != entry['before']:
-                restore_entry(directory, entry)
-        atomic(STATE / 'current.json', encode(tx['previous_registry']))
-        # D-004: a transação anterior pode ter sido podada; latest nunca aponta para ela.
-        previous = tx['previous_latest'] if isinstance(tx['previous_latest'], str) and TRANSACTION_ID.fullmatch(tx['previous_latest']) else None
-        warnings = []
-        if restores_profiles:
-            restore_profiles(tx['previous_profiles'])
-        else:
-            warnings.append('perfis anteriores desconhecidos; informe --profile no próximo setup')
-        if previous and readable_manifest(STATE / 'transactions' / previous):
-            atomic(STATE / 'latest', previous.encode())
-        else:
-            (STATE / 'latest').unlink()
-            if tx['previous_latest'] and (STATE / 'transactions' / str(tx['previous_latest'])).exists():
-                warnings.append(f"transação anterior {tx['previous_latest']} ilegível: latest removido; veja rollback --list")
-        tx['status'] = 'rolled-back'
-        atomic(directory / 'manifest.json', encode(tx))
+        warnings = undo_transaction(plan, directory, tx)
     report({'operation': 'rollback', 'restored': len(tx['files']), 'warnings': warnings})
+
+
+def undo_transaction(plan, directory, tx):
+    """D-038: desfaz uma transação já conferida; quem chama segura o lock e a aprovação."""
+    restores_profiles = 'previous_profiles' in tx and isinstance(tx['previous_profiles'], (str, type(None)))
+    # Falha cedo: um registro de perfis inseguro não pode deixar a transação no meio do caminho.
+    # Sem previous_profiles o registro não é tocado, então não precisa bloquear.
+    if restores_profiles:
+        safe_path(profiles_record())
+    tx['status'] = 'rolling-back'
+    atomic(directory / 'manifest.json', encode(tx))
+    reviewed = {entry['path']: entry['before'] for entry in plan['files']}
+    for entry in reversed(tx['files']):
+        current = snapshot(Path(entry['path']))
+        if current != reviewed[entry['path']]:
+            raise RuntimeError(f"alvo alterado durante rollback: {entry['path']}")
+        if current != entry['before']:
+            restore_entry(directory, entry)
+    atomic(STATE / 'current.json', encode(tx['previous_registry']))
+    # D-004: a transação anterior pode ter sido podada; latest nunca aponta para ela.
+    previous = tx['previous_latest'] if isinstance(tx['previous_latest'], str) and TRANSACTION_ID.fullmatch(tx['previous_latest']) else None
+    warnings = []
+    if restores_profiles:
+        restore_profiles(tx['previous_profiles'])
+    else:
+        warnings.append('perfis anteriores desconhecidos; informe --profile no próximo setup')
+    if previous and readable_manifest(STATE / 'transactions' / previous):
+        atomic(STATE / 'latest', previous.encode())
+    else:
+        (STATE / 'latest').unlink()
+        if tx['previous_latest'] and (STATE / 'transactions' / str(tx['previous_latest'])).exists():
+            warnings.append(f"transação anterior {tx['previous_latest']} ilegível: latest removido; veja rollback --list")
+    tx['status'] = 'rolled-back'
+    atomic(directory / 'manifest.json', encode(tx))
+    return warnings
+
+
+def chain_rollback_plan():
+    """R-070: a cadeia inteira, da atual até a primeira, conferida por simulação antes de qualquer gravação."""
+    entries = {entry['id']: entry for entry in transaction_entries()}
+    latest = latest_name()
+    if latest is None:
+        applied = sorted(name for name, entry in entries.items() if entry['status'] in ('committed', 'pending', 'rolling-back'))
+        if applied:
+            raise ValueError(f"latest ausente com transações aplicadas fora da cadeia ({', '.join(applied)}); "
+                             'revise rollback --list antes de continuar')
+        return {'operation': 'rollback-all', 'transactions': [], 'warnings': [], 'message': 'Nenhuma transação para desfazer.',
+                'approval': digest(b'rollback-all-vazio')}
+    allowed = desired_files(all_components=True)
+    simulated, chain, manifests, errors, warnings = {}, [], [], [], []
+
+    def current_of(path):
+        if path not in simulated:
+            simulated[path] = snapshot(Path(path))
+        return simulated[path]
+    name, oldest = latest, None
+    while name:
+        entry = entries.get(name)
+        if entry is None:
+            # Só um previous_latest que não existe mais é poda (D-009); o resto é cadeia inválida.
+            warnings.append(f'cadeia podada: a transação {name} não existe mais; os originais anteriores a ela não podem ser restaurados')
+            break
+        if entry['status'] == 'invalida':
+            errors.append(f"transação inválida na cadeia: {name} ({entry['reason']}); revise rollback --list")
+            break
+        directory = STATE / 'transactions' / name
+        tx = readable_manifest(directory)
+        top = not chain
+        if tx['status'] in ('pending', 'rolling-back') and not top:
+            errors.append(f"transação interrompida no meio da cadeia: {name} ({tx['status']}); revise rollback --list")
+            break
+        if tx['status'] in ('rolled-back', 'failed-restored'):
+            errors.append(f"transação {name} já está {tx['status']} dentro da cadeia; revise rollback --list")
+            break
+        try:
+            files = check_transaction(directory, tx, current_of, top=top, allowed=allowed)
+        except (RuntimeError, ValueError) as exc:
+            errors.append(str(exc))
+            break
+        for item in tx['files']:
+            simulated[item['path']] = item['before']
+        restore = tx['previous_profiles'] if 'previous_profiles' in tx else 'desconhecidos'
+        chain.append({'id': name, 'status': tx['status'], 'created': tx.get('created'), 'profiles_restore': restore,
+                      'files': [{'path': row['path'], 'to': 'backup' if row['after'] else 'remover'} for row in files]})
+        manifests.append(tx)
+        oldest = tx
+        name = tx.get('previous_latest')
+    if errors:
+        raise ValueError('rollback --all recusado antes de qualquer gravação: ' + ' | '.join(errors))
+    if warnings and oldest is not None:
+        kept = sorted(oldest.get('previous_registry', {}))
+        if kept:
+            warnings.append('continuam gerenciados depois da saída: ' + ', '.join(kept))
+        if oldest.get('previous_profiles'):
+            warnings.append(f"perfis que ficam lembrados: {oldest['previous_profiles']}")
+    data = {'operation': 'rollback-all', 'transactions': chain, 'warnings': warnings}
+    current = {path: simulated_path for path, simulated_path in sorted(
+        (path, snapshot(Path(path))) for tx in manifests for path in {item['path'] for item in tx['files']})}
+    data['approval'] = digest(encode(data) + encode(manifests) + encode(current))
+    return data
+
+
+def chain_rollback():
+    plan = chain_rollback_plan()
+    if not os.environ['DEVSHELL_APPROVAL']:
+        report(plan)
+        return
+    if os.environ['DEVSHELL_APPROVAL'] != plan['approval']:
+        raise ValueError('aprovação de rollback --all inválida; execute rollback --all sem aprovação primeiro')
+    warnings, done = [], 0
+    with locked():
+        if chain_rollback_plan()['approval'] != plan['approval']:
+            raise RuntimeError('estado mudou antes do rollback --all')
+        for row in plan['transactions']:
+            single, directory, tx = rollback_plan()
+            if directory is None or directory.name != row['id']:
+                raise RuntimeError(f"cadeia mudou durante o rollback --all: esperado {row['id']}")
+            warnings += undo_transaction(single, directory, tx)
+            done += 1
+    report({'operation': 'rollback-all', 'restored_transactions': done, 'warnings': warnings,
+            'message': 'Cadeia desfeita.' if done else 'Nenhuma transação para desfazer.'})
 
 
 TRANSACTION_ID = re.compile(r'[0-9a-f]{32}')
@@ -1112,6 +1215,8 @@ def main():
         mode = os.environ.get('DEVSHELL_ROLLBACK_MODE', '')
         if mode == 'list':
             report(history())
+        elif mode == 'all':
+            chain_rollback()
         elif mode == 'prune':
             prune(int(os.environ['DEVSHELL_KEEP']))
         else:
