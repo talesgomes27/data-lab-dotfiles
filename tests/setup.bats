@@ -205,6 +205,26 @@ BIN
     [ "$(/usr/bin/cat "$HOME/.zshenv")" = 'minha configuração' ]
 }
 
+@test 'R-053 setup só remove órfãos depois da palavra retirar e não pergunta sobre registrar perfis' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" plan --profile personal --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    "$SETUP_REPO/bin/devshell" apply --profile personal --approve "$hash" >/dev/null
+    starship="$XDG_CONFIG_HOME/starship.toml"
+    [ -f "$starship" ]
+    latest=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=<EOF>" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 1 ]
+    [ -f "$starship" ]
+    [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")" = "$latest" ]
+    [[ "$output" != *'Registrar os perfis'* ]]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=retirar" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'a remover'* && "$output" == *"remove: $starship"* ]]
+    [ ! -e "$starship" ]
+    run "$SETUP_REPO/bin/devshell" doctor --profile minimal
+    [[ "$output" != *'fora dos perfis'* ]]
+}
+
 teardown() {
     export PATH="${SETUP_ORIGINAL_PATH:-$PATH}"
 }

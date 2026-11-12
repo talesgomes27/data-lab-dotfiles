@@ -98,14 +98,31 @@ setup_environment() {
         setup_path
     done
     plan=$("$ROOT/bin/devshell" plan "${options[@]}" --json)
-    count=$(printf '%s' "$plan" | devshell_python -c 'import json,sys;print(sum(item["action"]=="write" for item in json.load(sys.stdin)["files"]))')
+    # R-053: órfãos contam como trabalho da etapa; com eles, "Registrar os perfis" nunca aparece.
+    read -r count removals forgets < <(printf '%s' "$plan" | devshell_python -c 'import json,sys
+d=json.load(sys.stdin);r=d.get("retire",[]);m=sum(x["action"]=="remove" for x in r)
+print(sum(x["action"]=="write" for x in d["files"])+len(r),m,len(r)-m)')
     if ((count)); then
         printf '%s\n' "$plan" | setup_show
         "$ROOT/bin/devshell" diff "${options[@]}"
-        setup_confirm "Aplicar os dotfiles apresentados, com backup, e lembrar os perfis $DEVSHELL_PROFILES?" || {
+        retire_note=''
+        ((removals + forgets == 0)) || retire_note=" ($removals arquivo(s) a remover, $forgets só saem do registro)"
+        setup_confirm "Aplicar os dotfiles apresentados, com backup, e lembrar os perfis $DEVSHELL_PROFILES?$retire_note" || {
             setup_cancel
             return 1
         }
+        if ((removals)); then
+            # Remover arquivos pede a própria palavra, como substituir (incidente do R-046).
+            printf 'Serão removidos %s arquivo(s) fora dos perfis, com backup. Para confirmar, digite retirar: ' "$removals" >&2
+            IFS= read -r answer || {
+                setup_cancel
+                return 1
+            }
+            [[ "$answer" == retirar ]] || {
+                setup_cancel
+                return 1
+            }
+        fi
         count=$(printf '%s' "$plan" | devshell_python -c 'import json,sys;print(sum(item["conflict"] for item in json.load(sys.stdin)["files"]))')
         if ((count)); then
             printf 'Há %s conflito(s). Para substituir os arquivos existentes com backup, digite substituir: ' "$count" >&2

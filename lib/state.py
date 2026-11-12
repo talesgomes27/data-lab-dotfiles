@@ -968,9 +968,14 @@ def version_issues():
 
 
 # D-019: pendências que o setup resolve; o resto é ação manual, inclusive o que não estiver nesta tabela.
-SETUP_RESOLVES = ('componente ausente: ', 'arquivo esperado ausente: ', 'arquivo esperado não corresponde ao perfil: ',
+SETUP_RESOLVES = ('componente ausente: ', 'arquivo gerenciado fora dos perfis: ', 'arquivo esperado ausente: ', 'arquivo esperado não corresponde ao perfil: ',
                   'arquivo gerenciado divergente: ', 'componente de usuário ausente: ', 'componente não executável: ',
                   'interpretador uv ausente: ', 'ferramenta uv ausente: ', 'ferramenta uv sem-link: ')
+
+
+def orphan_issues(plan):
+    """R-053: cada órfão é uma pendência que o setup resolve na etapa de aplicação."""
+    return [f"arquivo gerenciado fora dos perfis: {row['path']} ({row['action']})" for row in plan['retire']]
 
 
 def next_step(issues, profiles, source):
@@ -1053,6 +1058,7 @@ def main():
                 except (ValueError, OSError) as exc:
                     plan['issues'].append(f'extensão Zsh local insegura: {exc}')
             plan['issues'].extend(zsh_compiled_issues())
+            plan['issues'].extend(orphan_issues(plan))
             import artifacts
             plan['issues'].extend(artifacts.health_issues())
             if not plan['platform']['supported_arch']:

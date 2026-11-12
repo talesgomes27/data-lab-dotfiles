@@ -1546,6 +1546,38 @@ class OrphanRetirement(unittest.TestCase):
         self.assertTrue(any(retired_tx in warning and 'retirad' in warning for warning in plan['warnings']), plan['warnings'])
 
 
+    def test_r053_doctor_reports_orphans_as_setup_step(self):
+        plan = state.build_plan()
+        issues = state.orphan_issues(plan)
+        self.assertIn(f'arquivo gerenciado fora dos perfis: {self.starship} (remove)', issues)
+        step = state.next_step(issues, 'minimal', 'informados')
+        self.assertEqual(step['kind'], 'setup')
+
+    def test_r053_summary_never_marks_dotfiles_up_to_date_with_orphans(self):
+        import setup as guided
+        plan = state.build_plan()
+        forget_only = dict(plan, files=[dict(entry, action='unchanged', conflict=False) for entry in plan['files']],
+                           retire=[dict(row, action='forget-missing') for row in plan['retire']])
+        inspection = {'permissions': [], 'native_command': [], 'user_components': [], 'blockers': []}
+        with patch.object(guided, 'cli_json', return_value=(forget_only, '')), \
+                patch.object(guided.fs, 'read_own_regular', return_value='minimal\n'), \
+                patch.dict(os.environ, {'DEVSHELL_PROFILES': 'minimal'}):
+            summary = guided.summary(inspection)
+        dotfiles = next(step for step in summary['steps'] if step['step'] == 'dotfiles')
+        self.assertNotEqual(dotfiles['status'], 'em dia')
+        self.assertIn('só saem do registro', dotfiles['detail'])
+        self.assertFalse(summary['nothing_to_do'])
+
+    def test_r053_universe_orphans_enter_the_permission_review(self):
+        import setup as guided
+        with patch.object(guided.artifacts, 'BIN', self.home / '.local/bin'), \
+                patch.object(guided.artifacts, 'DATA', self.home / '.local/share'), \
+                patch.object(guided.artifacts, 'CACHE', self.home / '.cache/devshell'):
+            paths = guided.target_paths()
+        self.assertIn(self.nu, paths)
+        self.assertIn(self.starship, paths)
+
+
 state_path_issues = state.path_issues
 
 
