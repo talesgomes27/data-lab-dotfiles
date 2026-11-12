@@ -48,6 +48,9 @@ antes pelo motivo esperado:
 
 Local: Ruff 0.17.3 e 82 unittest passaram em HOME temporária. Bats, ShellCheck e
 shfmt ficam com o CI, porque esta sessão não tem essas ferramentas.
+O [workflow_dispatch 43211899097](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43211899097),
+no commit `f9a38d7`, aprovou os sete jobs: 226 Bats e 82 unittest sem skips,
+cinco imagens e smoke online.
 
 ## CPython gerenciado inseguro (D-020) — 2026-11-12
 
