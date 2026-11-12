@@ -62,7 +62,10 @@ o força para Node.js 24. O pin passou para a v7.0.1 nos três usos de
 
 O teste falhou com o pin antigo antes da troca.
 
-**Verificação.** CI: CI_PLACEHOLDER
+**Verificação.** O [workflow_dispatch 43283674548](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43283674548),
+no commit `34cb8c3`, aprovou os sete jobs, incluindo o checkout com
+`submodules: recursive`. Nenhum job teve anotação: o aviso de Node.js 20
+sumiu.
 
 ## Revisão assistida de manifestos (Bloco H) — 2026-11-12
 
