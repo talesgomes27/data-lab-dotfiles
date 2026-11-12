@@ -2,12 +2,12 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 5
+versao_spec: 7
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
 
-# Spec: histórico de transações, CI agendado, lock das ferramentas uv e setup simplificado
+# Spec: histórico de transações, CI agendado, lock das ferramentas uv, setup simplificado e retirada de órfãos
 
 ## Contexto
 
@@ -323,6 +323,130 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 - Estado: implementado
 - Evidência: tests/profiles.bats (2 testes R-046)
 
+**Retirada de arquivos órfãos (Bloco E)**
+
+Contexto: o registro `$XDG_STATE_HOME/devshell/current.json` só cresce. O
+`apply` grava `registro anterior | arquivos escritos` e nunca tira uma
+entrada. Quem troca `personal` por `minimal` fica com `nushell/config.nu`,
+`nushell/env.nu`, `starship.toml` e `direnv/lib/devshell-python.sh` no disco e
+no registro, sem aviso no `plan` nem no `doctor` (observado em 2026-11-12 numa
+HOME temporária). Um dotfile removido ou renomeado no repositório também fica,
+mas sai do universo: pela D-024 ele só deixa o registro (`forget-outside`) e a
+remoção do arquivo é manual. É o item 1 do [ROADMAP](ROADMAP.md), com o escopo reduzido pela
+D-022.
+
+Termos: **órfão** é uma entrada do registro cujo caminho não está em
+`desired_files()` dos perfis atuais. **Universo** é
+`desired_files(all_components=True)`: todos os alvos que alguma combinação de
+componentes deste checkout pode gerar, o mesmo conjunto que o rollback já usa
+como escopo.
+
+### R-050 Plano mostra os órfãos sem gravar
+- Enunciado: `plan`, `status`, `diff` e `doctor` listam os órfãos e o que o
+  próximo `apply` faria com cada um.
+- Critério: Dado um registro com caminhos fora dos perfis atuais, Quando
+  `plan` roda, Então cada órfão aparece com uma ação:
+  - `remove`: está no universo, é arquivo regular do usuário com link único,
+    em caminho seguro, e o SHA-256 atual é igual ao registrado;
+  - `forget-edited`: o conteúdo atual difere do registrado (D-023);
+  - `forget-missing`: o arquivo não existe mais;
+  - `forget-outside`: fora do universo, por exemplo dotfile removido do
+    repositório ou `XDG_CONFIG_HOME` trocado (D-024);
+  - `forget-unsafe`: no universo, mas inseguro: qualquer motivo de
+    `path_issues` (symlink no caminho ou em ancestral, outro dono, permissões,
+    caminho inválido), hardlink, tipo não regular ou `PermissionError` na
+    leitura.
+
+  A classificação segue esta ordem, e a primeira que vale decide:
+  `forget-outside` → `forget-unsafe` → `forget-missing` → `forget-edited` →
+  `remove`. O teste de universo compara o texto exato da chave com as chaves de
+  `desired_files(all_components=True)` antes de qualquer `stat` ou leitura, de
+  modo que um registro adulterado não faz a CLI tocar caminhos fora do
+  universo. Nenhum caso lança exceção. A lista entra no hash de aprovação com
+  caminho, ação, motivo e, nos `remove`, o snapshot completo; o JSON ganha o
+  campo `retire`. O `diff` em texto mostra cada `remove` como diff unificado
+  para vazio; conteúdo que não é UTF-8 aparece como "(conteúdo binário)".
+  Nenhum desses comandos grava nada (AGENTS.md).
+- Prioridade: alta
+- Estado: proposto
+
+### R-051 Apply retira na mesma transação
+- Enunciado: o `apply` aprovado remove os órfãos `remove` e tira do registro
+  todos os órfãos, dentro da transação que já existe.
+- Critério: Dado um plano aprovado com órfãos, Quando `apply --approve HASH`
+  roda, Então, sob o lock, a CLI replaneja e confere o hash. Para cada
+  `remove`, copia o arquivo para a transação e confere que o SHA-256 do backup
+  é igual ao do `before`. Depois abre o diretório pai sem seguir symlinks,
+  confere a identidade (`st_dev`, `st_ino`) do pai e do arquivo e o snapshot, e
+  remove com `dir_fd`. A entrada vai para a lista do caminho de falha logo
+  depois da remoção. O `current.json` final não tem nenhum órfão. Um plano só
+  com órfãos, sem arquivos a escrever, também abre uma transação; só com
+  `forget-*`, a transação tem `files: []`. Uma transação sem escrita não
+  executa o Chezmoi. Se algo falha no meio, os arquivos já removidos voltam do
+  backup e o registro anterior é restaurado, como numa escrita que falha. Diretórios que ficarem vazios não
+  são removidos (D-025). Arquivos `forget-*` nunca são tocados.
+- Prioridade: alta
+- Estado: proposto
+
+### R-052 Rollback devolve o que foi retirado
+- Enunciado: o `rollback` da transação recoloca os arquivos removidos e o
+  registro anterior.
+- Critério: Dado um `apply` que removeu órfãos, Quando `rollback` aprovado
+  roda, Então cada arquivo volta com o conteúdo, o modo e o dono do backup, e
+  `current.json` volta ao anterior, inclusive as entradas `forget-*`. Se o
+  caminho de um arquivo removido foi recriado e editado depois do `apply`, o
+  rollback recusa, como já faz com arquivo editado. Se o dotfile de um
+  `remove` saiu do repositório depois do `apply`, o rollback recusa a
+  transação (o caminho saiu do universo) com uma mensagem que aponta o backup
+  em `transactions/ID` para a recuperação manual. O rollback de uma transação
+  só com `forget-*` devolve as entradas ao registro. A poda (`rollback
+  --prune`) trata essas transações como as outras e avisa quando remove a única
+  cópia de um arquivo retirado.
+- Prioridade: alta
+- Estado: proposto
+
+### R-053 Doctor e setup tratam órfãos como pendência do setup
+- Enunciado: o `doctor` acusa os órfãos, e o `setup` os resolve na etapa de
+  aplicação.
+- Critério: Dado um registro com órfãos, Quando `doctor` roda, Então cada
+  órfão gera um diagnóstico `arquivo gerenciado fora dos perfis: CAMINHO
+  (AÇÃO)`, saída 3 e `next_step` `setup` (D-019). O resumo do `setup` conta os
+  órfãos na etapa de aplicação e nunca a marca `em dia` com órfãos, nem só com
+  `forget-*`. A etapa de aplicação considera os órfãos (R-042): um plano só com
+  órfãos pergunta "Aplicar os dotfiles…", e a pergunta "Registrar os perfis…"
+  nunca aparece nem aprova o hash quando `retire` não está vazio. A pergunta de
+  confirmação diz quantos arquivos serão removidos e quantos só saem do
+  registro. Os órfãos do universo entram na revisão de permissões do setup
+  (D-027). Depois do `setup`, o `doctor` não
+  acusa mais órfãos.
+- Prioridade: média
+- Estado: proposto
+
+### R-055 Registro válido
+- Enunciado: um `current.json` com formato inválido é recusado antes de
+  qualquer classificação.
+- Critério: Dado um `current.json` que não é objeto JSON, ou que tem chave que
+  não é caminho absoluto em texto, ou valor que não é SHA-256 (64 hexadecimais
+  minúsculos), Quando qualquer comando lê o registro, Então sai com 2 e uma
+  mensagem que aponta o arquivo, sem traceback e sem gravar nada.
+- Prioridade: alta
+- Estado: proposto
+
+### R-054 Documentação da retirada
+- Enunciado: README, USAGE, SECURITY e CHANGELOG explicam que trocar de perfil
+  retira os arquivos que ficaram de fora, o que é preservado e como desfazer.
+- Critério: Dado o diff final, Quando revisado, Então a USAGE tem um exemplo
+  executado de troca de perfil com retirada, a tabela de recuperação do
+  SECURITY inclui "arquivo retirado", com dois limites: o rollback recusa a
+  transação se o dotfile saiu do repositório, e a poda pode remover a única
+  cópia de um arquivo retirado. A SECURITY também lembra que, num perfil
+  aplicado com `--replace-existing`, o original do usuário está só na
+  transação daquele apply. A USAGE avisa que um `XDG_CONFIG_HOME` diferente
+  numa sessão faz os caminhos antigos virarem `forget-outside`. O CHANGELOG
+  marca a mudança de comportamento do `apply`.
+- Prioridade: média
+- Estado: proposto
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -348,6 +472,11 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 ### N-007 `git pull`, atualização do checkout ou verificação de versões nova pela CLI
 ### N-008 `--yes` ou aprovação automática no setup
 ### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta)
+
+### N-010 Manifesto de migrações declarativas (`manifests/migrations.json`): sem caso que o registro não cubra (D-022)
+### N-011 Migração automática das instalações pelo `uv tool` (a D-013 continua manual)
+### N-012 Remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte
+### N-013 Remoção de arquivo fora do universo ou editado, mesmo com `--replace-existing`
 
 ## Decisões
 
@@ -438,8 +567,8 @@ na transação, depois de `current.json`, e o manifesto guarda
 `previous_profiles` (texto ou `null`); o caminho de falha e o `rollback` o
 restauram (`null` remove o registro; manifesto antigo sem a chave deixa o
 registro como está e o rollback avisa "perfis anteriores desconhecidos; informe
---profile"). Num `apply` sem arquivos a alterar, o registro é gravado sob
-`locked()` por escrita atômica, sem transação. O registro nunca é um item de
+--profile"). Num `apply` sem arquivos a alterar e sem órfãos (Bloco E), o registro é
+gravado sob `locked()` por escrita atômica, sem transação. O registro nunca é um item de
 `transactions/ID`, o que preserva a poda e o `--list` do Bloco A.
 
 ### D-015 Precedência: informado, lembrado, `minimal`
@@ -544,6 +673,49 @@ flowchart LR
   PR --> H2[hash aprovado + lock]
   H2 --> X[remove só os ids do plano]
 ```
+
+### D-022 O registro é a fonte da retirada, sem manifesto de migrações
+O registro já diz o que a CLI escreveu e com que conteúdo. Arquivo renomeado no
+repositório equivale a "o antigo fica órfão e o novo é escrito". No histórico
+do repositório não houve migração de dotfile que precisasse de mais do que
+isso. A única migração real, a D-013, mexe num ambiente externo sem desfazer e
+continua manual. Um manifesto (N-010) só entra quando houver um caso concreto.
+Decidido pelo usuário em 2026-11-12.
+
+### D-023 Órfão editado é preservado e sai do registro
+Se o SHA-256 atual difere do registrado, o conteúdo é do usuário: o arquivo
+fica intacto, a entrada sai do registro e o plano avisa. Não há flag para
+removê-lo (N-013). Decidido pelo usuário em 2026-11-12.
+
+### D-024 Só o universo pode ser removido
+Remover só caminhos de `desired_files(all_components=True)` mantém a retirada
+dentro do escopo que o rollback já aceita (`rollback_plan` recusa caminhos fora
+dele). Um registro adulterado não consegue apontar a remoção para fora dos
+alvos que o checkout pode gerar. O que está fora, como um dotfile removido do
+repositório ou um `XDG_CONFIG_HOME` antigo, é preservado e sai do registro com
+aviso para remoção manual.
+
+### D-025 Diretórios ficam
+Diretórios vazios depois da retirada não são removidos, como já diz a tabela de
+recuperação do SECURITY ("diretórios criados podem permanecer vazios").
+Remover diretórios exigiria saber quais a CLI criou, o que o journal não
+registra.
+
+### D-026 Formato no journal
+Cada `remove` entra em `files` do manifesto da transação com `action:
+remove`, `before` (snapshot), `after: null`, `backup` e, depois da remoção,
+`applied: null`. Assim `restore_entry` e `rollback_plan` funcionam sem mudança
+de formato. As entradas `forget-*` vão para um campo `forgotten`, só para
+relatório; o registro anterior já fica em `previous_registry`. Manifestos
+antigos, sem esses campos, continuam aceitos.
+
+### D-027 Órfãos do universo na revisão de permissões do setup
+Um ancestral com escrita de grupo transformaria o órfão em `forget-unsafe`, e a
+entrada sairia do registro sem que o arquivo pudesse ser removido depois.
+Para evitar isso, `target_paths` inclui os órfãos que estão no universo. O
+setup oferece o reparo antes da etapa de aplicação, e o plano é recalculado
+depois. Fora do setup, `forget-unsafe` é definitivo: a entrada sai do registro
+e o arquivo fica para remoção manual. Achado P2 da revisão do plano.
 
 ## Restrições
 

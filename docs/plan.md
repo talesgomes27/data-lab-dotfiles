@@ -53,6 +53,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "resposta 'Opção 1. Após pode corrigir os P3' na conversa"
+  - item: desenho do Bloco E (spec v6, R-050 a R-054, D-022 a D-026, N-010 a N-013), com escopo "retirar órfãos" e órfão editado preservado
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -65,6 +69,10 @@ revisao_do_bloco_d:
   por: subagente plan-reviewer
   em: "2026-11-09"
   resultado: "não pronto; 5 P1, 8 P2 e 6 P3 incorporados (spec v5: R-040 e D-014 a D-019 detalhadas)"
+revisao_do_bloco_e:
+  por: subagente revisor de plano
+  em: "2026-11-12"
+  resultado: "pronto com ressalvas; 7 P2 e 9 P3 incorporados (spec v7: R-055 e D-027 novos, R-050 a R-054 detalhados, D-014 ajustada)"
 revisao_t900:
   por: subagente revisor independente
   em: "2026-11-12"
@@ -74,11 +82,11 @@ dispensas:
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: merge do PR #16 e da branch do T-900 pelo usuário; conferir a primeira execução agendada na main (2026-11-16)
+proximo_passo: aprovação do usuário do plano revisto do Bloco E (T-401 a T-406, T-490) antes do código
 pendencias: ["R-010: execução agendada na main"]
 ```
 
-# Plano: histórico de transações, CI agendado e lock das ferramentas uv
+# Plano: histórico de transações, CI agendado, lock das ferramentas uv, setup simplificado e retirada de órfãos
 
 Requisitos em [spec.md](spec.md); decisão do lock no
 [ADR 004](ADR/004-lock-ferramentas-uv.md). A ordem segue o pedido: itens 1 e 2,
@@ -437,6 +445,172 @@ individuais não mudam. Testes antes do código em cada tarefa.
 - Verificação: `bash scripts/check.sh`; leitura do diff; remota,
   `workflow_dispatch` na branch (smoke e containers), com autorização própria.
 
+## Bloco E: retirada de arquivos órfãos
+
+Item 1 do [ROADMAP](ROADMAP.md), com o escopo da D-022: o registro
+`current.json` é a fonte, sem manifesto de migrações. Testes antes do código em
+cada tarefa, vistos falhando pelo motivo esperado. Toda verificação local roda
+com HOME/XDG/cache temporários.
+
+Onde cada verificação roda: a sessão remota tem só `python3` e `uv`, sem Bats,
+ShellCheck, shfmt, Zsh ou Chezmoi. Ali, "visto falhando" vale para os unittest,
+com `chezmoi_render` substituído por patch. Os Bats novos (`retire.bats` e os
+casos de `setup.bats`) e o exemplo da USAGE, que precisa do Chezmoi, são
+vistos falhando e depois passando no `workflow_dispatch` da branch, ou
+localmente onde houver as ferramentas.
+
+### T-401 Testes da classificação dos órfãos
+- Requisitos: R-050, R-055
+- Objetivo: fixar as cinco ações, a validação do registro e a ausência de
+  escrita antes do código.
+- Arquivos: `tests/test_boundaries.py` (classe nova `OrphanRetirement`),
+  `tests/retire.bats` (novo)
+- Dependências: nenhuma
+- Critério de aceite:
+  - registro com um órfão por ação: `remove` (no universo, conteúdo igual ao
+    registrado), `forget-edited`, `forget-missing`, `forget-outside` (caminho
+    fora de `desired_files(all_components=True)`, inclusive fora da HOME) e
+    `forget-unsafe` (symlink no próprio caminho, symlink em ancestral, ancestral
+    com escrita de grupo, hardlink, diretório no lugar do arquivo, arquivo com
+    modo 000 e outro dono simulado com patch de `os.getuid`);
+  - precedência: um caso que se encaixa em duas ações fica com a primeira da
+    ordem de R-050;
+  - um órfão fora do universo que é FIFO ou caminho inexistente muito longo
+    vira `forget-outside` sem nenhum `stat` ou leitura (patch que falha se
+    chamado);
+  - `CONFIG/devshell/components`, que é sempre desejado, nunca é órfão;
+  - a lista `retire` muda o hash de aprovação: o mesmo plano com e sem órfão
+    tem hashes diferentes, e mudar a ação, o motivo ou o snapshot de um órfão
+    também muda o hash;
+  - `plan`, `status`, `diff` e `doctor` deixam a árvore de estado e a HOME
+    idênticas (comparação por caminho, modo e SHA-256);
+  - o `diff` em texto mostra o `remove` como diff unificado para vazio, e um
+    órfão não UTF-8 como "(conteúdo binário)";
+  - R-055: `current.json` lista, número, objeto com chave relativa, valor que
+    não é texto e hash curto saem com 2, sem traceback e sem gravar nada.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-402 Classificação no plano
+- Requisitos: R-050, R-055
+- Objetivo: D-023 e D-024.
+- Arquivos: `lib/state.py` (`registry`, `build_plan`, `report` e o `diff` em
+  `main()`)
+- Dependências: T-401
+- Critério de aceite: os casos de T-401 passam. A classificação usa
+  `snapshot` e `path_issues`, sem seguir symlinks, e não lança exceção por
+  órfão inseguro: o caso vira `forget-unsafe` com o motivo. O texto do `plan`
+  lista `remove:` e `forget:` com o motivo. Os testes existentes continuam
+  verdes sem ajuste de asserção.
+- Verificação: `python3 -m unittest`; os Bats ficam com o CI quando a sessão
+  não tiver Bats.
+
+### T-403 Testes do apply e do rollback com retirada
+- Requisitos: R-051, R-052
+- Objetivo: fixar a transação antes do código.
+- Arquivos: `tests/test_boundaries.py` (`OrphanRetirement`),
+  `tests/retire.bats`
+- Dependências: T-402
+- Critério de aceite:
+  - `apply` de `personal` para `minimal`: remove os quatro arquivos de
+    `nu`/`starship`/`direnv`, guarda backup com modo e dono, deixa
+    `current.json` sem órfãos e preserva os diretórios;
+  - um plano só com órfãos, sem nada a escrever, abre transação e não chama o
+    `chezmoi_render`;
+  - só `forget-*`: transação com `files: []`, nenhum arquivo tocado, entradas
+    fora do registro; o rollback dessa transação devolve as entradas;
+  - arquivo alterado entre o plano e o apply: hash vencido e nada muda;
+  - falha injetada depois da primeira remoção: o arquivo volta do backup, o
+    registro anterior volta e a transação não fica `committed`;
+  - backup com SHA-256 diferente do `before` (patch no `copy2`): nada é
+    removido e o registro não muda;
+  - diretório pai trocado por symlink entre a conferência e a remoção (patch):
+    a remoção é recusada pela identidade e o arquivo do outro lado fica;
+  - `rollback` aprovado recoloca conteúdo, modo e dono e restaura as entradas
+    `forget-*` no registro;
+  - caminho recriado e editado depois do apply: o rollback recusa;
+  - dotfile retirado do checkout depois do apply (patch em `desired_files`):
+    o rollback recusa com a mensagem que aponta o backup;
+  - `rollback --prune` e `rollback --list` aceitam a transação nova, e a poda
+    avisa quando remove a única cópia de um arquivo retirado;
+  - um manifesto antigo, sem `forgotten`, continua aceito.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-404 Apply e rollback
+- Requisitos: R-051, R-052
+- Objetivo: D-025 e D-026.
+- Arquivos: `lib/state.py` (`apply_configuration`, o caminho de falha e
+  `rollback_plan`, se precisar)
+- Dependências: T-403
+- Critério de aceite: os casos de T-403 passam. O caminho sem mudanças só é
+  usado quando não há escrita nem órfão (D-014 ajustada). A remoção acontece
+  sob o lock: backup conferido por SHA-256, diretório pai aberto sem seguir
+  symlinks e com identidade conferida, `unlink` com `dir_fd`, como em
+  `drop_group_write_tree`. O `remove` entra na lista do caminho de falha logo
+  depois do `unlink`. O registro final é `registro anterior − órfãos |
+  escritos`. Uma transação sem escrita não executa o Chezmoi.
+- Verificação: `python3 -m unittest`; leitura do diff contra a D-026.
+
+### T-405 Doctor e setup
+- Requisitos: R-053
+- Objetivo: incluir os órfãos no diagnóstico, no `next_step`, no resumo e na
+  etapa de aplicação do `setup`.
+- Arquivos: `tests/test_boundaries.py`, `tests/test_setup.py`,
+  `tests/setup.bats` (antes), `lib/state.py` (`doctor`, `SETUP_RESOLVES`),
+  `lib/setup.py` (`summary`, `target_paths`), `lib/setup.sh` (contagem e
+  pergunta da etapa de aplicação)
+- Dependências: T-404
+- Critério de aceite:
+  - testes falham antes do código;
+  - o `doctor` acusa `arquivo gerenciado fora dos perfis: CAMINHO (AÇÃO)`,
+    sai com 3 e o `next_step` é `setup`;
+  - o resumo conta os órfãos e não marca a etapa `em dia` com órfãos, nem só
+    com `forget-*`;
+  - com `retire` não vazio, a pergunta "Registrar os perfis…" nunca aparece
+    nem aprova o hash;
+  - D-027: um órfão do universo com ancestral de escrita de grupo aparece na
+    revisão de permissões; depois do reparo, vira `remove`;
+  - um plano só com órfãos pergunta na etapa de aplicação, com o texto
+    começando por "Aplicar os dotfiles" (os testes respondem por esse
+    prefixo) e informando quantos arquivos serão removidos e quantos só saem
+    do registro;
+  - depois do `setup`, o `doctor` não acusa órfãos;
+  - o invariante "setup com nada a fazer, doctor sem sugerir setup" continua
+    valendo.
+- Verificação: testes novos; `bash scripts/check.sh` onde houver as
+  ferramentas.
+
+### T-406 Documentação da retirada
+- Requisitos: R-054
+- Objetivo: README, USAGE, SECURITY, ARCHITECTURE, CHANGELOG e ROADMAP.
+- Arquivos: `README.md`, `docs/USAGE.md`, `docs/SECURITY.md`,
+  `docs/ARCHITECTURE.md`, `CHANGELOG.md`, `docs/ROADMAP.md`
+- Dependências: T-405
+- Critério de aceite:
+  - USAGE com exemplo executado em HOME temporária de troca de
+    `personal` para `minimal`, mostrando `remove:` e `forget:`;
+  - linha "Arquivo retirado" na tabela de recuperação do SECURITY, com os
+    limites do rollback (dotfile que saiu do repositório) e da poda (única
+    cópia), e a lembrança de que, com `--replace-existing`, o original do
+    usuário está só na transação daquele apply;
+  - USAGE avisa sobre `XDG_CONFIG_HOME` diferente numa sessão;
+  - ARCHITECTURE descreve o registro como fonte da retirada;
+  - CHANGELOG marca a mudança de comportamento do `apply`;
+  - no ROADMAP, o item 1 vira "concluído" e o escopo reduzido fica
+    registrado.
+- Verificação: links locais conferidos; `bin/devshell --help` sem mudança de
+  flags.
+
+### T-490 Encerramento do Bloco E
+- Requisitos: R-050, R-051, R-052, R-053, R-054, R-055
+- Objetivo: fechar o bloco com evidência, como o T-900.
+- Arquivos: `docs/spec.md` (estados e evidências), `docs/VALIDATION.md`
+- Dependências: T-406
+- Critério de aceite: `workflow_dispatch` na branch com os sete jobs verdes e
+  zero skips; revisão independente sem P0/P1 abertos; cada requisito com
+  evidência; seção datada na VALIDATION.
+- Verificação: comandos acima, registrados na VALIDATION. O merge é decidido
+  pelo usuário.
+
 ## Encerramento
 
 ### T-900 Verificação final e revisão independente
@@ -457,7 +631,7 @@ individuais não mudam. Testes antes do código em cada tarefa.
 | Consulta ao PyPI com cache temporário (geração dos locks e conferência das quatro plataformas) | T-202 | pypi.org, via `uv pip compile` e `uv pip install --dry-run` |
 | Commit na branch de trabalho | cada bloco | repositório local |
 | Push da branch e PR | cada bloco | `origin` (talesgomes27/data-lab-dotfiles) |
-| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206 | GitHub Actions do repositório |
+| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-490 | GitHub Actions do repositório |
 | Migração das suas instalações atuais (`uv tool uninstall` e nova instalação) | depois do merge do Bloco C | sua HOME; feita por você, não pela CLI |
 | Execução semanal após o merge, sem prazo, com os mesmos downloads e notificação de falha para quem editou o cron | T-101 | GitHub Actions; desativada após 60 dias sem atividade |
 
