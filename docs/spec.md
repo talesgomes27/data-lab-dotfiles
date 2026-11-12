@@ -3,7 +3,7 @@ projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
 versao_spec: 5
-atualizado_em: 2026-11-09
+atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
 
@@ -133,7 +133,7 @@ Fatos observados (2026-11-09):
   remota: a primeira execução agendada ou um disparo manual após o merge.
 - Prioridade: média
 - Estado: implementado
-- Evidência: tests/test_ci_workflow.py::WeeklyWorkflow (local); execução remota agendada pendente até o merge
+- Evidência: tests/test_ci_workflow.py::WeeklyWorkflow (local); a mesma cobertura passou por disparo manual no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822); a primeira execução agendada na `main` (segunda 2026-11-16, 09:17 UTC) segue pendente
 
 **Lock das ferramentas uv**
 
@@ -149,8 +149,8 @@ Fatos observados (2026-11-09):
   vazias, e guarda o marcador de ambiente (`; ...`) sem avaliá-lo. Sem
   `python-tools` nos componentes, nenhum lock é exigido.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/test_boundaries.py::PythonToolLocks.test_r020_reads_continuations_comments_markers_and_normalizes_names; tests/test_boundaries.py::PythonToolLocks.test_r020_refuses_invalid_or_mismatched_locks; manifests/python-tools/ruff.txt
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::PythonToolLocks.test_r020_reads_continuations_comments_markers_and_normalizes_names; tests/test_boundaries.py::PythonToolLocks.test_r020_refuses_invalid_or_mismatched_locks; manifests/python-tools/ruff.txt; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-021 Instalação com hash obrigatório
 - Enunciado: `install --component python` cria, para cada ferramenta, uma venv
@@ -168,8 +168,8 @@ Fatos observados (2026-11-09):
   intacta. Com `python-tools` nos componentes, `check()`, `setup` e `doctor`
   exigem o uv 0.13.5 ou superior.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/setup.bats::R-021 instalação preserva venv ativa de outro projeto e não chama uv tool; tests/setup.bats::R-021 repetir a instalação conforme não chama o uv para as ferramentas; tests/install.bats; fluxo com uv real pendente do smoke online
+- Estado: verificado
+- Evidência: tests/setup.bats::R-021 instalação preserva venv ativa de outro projeto e não chama uv tool; tests/setup.bats::R-021 repetir a instalação conforme não chama o uv para as ferramentas; tests/install.bats; fluxo com uv real no smoke online do [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-022 Hash divergente ou dependência fora do lock recusados
 - Enunciado: a instalação falha sem deixar ferramenta parcial quando um hash
@@ -182,8 +182,8 @@ Fatos observados (2026-11-09):
   do uv com wheels reais offline (T-201) e o da CLI com uv simulado (T-205); o
   fluxo da CLI com uv real só roda com rede, no smoke (R-024).
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/uv_constraints.bats (uv real, offline); tests/setup.bats::R-022 falha do uv pip install remove só a venv criada e sai com 2 (uv simulado); tests/setup.bats::R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores
+- Estado: verificado
+- Evidência: tests/uv_constraints.bats (uv real, offline); tests/setup.bats::R-022 falha do uv pip install remove só a venv criada e sai com 2 (uv simulado); tests/setup.bats::R-022 falha na terceira ferramenta lista as concluídas e mantém as anteriores; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-023 Doctor confere a ferramenta contra o lock
 - Enunciado: `doctor` confere a venv, o interpretador, as distribuições
@@ -197,8 +197,8 @@ Fatos observados (2026-11-09):
   marcador sem distribuição instalada não geram alerta. O hash do executável e
   dos módulos essenciais continua conferido pelo RECORD.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/setup.bats (oito testes R-023 do doctor, inclusive link para fora da venv e interpretador fora do CPython gerenciado)
+- Estado: verificado
+- Evidência: tests/setup.bats (oito testes R-023 do doctor, inclusive link para fora da venv e interpretador fora do CPython gerenciado); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-024 Smoke online com lock
 - Enunciado: o smoke online instala as ferramentas pelo fluxo com hash.
@@ -220,8 +220,8 @@ Fatos observados (2026-11-09):
   --dry-run` e antes de qualquer comando administrativo do `setup`. Outras
   ferramentas do `uv tool` continuam intactas e a CLI não chama `uv tool`.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/setup.bats::R-025 instalação do uv tool bloqueia setup e install sem alterar nada; tests/setup.bats::R-025 dry-run mostra conflito do uv tool mesmo com reparo de permissão pendente; tests/setup.bats::R-025 setup science repara permissão de grupo antes de avaliar as ferramentas; tests/test_boundaries.py::PythonToolLocks.test_r025_states_absent_orphan_link_conflict_and_divergent
+- Estado: verificado
+- Evidência: tests/setup.bats::R-025 instalação do uv tool bloqueia setup e install sem alterar nada; tests/setup.bats::R-025 dry-run mostra conflito do uv tool mesmo com reparo de permissão pendente; tests/setup.bats::R-025 setup science repara permissão de grupo antes de avaliar as ferramentas; tests/test_boundaries.py::PythonToolLocks.test_r025_states_absent_orphan_link_conflict_and_divergent; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 **Setup simplificado (Bloco D)**
 
@@ -249,8 +249,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   devshell` e `rollback` não dependem do registro; com `--profile` informado,
   um registro inválido só gera aviso.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/profiles.bats (14 testes R-040); tests/test_boundaries.py::RememberedProfiles
+- Estado: verificado
+- Evidência: tests/profiles.bats (14 testes R-040); tests/test_boundaries.py::RememberedProfiles (inclui test_r040_unsafe_record_refuses_apply_without_creating_transaction); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-041 Resumo do setup antes da primeira confirmação
 - Enunciado: o `setup` mostra, antes de qualquer pergunta, o que vai fazer.
@@ -261,8 +261,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   "nada a fazer" e o setup termina com 0 sem perguntas. `setup --dry-run --json`
   traz o mesmo resumo num campo `summary`.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/setup.bats (três testes R-041 do resumo)
+- Estado: verificado
+- Evidência: tests/setup.bats (três testes R-041 do resumo); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-042 Componente sem nada a fazer não pede confirmação
 - Enunciado: o `setup` só pergunta pelos componentes cujo plano prevê escrita.
@@ -271,8 +271,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   `conforme`), Quando `setup` roda, Então não há pergunta nem chamada de
   instalação para ele, e o resumo o lista como "em dia".
 - Prioridade: média
-- Estado: implementado
-- Evidência: tests/setup.bats (testes R-042 de pending e da atualização do projeto)
+- Estado: verificado
+- Evidência: tests/setup.bats (testes R-042 de pending e da atualização do projeto); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-043 Correção segura dos modos das venvs do Data Lab
 - Enunciado: o `setup` oferece tirar a escrita de grupo e outros dos arquivos
@@ -284,8 +284,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   não aponta a ferramenta. Fora de `devshell/tools`, nada muda. A remoção da
   escrita feita na instalação (Bloco C) também passa a ser por descritor.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/setup.bats (três testes R-043); tests/test_setup.py::PermissionReview.test_r043_venv_mode_items_ignore_symlinks_and_refuse_swaps
+- Estado: verificado
+- Evidência: tests/setup.bats (três testes R-043); tests/test_setup.py::PermissionReview.test_r043_venv_mode_items_ignore_symlinks_and_refuse_swaps; suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-044 Doctor indica o próximo passo
 - Enunciado: com pendências, o `doctor` termina com o comando a rodar.
@@ -297,8 +297,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   tool`, extensão Zsh insegura, arquivo `.zwc`), o próximo passo é a ação
   manual da mensagem; sem pendências, `next_step` é `null`.
 - Prioridade: alta
-- Estado: implementado
-- Evidência: tests/test_boundaries.py::DoctorNextStep; tests/setup.bats (dois testes R-044)
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::DoctorNextStep; tests/setup.bats (dois testes R-044); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-045 Documentação do caminho comum
 - Enunciado: README e INSTALLATION abrem com o caminho comum de instalar e
@@ -308,8 +308,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   executada em HOME temporária, e a seção avançada mantém plan/apply/install/
   rollback com hash; CHANGELOG avisa da mudança do perfil padrão.
 - Prioridade: média
-- Estado: implementado
-- Evidência: README.md (Atualizar); docs/INSTALLATION.md (Atualizar configuração e versões); CHANGELOG.md
+- Estado: verificado
+- Evidência: README.md (Atualizar); docs/INSTALLATION.md (Atualizar configuração e versões); CHANGELOG.md; revisão de documentação do T-900 (docs/VALIDATION.md)
 
 **Documentação**
 
@@ -322,8 +322,8 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
   do SECURITY inclui a poda, CONTRIBUTING traz o comando de regeneração do lock
   e o ADR 004 registra D-007/D-008.
 - Prioridade: média
-- Estado: aprovado
-- Evidência: (preenchida na entrega)
+- Estado: verificado
+- Evidência: bin/devshell --help (--list, --prune --keep); docs/USAGE.md (rollback --list, --prune --keep, next_step), exemplos executados em HOME temporária sem criar estado; docs/SECURITY.md (Histórico e poda de backups, tabela de recuperação); CONTRIBUTING.md (regeneração do lock); docs/ADR/004-lock-ferramentas-uv.md (D-007, D-008)
 
 ## Fora do escopo
 
