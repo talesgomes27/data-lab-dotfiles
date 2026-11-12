@@ -555,7 +555,8 @@ completa fica para depois (N-016).
   `DATA/devshell/uninstalling/` aparecem no plano e entram no hash; restos
   inesperados ali são `manual`.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall (componentes excluídos e desconhecidos, plano sem gravar, hash, aviso dos perfis lembrados e dos caminhos personalizados, restos em uninstalling/); tests/uninstall.bats; StateOwnership cobre o uninstall (R-047); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
 
 ### R-061 Só sai o que a CLI prova que é dela
 - Enunciado: cada componente tem uma regra de prova, e sem ela nada é
@@ -591,7 +592,8 @@ completa fica para depois (N-016).
   `rmdir`, quando ficam vazios e estão dentro de `devshell/plugins/NOME`,
   `fonts/FiraCodeNerdFont` ou da venv.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r061_* (devshell, pyinit, plugins com recibo, cache ou nenhum, symlink e hardlink, inventário da venv e casos de borda, link que fica com a venv, resto sem prova, cache corrompido e recibo de outra versão); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
 
 ### R-062 Recibo de instalação para plugins, fonte e pyinit
 - Enunciado: o `install` desses componentes grava o que escreveu.
@@ -609,7 +611,8 @@ completa fica para depois (N-016).
   ganham recibo com um `install --approve` manual; o `setup` não o roda sem
   mudanças (R-042).
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r062_* (recibo privado com todos os arquivos, regravado quando falta, ausente em install que falha e quando o fc-cache falha, recibo que foge do destino ignorado); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
 
 ### R-063 Remoção aprovada, sem backup
 - Enunciado: com `--approve HASH`, a CLI remove os itens `remove` e nada
@@ -627,7 +630,8 @@ completa fica para depois (N-016).
   --component X`. Uma interrupção deixa só itens inteiros, mais algum resto em
   `uninstalling/`, que o plano seguinte mostra e o apply aprovado limpa.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r063_* (plugins com diretórios de baixo para cima, arquivo do usuário que fica, hash vencido, falha no meio, fonte e fc-cache, lançador, venv por uninstalling/ mantendo o CPython, venv que volta ao lugar, limpeza de restos, rmtree sem proteção); tests/uninstall.bats; suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
 
 ### R-064 Fora do setup e do rollback
 - Enunciado: a desinstalação é sempre um comando explícito.
@@ -635,7 +639,8 @@ completa fica para depois (N-016).
   desinstalação; `uninstall --dry-run` é igual ao plano. Não existe
   `--component all`, nem desinstalação de vários componentes num só hash.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: bin/devshell (sem --component all, recusa de --profile e --replace-existing, --dry-run igual ao plano); tests/uninstall.bats; o setup e o rollback não chamam o uninstall (lib/setup.sh, lib/state.py)
 
 ### R-065 Documentação da desinstalação
 - Enunciado: USAGE, SECURITY e CHANGELOG explicam o comando, o que fica e
@@ -645,7 +650,8 @@ completa fica para depois (N-016).
   (reinstalar); a ajuda do `devshell` lista o comando; o CHANGELOG marca o
   comando novo e o recibo.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: docs/USAGE.md (Desinstalar um componente, com saída executada); docs/SECURITY.md (seção e duas linhas na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
 
 **Documentação**
 
