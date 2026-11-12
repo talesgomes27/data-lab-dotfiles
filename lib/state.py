@@ -206,6 +206,45 @@ def remembered_profiles_check():
                          f"{', '.join(removed)}; rode ./bin/devshell setup --profile PERFIS uma vez, com os perfis que você aplicou")
 
 
+def universe_pairs():
+    """D-029: cada alvo possível como (raiz, caminho relativo); HOME para os arquivos da HOME, CONFIG para o resto."""
+    pairs = []
+    for target in desired_files(all_components=True):
+        path = Path(target)
+        if path.parent == HOME and not path.is_relative_to(CONFIG):
+            pairs.append((str(HOME), path.name))
+        else:
+            pairs.append((str(CONFIG), str(path.relative_to(CONFIG))))
+    return pairs
+
+
+def foreign_roots(recorded):
+    """Raízes de outra HOME ou de outro XDG_CONFIG_HOME no registro, pelo texto exato das chaves, sem stat."""
+    universe, pairs = set(desired_files(all_components=True)), universe_pairs()
+    roots = set()
+    for key in recorded:
+        if key in universe:
+            continue
+        for root, relative in pairs:
+            if key.endswith('/' + relative) and key[:-len(relative) - 1] != root:
+                roots.add(key[:-len(relative) - 1] or '/')
+    return sorted(roots)
+
+
+def state_check():
+    """R-047: o estado não pode ser usado por outra HOME ou outro XDG_CONFIG_HOME; nada é gravado."""
+    for path in (HOME, CONFIG, STATE):
+        if '..' in path.parts:
+            raise ValueError(f'caminho inseguro: {path}')
+    recorded = registry()
+    if not isinstance(recorded, dict) or not all(isinstance(key, str) for key in recorded):
+        raise ValueError(f'registro inválido: {STATE / "current.json"}')
+    roots = foreign_roots(recorded)
+    if roots:
+        raise ValueError(f'o estado em {STATE} pertence a outra configuração (registra arquivos em {", ".join(roots)}); '
+                         'rode com a mesma HOME e o mesmo XDG_CONFIG_HOME desse estado, ou use um XDG_STATE_HOME próprio')
+
+
 def registry():
     safe_path(STATE / 'current.json')
     path = STATE / 'current.json'
@@ -838,6 +877,9 @@ def main():
     if command == 'profiles-source':
         source, profiles = profiles_source(os.environ.get('DEVSHELL_PROFILE_INFORMED') or None)
         print(source, profiles)
+        return 0
+    if command == 'state-check':
+        state_check()
         return 0
     if command == 'profiles-check':
         remembered_profiles_check()

@@ -218,3 +218,22 @@ assert d["next_step"]["kind"]=="manual",d["next_step"]'
     [ "$status" -eq 0 ]
     [ "$(printf '%s' "$output" | field)" = 'personal lembrados' ]
 }
+
+@test 'R-047 estado de outra configuração é recusado antes de qualquer plano' {
+    apply_profile personal
+    # Estado anterior ao Bloco D: sem registro de perfis (incidente de 2026-11-12).
+    rm "$(record)"
+    other="$BATS_TEST_TMPDIR/outra-config"
+    XDG_STATE_HOME="$BATS_TEST_TMPDIR/outro-estado" XDG_CONFIG_HOME="$other" apply_profile minimal
+    before=$(state_digest)
+    for command in plan doctor status 'setup --dry-run' rollback 'plan --profile minimal'; do
+        # shellcheck disable=SC2086 # O subcomando com opção é dividido de propósito.
+        run env XDG_CONFIG_HOME="$other" "$FOUNDRY_ROOT/bin/devshell" $command
+        [ "$status" -eq 2 ]
+        [[ "$output" == *'outra configuração'* && "$output" == *"$XDG_STATE_HOME/devshell"* ]]
+    done
+    [ ! -e "$(record)" ]
+    [ "$(state_digest)" = "$before" ]
+    run env XDG_CONFIG_HOME="$other" "$FOUNDRY_ROOT/bin/devshell" rollback --list
+    [ "$status" -eq 0 ]
+}

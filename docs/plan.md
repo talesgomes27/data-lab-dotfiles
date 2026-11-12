@@ -57,6 +57,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
+  - item: Bloco E0 (R-047, R-048; T-351 a T-354) e plano revisto do Bloco E (T-401 a T-406, T-490); E0 primeiro, autorização só para cada merge
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "resposta 'Aprovar E0 e E' na conversa"
 revisao_do_plano:
   por: subagente plan-reviewer
   em: "2026-11-09"
@@ -86,7 +90,7 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: aprovação do usuário do Bloco E0 (R-047, R-048; T-351 a T-354) e do plano revisto do Bloco E, antes do código; implementar E0 primeiro
+proximo_passo: implementar o Bloco E0 (T-351 a T-354), depois o Bloco E (T-401 a T-406, T-490)
 pendencias: ["R-010: execução agendada na main"]
 ```
 

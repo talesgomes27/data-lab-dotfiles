@@ -958,3 +958,140 @@ class StaticChezmoiSource(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StateOwnership(unittest.TestCase):
+    """R-047: estado que registra alvos de outra HOME ou de outro XDG_CONFIG_HOME é recusado (incidente do R-046)."""
+
+    FULL = 'personal,science,extras'
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.home = self.base / 'H'
+        self.other = self.base / 'T'
+        for path in (self.home, self.other):
+            path.mkdir(mode=0o700)
+        self.state = self.home / '.local/state/devshell'
+
+    def env(self, **extra):
+        env = {'PATH': '/usr/bin:/bin', 'HOME': str(self.home), 'LANG': 'C.UTF-8'}
+        env.update({key: str(value) for key, value in extra.items()})
+        return env
+
+    def populate(self, profile, config):
+        """Escreve os alvos do perfil em config (sem Chezmoi) e devolve o registro correspondente."""
+        script = ('fail(){ echo "$1" >&2; exit 2; }; ROOT=$DEVSHELL_ROOT; source "$ROOT/lib/profiles.sh"; '
+                  'resolve_profiles "$1"; DEVSHELL_PROFILES=$1 /usr/bin/python3 -I -c "$2" "$3"')
+        code = ('import json,sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); import state\n'
+                'reg = {}\n'
+                'for target, content in state.desired_files().items():\n'
+                '    path = Path(target); path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)\n'
+                '    path.write_bytes(content); path.chmod(0o600); reg[target] = state.digest(content)\n'
+                'print(json.dumps(reg))')
+        import subprocess
+        result = subprocess.run(['bash', '-c', script, 'x', profile, code + '\n', str(ROOT / 'lib')], check=True,
+                                capture_output=True, text=True, env=self.env(DEVSHELL_ROOT=ROOT, XDG_CONFIG_HOME=config))
+        return json.loads(result.stdout)
+
+    def apply_real(self, profile=FULL):
+        registry = self.populate(profile, self.home / '.config')
+        self.state.mkdir(parents=True, mode=0o700)
+        for path in (self.home / '.local', self.home / '.local/state'):
+            path.chmod(0o700)
+        (self.state / 'current.json').write_text(json.dumps(registry))
+        return registry
+
+    def devshell(self, *arguments, **extra):
+        import subprocess
+        return subprocess.run([str(ROOT / 'bin/devshell'), *arguments], check=False, capture_output=True, text=True,
+                              env=self.env(**extra), cwd=self.base)
+
+    def tree(self):
+        return sorted((str(p.relative_to(self.base)), p.stat().st_mode, p.read_bytes() if p.is_file() else b'')
+                      for p in self.base.rglob('*') if not p.is_symlink())
+
+    def assert_foreign(self, result):
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(str(self.state), result.stderr)
+        self.assertIn('outra configuração', result.stderr)
+
+    def test_r047_incident_reproduction_is_refused_without_writing(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        before = self.tree()
+        plan = self.devshell('plan', '--json', XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(plan)
+        self.assertIn(str(self.home / '.config'), plan.stderr)
+        apply = self.devshell('apply', '--approve', 'a' * 64, XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(apply)
+        self.assertFalse((self.state / 'profiles').exists())
+        self.assertEqual(self.tree(), before)
+
+    def test_r047_every_state_command_is_refused_with_or_without_profile(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        before = self.tree()
+        commands = [['plan'], ['status'], ['diff'], ['doctor'], ['update'], ['apply', '--approve', 'a' * 64],
+                    ['setup', '--dry-run'], ['install', '--component', 'python', '--dry-run'],
+                    ['install', '--component', 'devshell', '--dry-run'], ['rollback'], ['rollback', '--prune', '--keep', '1']]
+        for command in commands:
+            for profile in ([], ['--profile', 'minimal']):
+                if command[0] == 'rollback' and profile:
+                    continue
+                with self.subTest(command=command, profile=profile):
+                    self.assert_foreign(self.devshell(*command, *profile, XDG_CONFIG_HOME=self.other))
+        self.assertEqual(self.tree(), before)
+
+    def test_r047_other_home_with_same_state_is_refused(self):
+        self.apply_real()
+        other_home = self.base / 'H2'
+        other_home.mkdir(mode=0o700)
+        result = self.devshell('plan', HOME=other_home, XDG_STATE_HOME=self.home / '.local/state')
+        self.assert_foreign(result)
+
+    def test_r047_registry_without_components_or_mixing_roots_is_refused(self):
+        registry = self.apply_real()
+        components = str(self.home / '.config/devshell/components')
+        del registry[components]
+        (self.state / 'current.json').write_text(json.dumps(registry))
+        self.assert_foreign(self.devshell('plan', '--profile', 'minimal', XDG_CONFIG_HOME=self.other))
+        mixed = registry | self.populate('minimal', self.other)
+        (self.state / 'current.json').write_text(json.dumps(mixed))
+        self.assert_foreign(self.devshell('plan', '--profile', 'minimal', XDG_CONFIG_HOME=self.other))
+
+    def test_r047_foreign_message_comes_before_the_profile_hint(self):
+        self.apply_real()
+        self.populate('personal', self.other)
+        result = self.devshell('plan', XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(result)
+        self.assertNotIn('nenhum perfil lembrado', result.stderr)
+
+    def test_r047_legitimate_states_are_not_blocked(self):
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        registry = self.apply_real('minimal')
+        (self.state / 'profiles').write_text('minimal\n')
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        self.assertEqual(self.devshell('plan', '--json', XDG_CONFIG_HOME=str(self.home / '.config') + '/').returncode, 0)
+        # Dotfile que saiu do checkout não corresponde a nenhum alvo: não é outra configuração.
+        removed = registry | {str(self.home / '.config/ferramenta-antiga/config.toml'): 'b' * 64}
+        (self.state / 'current.json').write_text(json.dumps(removed))
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        (self.state / 'current.json').write_text('{}')
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+
+    def test_r047_rollback_list_and_project_are_exempt(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        listing = self.devshell('rollback', '--list', XDG_CONFIG_HOME=self.other)
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        project = self.devshell('project', 'doctor', '--path', str(self.base), XDG_CONFIG_HOME=self.other)
+        self.assertNotIn('outra configuração', project.stderr)
+
+    def test_r047_dot_dot_in_xdg_is_unsafe_not_foreign(self):
+        self.apply_real()
+        result = self.devshell('plan', XDG_CONFIG_HOME=self.home / 'x/../.config')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('caminho inseguro', result.stderr)
+        self.assertNotIn('outra configuração', result.stderr)
