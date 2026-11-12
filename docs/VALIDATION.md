@@ -33,6 +33,40 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Pin do actions/checkout em v7.0.1 — 2026-11-12
+
+O CI avisava que `actions/checkout` v4.2.2 declara Node.js 20, e que o runner
+o força para Node.js 24. O pin passou para a v7.0.1 nos três usos de
+`ci.yml`.
+
+**Revisão na fonte oficial.**
+- `git ls-remote` em `https://github.com/actions/checkout`: a tag `v7.0.1`
+  aponta para o commit `3d3c42e5aac5ba805825da76410c181273ba90b1`, de
+  2026-07-17, com mais de 7 dias.
+- O `action.yml` desse commit declara `runs.using: node24`; o do pin antigo
+  (`11bd719`, v4.2.2) declarava `node20`.
+- **Mudanças entre v4 e v7, conferidas no CHANGELOG e no README do
+  commit:**
+  - v5: Node.js 24;
+  - v6: as credenciais vão para um arquivo em `$RUNNER_TEMP`, e não mais para
+    o `.git/config`;
+  - v7: recusa checkout de PR de fork em `pull_request_target`/`workflow_run`,
+    e o código migrou para ESM.
+  - Nada disso muda o workflow: ele usa só `submodules: recursive`,
+    `contents: read` e os gatilhos `push`, `pull_request`, `workflow_dispatch`
+    e `schedule`.
+
+**Teste.** `tests/test_ci_workflow.py` passa a exigir:
+- toda action fixada por SHA de 40 caracteres, com o comentário da versão;
+- o checkout no SHA revisado.
+
+O teste falhou com o pin antigo antes da troca.
+
+**Verificação.** O [workflow_dispatch 43283674548](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43283674548),
+no commit `34cb8c3`, aprovou os sete jobs, incluindo o checkout com
+`submodules: recursive`. Nenhum job teve anotação: o aviso de Node.js 20
+sumiu.
+
 ## Revisão assistida de manifestos (Bloco H) — 2026-11-12
 
 Item 3 do ROADMAP: `scripts/review-manifests.py`, ferramenta de mantenedor
@@ -371,7 +405,8 @@ openSUSE Leap 16 (execução 42665398454).
   ferramenta da pre-code-pipeline, fora do repositório e indisponível nesta
   sessão.
 - **Aviso do CI:** `actions/checkout` v4.2.2 ainda declara Node.js 20, que o
-  runner força para Node.js 24. Atualizar o pin é revisão própria.
+  runner força para Node.js 24. Resolvido depois com o pin na v7.0.1
+  ([seção](#pin-do-actionscheckout-em-v701--2026-11-12)).
 
 ## Aliases eza no openSUSE — 2026-11-09
 
