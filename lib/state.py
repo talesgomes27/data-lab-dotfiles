@@ -257,10 +257,62 @@ def state_check():
                          'rode com a mesma HOME e o mesmo XDG_CONFIG_HOME desse estado, ou use um XDG_STATE_HOME próprio')
 
 
+SHA256 = re.compile(r'[0-9a-f]{64}')
+
+
+def valid_registry(data):
+    """R-055: objeto com caminhos absolutos em texto e SHA-256 em hexadecimal minúsculo."""
+    return isinstance(data, dict) and all(
+        isinstance(key, str) and key.startswith('/') and isinstance(value, str) and SHA256.fullmatch(value)
+        for key, value in data.items())
+
+
 def registry():
     safe_path(STATE / 'current.json')
     path = STATE / 'current.json'
-    return json.loads(path.read_text()) if path.exists() else {}
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'registro inválido: {path}') from exc
+    if not valid_registry(data):
+        raise ValueError(f'registro inválido: {path}; esperado objeto com caminhos absolutos e SHA-256')
+    return data
+
+
+def classify_orphan(target, recorded, universe):
+    """R-050: uma ação por órfão, na ordem outside → unsafe → missing → edited → remove, sem lançar exceção."""
+    row = {'path': target, 'recorded': recorded}
+    # O texto exato da chave decide antes de qualquer acesso ao disco (D-024).
+    if target not in universe:
+        return row | {'action': 'forget-outside', 'reason': 'fora dos alvos deste checkout; remova manualmente se quiser'}
+    path = Path(target)
+    issues = list(path_issues(path))
+    if issues:
+        return row | {'action': 'forget-unsafe', 'reason': issues[0]['message']}
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return row | {'action': 'forget-missing', 'reason': 'arquivo já não existe'}
+    except OSError as exc:
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+        return row | {'action': 'forget-unsafe', 'reason': f'não é arquivo regular independente do usuário: {target}'}
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
+    if digest(content) != recorded:
+        return row | {'action': 'forget-edited', 'reason': 'editado depois do apply; fica intacto'}
+    before = {'sha256': digest(content), 'mode': stat.S_IMODE(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid}
+    return row | {'action': 'remove', 'reason': 'fora dos perfis atuais', 'before': before}
+
+
+def retire_plan(managed, desired):
+    """Órfãos: entradas do registro fora dos perfis atuais (Bloco E)."""
+    universe = set(desired_files(all_components=True))
+    return [classify_orphan(target, managed[target], universe) for target in sorted(managed) if target not in desired]
 
 
 def zsh_compiled_issues():
@@ -309,7 +361,8 @@ def source_sha256():
 def build_plan():
     managed = registry()
     entries = []
-    for target, content in desired_files().items():
+    desired = desired_files()
+    for target, content in desired.items():
         before = snapshot(Path(target))
         after = digest(content)
         action = 'unchanged' if before and before['sha256'] == after else 'write'
@@ -320,7 +373,9 @@ def build_plan():
               'platform': {'distro': os.environ['DEVSHELL_DISTRO'], 'adapter': os.environ['DEVSHELL_ADAPTER'],
                            'arch': os.environ['DEVSHELL_MACHINE'], 'libc': os.environ['DEVSHELL_LIBC'],
                            'supported_arch': os.environ['DEVSHELL_MACHINE'] in ('x86_64', 'aarch64')},
-              'dependencies': dependencies()}
+              'dependencies': dependencies(),
+              # Caminho, ação, motivo e, nos remove, o snapshot: tudo entra na aprovação (R-050).
+              'retire': retire_plan(managed, desired)}
     # Inclui a implementação e os manifestos: uma edição invalida a aprovação.
     result['source_sha256'] = source_sha256()
     result['approval'] = digest(encode(result))
@@ -351,6 +406,11 @@ def report(data):
         print('Componentes:', ', '.join(data['components']))
     for entry in data.get('files', []):
         print(f"  {entry['action']}: {entry['path']}" + (' [conflito]' if entry.get('conflict') else ''))
+    for entry in data.get('retire', []):
+        if entry['action'] == 'remove':
+            print(f"  remove: {entry['path']}")
+        else:
+            print(f"  forget: {entry['path']} ({entry['reason']})")
     deps = data.get('dependencies', {})
     if deps.get('missing'):
         print('Ausentes:', ', '.join(deps['missing']))
@@ -909,6 +969,15 @@ def main():
                 path = Path(target)
                 before = path.read_text() if path.exists() else ''
                 print(''.join(difflib.unified_diff(before.splitlines(True), content.decode().splitlines(True), fromfile=target, tofile=target + ' (proposto)')), end='')
+            for entry in plan['retire']:
+                if entry['action'] != 'remove':
+                    continue
+                try:
+                    old = Path(entry['path']).read_bytes().decode()
+                except UnicodeDecodeError:
+                    print(f"--- {entry['path']}\n+++ {entry['path']} (removido)\n(conteúdo binário)")
+                    continue
+                print(''.join(difflib.unified_diff(old.splitlines(True), [], fromfile=entry['path'], tofile=entry['path'] + ' (removido)')), end='')
             return
         if command == 'doctor':
             plan['issues'] = [f'componente ausente: {item}' for item in plan['dependencies']['missing']]
