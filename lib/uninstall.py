@@ -25,7 +25,12 @@ PROFILE_COMPONENT = {'python': 'python-tools', 'pyinit': 'pyinit', 'plugins': 'p
 LEFTOVER = re.compile(r'[0-9a-f]{32}')
 FIXED_VENV_FILES = {'pyvenv.cfg', 'CACHEDIR.TAG', '.gitignore'}
 VENV_LINK = re.compile(r'bin/python[0-9.]*|lib64')
-ACTIVATE = re.compile(r'bin/activate[^/]*|bin/python[0-9.]*')
+# Nomes que o uv cria na venv; qualquer outro arquivo em bin/ precisa estar no RECORD.
+ACTIVATE = re.compile(r'bin/(activate|activate\.(bat|csh|fish|nu|ps1)|activate_this\.py|deactivate\.bat|pydoc\.bat|python[0-9.]*)')
+
+
+def raise_error(error):
+    raise error
 
 
 def receipts():
@@ -118,12 +123,15 @@ def unproven(roots, known):
             continue
         if not os.path.isdir(root):
             continue
-        for current, directories, files in os.walk(root, followlinks=False):
-            names = files + [name for name in directories if os.path.islink(os.path.join(current, name))]
-            for name in sorted(names):
-                path = os.path.join(current, name)
-                if path not in known:
-                    rows.append(item(path, 'file', 'manual', 'sem prova de que foi instalado pela CLI'))
+        try:
+            for current, directories, files in os.walk(root, followlinks=False, onerror=raise_error):
+                names = files + [name for name in directories if os.path.islink(os.path.join(current, name))]
+                for name in sorted(names):
+                    path = os.path.join(current, name)
+                    if path not in known:
+                        rows.append(item(path, 'file', 'manual', 'sem prova de que foi instalado pela CLI'))
+        except OSError as exc:
+            rows.append(item(root, 'dir', 'manual', f'não foi possível ler tudo: {exc}'))
     return rows
 
 
@@ -199,7 +207,12 @@ def inventory(venv, lock):
                 return False, f'RECORD aponta para fora da venv: {row[0]}', None
             recorded[relative] = row[1] if len(row) > 1 else ''
     entries = []
-    for current, directories, files in os.walk(venv, followlinks=False):
+    try:
+        walked = list(os.walk(venv, followlinks=False, onerror=raise_error))
+    except OSError as exc:
+        # Um subdiretório ilegível não pode passar como inventário completo.
+        return False, f'não foi possível ler toda a venv: {exc}', None
+    for current, directories, files in walked:
         names = files + [name for name in directories if os.path.islink(os.path.join(current, name))]
         for name in sorted(names):
             path = Path(current) / name
@@ -234,11 +247,13 @@ def plan_python():
     spec = json.loads((fs.ROOT / 'manifests/python.json').read_text())
     dirs = artifacts.python_dirs()
     rows = []
-    for name, lock in python_tools.locks(spec).items():
+    locks = python_tools.locks(spec)
+    for name, lock in locks.items():
         venv, link = python_tools.paths(name, dirs)
+        venv_row = None
         if os.path.lexists(venv):
             if venv.is_symlink():
-                rows.append(item(venv, 'venv', 'manual', 'venv é symlink; revise à mão'))
+                venv_row = item(venv, 'venv', 'manual', 'venv é symlink; revise à mão')
             else:
                 try:
                     issues = python_tools.venv_issues(name, venv, lock, spec['tool_python'], dirs.get('UV_PYTHON_INSTALL_DIR'))
@@ -248,26 +263,43 @@ def plan_python():
                     reason = '; '.join(issues)
                     if any(issue.startswith('permissões inseguras') for issue in issues):
                         reason += '; se for só escrita de grupo, rode ./bin/devshell setup, que corrige os modos'
-                    rows.append(item(venv, 'venv', 'manual', reason))
+                    venv_row = item(venv, 'venv', 'manual', reason)
                 else:
                     ok, reason, digest = inventory(venv, lock)
-                    rows.append(item(venv, 'venv', 'remove' if ok else 'manual', reason, inventory=digest))
+                    venv_row = item(venv, 'venv', 'remove' if ok else 'manual', reason, inventory=digest)
+            rows.append(venv_row)
         if os.path.lexists(link):
             ours = link.is_symlink() and os.readlink(link) == str(venv / 'bin' / name)
-            rows.append(item(link, 'link', 'remove' if ours else 'manual',
-                             'symlink da CLI para a venv' if ours else 'não é o symlink da CLI; revise à mão',
-                             target=str(venv / 'bin' / name)))
+            # O link só sai junto com a venv (ou se ela já não existe): ferramenta de pé nunca fica sem link.
+            goes = ours and (venv_row is None or venv_row['action'] == 'remove')
+            reason = 'symlink da CLI para a venv' if goes else (
+                'a venv fica, então o link também fica' if ours else 'não é o symlink da CLI; revise à mão')
+            rows.append(item(link, 'link', 'remove' if goes else 'manual', reason, target=str(venv / 'bin' / name)))
     root = uninstalling()
     if os.path.isdir(root) and not os.path.islink(root):
         for entry in sorted(root.iterdir()):
-            good = LEFTOVER.fullmatch(entry.name) and entry.is_dir() and not entry.is_symlink()
-            rows.append(item(entry, 'leftover', 'remove' if good else 'manual',
-                             'resto de uma desinstalação interrompida' if good else 'item inesperado em uninstalling/; revise à mão'))
+            good = bool(LEFTOVER.fullmatch(entry.name)) and entry.is_dir() and not entry.is_symlink()
+            # Um resto só sai com o mesmo inventário de uma venv: nunca sem prova (venv recusada fica).
+            proof = next(((ok, why, digest) for lock in locks.values()
+                          for ok, why, digest in [inventory(entry, lock)] if ok), None) if good else None
+            if proof:
+                rows.append(item(entry, 'leftover', 'remove', 'resto de uma desinstalação interrompida', inventory=proof[2]))
+            else:
+                rows.append(item(entry, 'leftover', 'manual', 'item em uninstalling/ sem prova; revise à mão'))
     return rows
 
 
 def warnings(component):
     """R-060: componente que continua nos perfis lembrados volta no próximo setup."""
+    found_paths = [name for name in ('XDG_DATA_HOME', 'XDG_BIN_HOME', 'UV_TOOL_BIN_DIR') if os.environ.get(name)]
+    notes = []
+    if component == 'python' and found_paths:
+        notes.append(f"caminhos personalizados ({', '.join(found_paths)}): se mudaram desde o install, "
+                     'as venvs e os links antigos não aparecem neste plano')
+    return notes + profile_warnings(component)
+
+
+def profile_warnings(component):
     wanted = PROFILE_COMPONENT.get(component)
     try:
         recorded = (fs.read_own_regular(fs.profiles_record()) or '').strip()
@@ -336,7 +368,9 @@ def remove_venv(row, lock):
         if not os.path.lexists(venv):
             os.rename(hidden, venv)
             raise RuntimeError(f'venv mudou durante a desinstalação: {venv}; nada foi removido ({reason})')
-        raise RuntimeError(f'venv mudou durante a desinstalação; a versão encontrada ficou em {hidden}')
+        rejected = root / f'rejected-{hidden.name}'
+        os.rename(hidden, rejected)
+        raise RuntimeError(f'venv mudou durante a desinstalação; a versão encontrada ficou em {rejected}')
     remove_tree(hidden)
 
 
@@ -349,7 +383,7 @@ def prune_directories(component):
     else:
         return
     for root in roots:
-        if root.is_symlink() or not root.is_dir():
+        if any(True for _ in fs.path_issues(root)) or not root.is_dir():
             continue
         for current, _, _ in os.walk(root, topdown=False, followlinks=False):
             try:
@@ -386,7 +420,16 @@ def apply(planned):
         receipt = receipts() / f'{component}.json'
         if component in ('plugins', 'firacode', 'pyinit') and os.path.lexists(receipt):
             fs.safe_path(receipt)
-            receipt.unlink()
+            proven = read_receipt(component, destination(component)) or {}
+            kept = {path: sha for path, sha in proven.items() if os.path.lexists(path)}
+            if kept:
+                # Sobrou algo provado (ficou manual por segurança): o recibo continua valendo só para isso.
+                data = json.loads(receipt.read_text())
+                root = destination(component)
+                data['files'] = {Path(path).relative_to(root).as_posix(): sha for path, sha in sorted(kept.items())}
+                fs.atomic(receipt, fs.encode(data), mode=0o600)
+            else:
+                receipt.unlink()
     if component == 'firacode' and shutil.which('fc-cache'):
         subprocess.run(['fc-cache', '-f', str(destination('firacode'))], check=True, capture_output=True)
     return {'operation': planned['operation'], 'removed': len(removed),

@@ -323,11 +323,12 @@ def apply(plan):
             elif COMPONENT not in ('plugins', 'firacode') and not before['mode'] & 0o100:
                 fs.atomic(path, data, metadata=before | {'mode': before['mode'] | 0o100})
                 changed += 1
-        if COMPONENT in ('plugins', 'firacode', 'pyinit'):
-            write_receipt(plan, files)
         if COMPONENT == 'firacode':
             # Repetir também após falha anterior na atualização do cache.
             subprocess.run(plan['commands'][0], check=True, capture_output=True)
+        # R-062: só depois de tudo, inclusive o fc-cache; um install que falha não deixa recibo.
+        if COMPONENT in ('plugins', 'firacode', 'pyinit'):
+            write_receipt(plan, files)
     fs.report({'operation': plan['operation'], 'changed': changed,
                'message': 'Instalações não são removidas por rollback de dotfiles; consulte SECURITY.md.'})
 

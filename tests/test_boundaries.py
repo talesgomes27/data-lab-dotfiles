@@ -1686,6 +1686,12 @@ class Uninstall(unittest.TestCase):
         active = patch.dict(os.environ, env)
         active.start()
         self.addCleanup(active.stop)
+        for name in ('XDG_BIN_HOME', 'UV_TOOL_BIN_DIR', 'UV_PYTHON_INSTALL_DIR'):
+            if name in os.environ:
+                active = patch.dict(os.environ)
+                active.start()
+                self.addCleanup(active.stop)
+                del os.environ[name]
         self.data, self.cache, self.state_dir = data, cache, state_dir
         self.artifacts = []
         active = patch.object(uninstall, 'load_artifacts', side_effect=lambda: list(self.artifacts))
@@ -1810,11 +1816,19 @@ class Uninstall(unittest.TestCase):
         self.assertTrue(any('python-tools' in warning or 'reinstal' in warning
                             for warning in self.uninstall.plan('python')['warnings']))
 
+    def leftover_venv(self, name='b' * 32):
+        """Resto de uma desinstalação interrompida: uma venv inteira, provada pelo inventário."""
+        venv = self.venv_with_record()
+        leftover = self.data / 'devshell/uninstalling' / name
+        leftover.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        venv.rename(leftover)
+        return leftover, {'ruff': {'requirements': {'ruff': {'version': '0.17.3', 'marker': None}}}}
+
     def test_r060_leftovers_of_an_interrupted_uninstall_appear_in_the_plan(self):
-        leftover = self.data / 'devshell/uninstalling' / ('b' * 32)
-        self.write(leftover / 'bin/ruff', b'x')
+        leftover, locks = self.leftover_venv()
         strange = self.write(self.data / 'devshell/uninstalling/estranho', b'x')
-        items = {item['path']: item['action'] for item in self.uninstall.plan('python')['items']}
+        with patch.object(python_tools, 'locks', return_value=locks):
+            items = {item['path']: item['action'] for item in self.uninstall.plan('python')['items']}
         self.assertEqual(items[str(leftover)], 'remove')
         self.assertEqual(items[str(strange)], 'manual')
 
@@ -2027,21 +2041,121 @@ class Uninstall(unittest.TestCase):
         calls = []
 
         def changed(path, lock_data):
-            calls.append(path)
             ok, reason, digest = real_inventory(path, lock_data)
-            return (ok, reason, digest if len(calls) == 1 else 'outro')
+            # Só a reconferência depois de renomear (dentro de uninstalling/) vê a venv mudada.
+            if '/devshell/uninstalling/' in str(path):
+                calls.append(path)
+                return ok, reason, 'outro'
+            return ok, reason, digest
         with patch.object(python_tools, 'locks', return_value={'ruff': lock}), \
                 patch.object(python_tools, 'venv_issues', return_value=[]), \
                 patch.object(self.uninstall, 'inventory', side_effect=changed), self.assertRaises(RuntimeError):
             self.approve('python')
+        self.assertEqual(len(calls), 1)
         self.assertTrue((venv / 'pyvenv.cfg').exists())
+        self.assertEqual(list((self.data / 'devshell/uninstalling').iterdir()), [])
 
     def test_r063_leftovers_are_cleaned_by_the_approved_apply(self):
-        leftover = self.data / 'devshell/uninstalling' / ('b' * 32)
-        self.write(leftover / 'bin/ruff', b'x')
-        with patch.object(python_tools, 'locks', return_value={}):
+        leftover, locks = self.leftover_venv()
+        with patch.object(python_tools, 'locks', return_value=locks):
             self.approve('python')
         self.assertFalse(leftover.exists())
+
+
+    def test_r061_rejected_or_unproven_leftover_is_manual(self):
+        lock = {'requirements': {'ruff': {'version': '0.17.3', 'marker': None}}}
+        venv = self.venv_with_record()
+        leftover = self.data / 'devshell/uninstalling' / ('c' * 32)
+        leftover.parent.mkdir(parents=True, mode=0o700)
+        venv.rename(leftover)
+        with patch.object(python_tools, 'locks', return_value={'ruff': lock}):
+            self.assertEqual(self.actions('python')[str(leftover)], 'remove')
+            self.write(leftover / 'bin/meu-script', b'meu')
+            self.assertEqual(self.actions('python')[str(leftover)], 'manual')
+            rejected = self.data / 'devshell/uninstalling' / ('rejected-' + 'd' * 32)
+            rejected.mkdir()
+            self.assertEqual(self.actions('python')[str(rejected)], 'manual')
+
+    def test_r061_link_stays_when_the_venv_stays(self):
+        venv, link, cpython, lock = self.python_ready()
+        with patch.object(python_tools, 'locks', return_value={'ruff': lock}), \
+                patch.object(python_tools, 'venv_issues', return_value=['metadados ilegíveis: x']):
+            actions = self.actions('python')
+        self.assertEqual(actions[str(venv)], 'manual')
+        self.assertEqual(actions[str(link)], 'manual')
+        self.write(venv / 'bin/meu', b'x')
+        with patch.object(python_tools, 'locks', return_value={'ruff': lock}), \
+                patch.object(python_tools, 'venv_issues', return_value=[]):
+            self.assertEqual(self.actions('python')[str(link)], 'manual')
+
+    def test_r061_custom_paths_produce_a_warning(self):
+        with patch.dict(os.environ, {'UV_TOOL_BIN_DIR': str(self.home / 'bin-proprio')}):
+            self.assertTrue(any('caminhos' in warning for warning in self.uninstall.plan('python')['warnings']))
+        self.assertFalse(any('caminhos' in warning for warning in self.uninstall.plan('pyinit')['warnings']))
+
+    def test_r061_inventory_edge_cases_are_manual(self):
+        lock = {'requirements': {'ruff': {'version': '0.17.3', 'marker': None}}}
+        venv = self.venv_with_record()
+        site = venv / 'lib/python3.13/site-packages'
+        foreign = self.write(site / 'outro-1.0.dist-info/METADATA', b'Name: outro\nVersion: 1.0\n')
+        self.write(site / 'outro-1.0.dist-info/RECORD', b'')
+        self.assertFalse(self.uninstall.inventory(venv, lock)[0])
+        foreign.parent.joinpath('RECORD').unlink()
+        foreign.unlink()
+        foreign.parent.rmdir()
+        record = site / 'ruff-0.17.3.dist-info/RECORD'
+        original = record.read_bytes()
+        record.write_bytes(original + b'../../../../fora.txt,,\n')
+        self.assertFalse(self.uninstall.inventory(venv, lock)[0])
+        record.write_bytes(original)
+        (venv / 'bin/atalho').symlink_to('/usr/bin/env')
+        self.assertFalse(self.uninstall.inventory(venv, lock)[0])
+        (venv / 'bin/atalho').unlink()
+        self.write(venv / 'bin/activate_meu.sh', b'meu')
+        self.assertFalse(self.uninstall.inventory(venv, lock)[0])
+        (venv / 'bin/activate_meu.sh').unlink()
+        hidden = self.write(site / 'privado/x.py', b'x')
+        hidden.parent.chmod(0o000)
+        try:
+            with patch.object(self.uninstall.os, 'walk', side_effect=lambda *a, **k: (_ for _ in ()).throw(PermissionError(13, 'negado'))):
+                self.assertFalse(self.uninstall.inventory(venv, lock)[0])
+        finally:
+            hidden.parent.chmod(0o700)
+
+    def test_r063_refuses_recursive_removal_without_symlink_protection(self):
+        leftover, locks = self.leftover_venv('e' * 32)
+        with patch.object(python_tools, 'locks', return_value=locks), \
+                patch.object(self.uninstall.shutil.rmtree, 'avoids_symlink_attacks', False), self.assertRaises(RuntimeError):
+            self.approve('python')
+        self.assertTrue(leftover.exists())
+
+    def test_r061_corrupt_cache_and_foreign_receipt_leave_files_manual(self):
+        root = self.plugin('hl', {'hl.zsh': b'# hl\n'})
+        for cached in self.cache.iterdir():
+            cached.write_bytes(b'corrompido')
+        self.assertEqual(self.actions('plugins')[str(root / 'hl.zsh')], 'manual')
+        for receipt in ({'version': 2}, {'destination': str(self.home / 'outro')}):
+            data = {'version': 1, 'component': 'plugins', 'destination': str(self.data / 'devshell/plugins'),
+                    'files': {'hl/hl.zsh': state.digest(b'# hl\n')}, 'artifacts': []} | receipt
+            self.write(self.state_dir / 'install-receipts/plugins.json', json.dumps(data).encode(), 0o600)
+            with self.subTest(receipt):
+                self.assertEqual(self.actions('plugins')[str(root / 'hl.zsh')], 'manual')
+
+    def test_r062_failed_font_cache_writes_no_receipt(self):
+        content = b'fonte'
+        artifact = {'component': 'firacode', 'arch': 'any', 'libc': 'any', 'format': 'zip', 'sha256': 'f' * 64,
+                    'version': '1', 'url': 'https://github.com/x/y'}
+        dest = self.data / 'fonts/FiraCodeNerdFont'
+        plan = {'operation': 'install-firacode', 'artifacts': [artifact], 'destination': str(dest), 'approval': 'h',
+                'commands': [['fc-cache', '-f', str(dest)]]}
+        with patch.object(artifacts, 'COMPONENT', 'firacode'), patch.dict(os.environ, {'DEVSHELL_APPROVAL': 'h'}), \
+                patch.object(artifacts, 'download', return_value=content), \
+                patch.object(artifacts, 'members', return_value={'FiraCodeNerdFontMono-Regular.ttf': content}), \
+                patch.object(artifacts.shutil, 'which', return_value='/usr/bin/fc-cache'), \
+                patch.object(artifacts.subprocess, 'run', side_effect=artifacts.subprocess.CalledProcessError(1, 'fc-cache')), \
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(artifacts.subprocess.CalledProcessError):
+            artifacts.apply(plan)
+        self.assertFalse((self.state_dir / 'install-receipts/firacode.json').exists())
 
 
 if __name__ == '__main__':
