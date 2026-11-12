@@ -101,6 +101,10 @@ revisao_do_bloco_e:
   por: subagente revisor de plano
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 7 P2 e 9 P3 incorporados (spec v7: R-055 e D-027 novos, R-050 a R-054 detalhados, D-014 ajustada)"
+revisao_do_bloco_h:
+  por: subagente revisor de desenho
+  em: "2026-11-12"
+  resultado: "não pronto; 3 P1 (compile sem --no-build, CPython dependente do uv local, download da CLI gravando na HOME) e 8 P2 incorporados (spec v16, D-042)"
 revisao_do_bloco_g:
   por: subagente revisor de desenho
   em: "2026-11-12"
@@ -1008,14 +1012,23 @@ a VALIDATION.
   - **Fonte:** com `health` recalculado;
   - **Árvore intacta:** o repositório e a HOME ficam idênticos; o patch
     aplica com `git apply --check` numa cópia temporária do repositório;
-  - **Opções:** `--only` e `--json`.
-- Verificação: os testes falham só nos casos novos.
+  - **Opções:** `--only` e `--json`;
+  - **Formatos reais:** chezmoi (dois formatos e tar.gz em aarch64), nu
+    (versão duas vezes no URL), prefixo `v` preservado por entrada;
+  - **Recusas:** downgrade, pre-release, release com menos de 7 dias
+    ("aguardar"), 404 de uma combinação (componente inteiro bloqueado),
+    limite da API (saída 3) e salto intermediário em HTTP;
+  - **ELF:** `e_machine` conferido nos binários `raw`;
+  - **Referências antigas:** a lista sai no relatório;
+  - **Isolamento:** o script não grava em `~/.cache` (HOME simulada vazia) e
+    o `bin/devshell` não o expõe.
 
 ### T-702 Núcleo do script
 - Requisitos: R-080, R-081
 - Objetivo: D-039, D-040, D-041.
-- Arquivos: `scripts/review-manifests.py` (novo; reaproveita
-  `lib/artifacts.py` para `members` e para o limite de tamanho)
+- Arquivos: `scripts/review-manifests.py` (novo; reaproveita só
+  `artifacts.members` e `font_members`, com download próprio para `--out` e
+  um `HTTPRedirectHandler` que valida cada salto)
 - Dependências: T-701
 - Critério de aceite: os casos de T-701 passam; o script não importa nada
   fora da biblioteca padrão e de `lib/`.
@@ -1027,18 +1040,21 @@ a VALIDATION.
 - Dependências: T-702
 - Critério de aceite:
   - **Testes antes:**
-    - versão nova no PyPI regenera o lock com o comando exato do
-      CONTRIBUTING, com HOME e cache dentro de `--out`;
+    - versão nova no PyPI regenera o lock com o argv e o env exatos
+      (`--no-build`, `--no-python-downloads`, `env -i`, HOME, XDG e cache
+      dentro de `--out`, `cwd` numa cópia e `-o` relativo), validado com
+      `read_lock`;
     - uma plataforma que falha bloqueia a ferramenta;
-    - sem `uv`, a saída é 3;
-    - o CPython escolhe o patch mais novo estável por minor e troca o
-      `tool_python`.
+    - sem `uv`, ou com um `uv` diferente do fixado, a saída é 3;
+    - o CPython usa `--all-platforms`, filtra `cpython`, `default` e versão
+      estável, exige as quatro combinações, escolhe o patch mais novo por
+      minor, troca o `tool_python` e avisa sobre a migração das venvs.
 - Verificação: `python3 -m unittest`.
 
 ### T-704 Documentação
 - Requisitos: R-084
-- Arquivos: `CONTRIBUTING.md`, `CHANGELOG.md`, `docs/ROADMAP.md`,
-  `docs/ARCHITECTURE.md`
+- Arquivos: `CONTRIBUTING.md` (fluxo novo e `--no-build` no compile),
+  `CHANGELOG.md`, `docs/ROADMAP.md`, `docs/ARCHITECTURE.md`
 - Dependências: T-703
 - Critério de aceite: o fluxo completo está no CONTRIBUTING, e o ROADMAP marca
   o item 3 como implementado.
@@ -1052,7 +1068,8 @@ a VALIDATION.
   - `workflow_dispatch` com os sete jobs verdes e zero skips;
   - revisão independente sem P0/P1;
   - uma execução real do script nesta sessão, se a rede permitir, com o
-    relatório registrado e sem aplicar o patch;
+    relatório registrado e sem aplicar o patch; a lista de hosts de
+    redirecionamento é conferida nessa execução;
   - o merge é decidido pelo usuário.
 
 ## Encerramento

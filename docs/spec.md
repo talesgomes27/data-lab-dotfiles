@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 15
+versao_spec: 16
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -812,7 +812,7 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
 - Enunciado: o script consulta as fontes oficiais e gera um relatório e um
   patch, sem gravar nada no checkout nem na HOME.
 - Critério:
-  - **Execução:** `python3 -I scripts/review-manifests.py` lê
+  - **Execução:** `python3 -I -B scripts/review-manifests.py` lê
     `manifests/artifacts.json`, `manifests/python.json` e
     `manifests/python-tools/`. Para cada item, diz se há versão nova e de onde
     ela veio.
@@ -821,11 +821,24 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     e um `report.json`.
   - **O que não muda:** a árvore do repositório e a HOME ficam idênticas,
     comparadas por caminho, modo e SHA-256. Os downloads e o cache do uv vão
-    para dentro de `--out`.
+    para dentro de `--out`. Os comandos do `uv` rodam com `env -i` e com HOME,
+    `XDG_*`, `UV_CACHE_DIR` e `UV_PYTHON_INSTALL_DIR` dentro de `--out`. O
+    script define as variáveis de que `lib/` precisa apontando para `--out`
+    antes de importá-la, e não usa o `download()` da CLI, que grava na HOME.
   - **Opções:** `--only GRUPO` (`github`, `plugins`, `python-tools`,
     `cpython`) limita a revisão; `--json` imprime o relatório.
-  - **Saídas:** 0 com ou sem proposta, 2 em divergência de checksum ou
-    artefato inválido, e 3 sem rede ou sem `uv` quando o grupo precisa dele.
+  - **Saídas:**
+    - 0, com ou sem proposta;
+    - 2 em divergência de checksum, artefato inválido, host fora da lista, 404
+      de uma combinação ou downgrade;
+    - 3 sem rede, com o limite da API do GitHub esgotado (403 com
+      `X-RateLimit-Remaining: 0`, com a mensagem da N-024) ou sem o `uv`
+      exigido.
+  - **Componente bloqueado:** um erro numa combinação bloqueia o componente
+    inteiro, sem patch parcial com versões misturadas.
+  - **Referências antigas:** o relatório lista, por busca no checkout, os
+    arquivos que ainda citam as versões antigas (testes, fixtures, docs,
+    exemplos, `ci-setup.sh`), para a pessoa revisar junto com o patch.
 - Prioridade: alta
 - Estado: proposto
 
@@ -833,22 +846,38 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
 - Enunciado: para `uv`, `chezmoi`, `nu`, plugins e FiraCode, a versão nova vem
   da última release oficial, e o checksum é calculado do arquivo baixado.
 - Critério:
-  - **Versão:** a última release (não pre-release) do repositório de origem
-    do URL atual. Para os plugins, sem release, vale a última tag.
-  - **URL nova:** é o URL atual com a versão trocada, nos dois formatos (`v1.2`
-    e `1.2`). O host precisa continuar `github.com` ou `api.github.com`, e o
-    redirecionamento final precisa ser HTTPS num host da lista
-    (`github.com`, `api.github.com`, `objects.githubusercontent.com`,
-    `codeload.github.com`).
+  - **Versão:** a última release do repositório de origem do URL atual, que
+    não seja pre-release nem draft. Para os plugins, sem release, vale a maior
+    tag estável (`^v?\d+(\.\d+)+$`), ordenada por versão, e não pela ordem
+    da API. A versão nova precisa ser maior que a atual; downgrade é recusado.
+  - **Idade mínima:** uma release com menos de 7 dias entra no relatório como
+    "aguardar" e fica sem patch, salvo com `--min-age-days 0`. O relatório
+    traz o link das notas da release e a variação de tamanho de cada arquivo.
+  - **URL e versão novas:** a troca preserva o formato de cada entrada (com ou
+    sem o prefixo `v` no campo `version`) e é feita por regex nos segmentos do
+    caminho do URL, nunca por `str.replace` no texto inteiro. O host precisa
+    continuar `github.com` ou `api.github.com`.
+  - **Redirecionamentos:** cada salto é validado, e não só o destino final. O
+    salto precisa ser HTTPS, sem credenciais, e o host precisa estar em
+    `github.com`, `api.github.com`, `objects.githubusercontent.com`,
+    `release-assets.githubusercontent.com` ou `codeload.github.com`. A lista é
+    conferida contra uma execução real no T-790.
   - **Download e checksum:** cada combinação de arquitetura e libc do
     manifesto é baixada para `--out`, com o limite de 256 MiB, e o SHA-256 é
     calculado.
   - **Conferência com o publicado:** quando a release publica checksums
-    (`*.sha256`, `*checksums*.txt`, `SHA256SUMS`) que citam o arquivo, eles
-    precisam bater; se não batem, a saída é 2.
-  - **Conteúdo:** o conteúdo passa por `artifacts.members`. O binário
-    esperado tem de estar lá, e os arquivos de `health` (plugins e fonte) são
-    recalculados.
+    (`*.sha256`, `*checksums*.txt`, `SHA256SUMS`, `SHA-256.txt`) que citam o
+    arquivo, eles precisam bater; se não batem, a saída é 2. Sem checksum
+    publicado, o relatório diz isso de forma explícita em cada item, como nos
+    plugins.
+  - **Integridade não é auditoria:** um checksum que bate só prova o
+    transporte. O relatório lembra de ler as notas da release, e os tarballs
+    gerados pelo GitHub (plugins) não têm garantia de bytes estáveis.
+  - **Conteúdo:** o conteúdo passa por `artifacts.members` (só essa função e
+    `font_members` são reaproveitadas). O binário esperado tem de estar lá, e
+    os arquivos de `health` (plugins e fonte) são recalculados. Nos binários,
+    o cabeçalho ELF e o `e_machine` são conferidos contra a arquitetura da
+    entrada, sem executar.
   - **Segurança:** nada baixado é executado nem extraído para o disco.
 - Prioridade: alta
 - Estado: proposto
@@ -861,7 +890,10 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
   - **Lock:** com versão nova, o lock é regenerado em `--out` com o comando do
     CONTRIBUTING (`uv --no-config pip compile --universal --python-version
     MINOR --generate-hashes --index-url https://pypi.org/simple`), com HOME e
-    cache temporários.
+    cache temporários, `--no-build` e `--no-python-downloads`. O comando roda
+    com `cwd` numa cópia de `manifests/python-tools/` e com o caminho
+    relativo no `-o`, para o cabeçalho do lock sair igual ao do repositório.
+    O resultado é validado com `python_tools.read_lock`.
   - **Plataformas:** o lock novo é conferido com `uv pip install --dry-run
     --no-build --require-hashes` nas quatro plataformas. Se alguma falhar, a
     ferramenta entra no relatório como bloqueada, sem patch.
@@ -873,13 +905,21 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
 - Enunciado: as versões de patch dos interpretadores são propostas a partir
   do que o `uv` instalado oferece.
 - Critério:
+  - **`uv` exigido:** a lista de patches vem embutida no binário do `uv`. Por
+    isso, o `uv` no PATH precisa ter exatamente a versão fixada em
+    `artifacts.json`, ou a versão nova que o próprio patch propõe para ele; se
+    não, a saída é 3, com a versão esperada.
   - **Versão:** para cada minor de `interpreters`, o patch mais novo listado
-    por `uv python list --all-versions --only-downloads --output-format json`
-    (sem baixar nada), restrito a CPython estável. O relatório mostra a versão
-    do `uv` usada.
+    por `uv python list --all-versions --only-downloads --all-platforms
+    --output-format json`, sem baixar nada. O filtro é `implementation`
+    `cpython`, `variant` `default` e versão `^3\.\d+\.\d+$`, e o patch
+    precisa existir nas quatro combinações de arquitetura e libc. O relatório
+    mostra a versão do `uv` usada e diz se os pisos (`UV_HASH_FLOOR` e a
+    versão mínima do `uv`) precisam subir para conhecer aquele patch.
   - **`tool_python`:** se ele muda, o patch o troca também. Como o minor
-    continua o mesmo, os locks não mudam, mas o relatório lembra de conferir
-    `UV_HASH_FLOOR` e a nova validação.
+    continua o mesmo, os locks não mudam. O relatório avisa que todas as venvs
+    instaladas passam a `divergente` (bloqueante), e que o CHANGELOG precisa
+    de uma nota de migração.
 - Prioridade: média
 - Estado: proposto
 
@@ -892,7 +932,15 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
   - **Testes:** com HTTP e `uv` simulados, os testes cobrem versão nova,
     nenhuma versão nova, divergência de checksum, host fora da lista,
     artefato sem o binário, lock que falha numa plataforma, CPython e a árvore
-    inalterada.
+    inalterada. Cobrem também:
+    - o chezmoi (dois formatos e tar.gz em aarch64) e o nu (versão duas vezes
+      no URL);
+    - redirecionamento intermediário em HTTP, limite da API, 404, pre-release,
+      prefixo `v`, downgrade e idade mínima;
+    - o argv e o env exatos do `uv`, o filtro do CPython e o cabeçalho ELF;
+    - que o `bin/devshell` não expõe o script.
+  - **CONTRIBUTING corrigido:** o comando de geração do lock passa a usar
+    `--no-build` também no compile.
   - **CHANGELOG:** a ferramenta nova fica registrada na seção do mantenedor.
 - Prioridade: média
 - Estado: proposto
@@ -1300,6 +1348,13 @@ O script escreve só em `--out`. O patch, com caminhos `a/` e `b/`, é revisado 
 aplicado pela pessoa com `git apply`. Assim, "versões mudam por revisão de
 manifesto" (AGENTS.md) continua literal: nada muda sem um diff revisado.
 Decidido pelo usuário em 2026-11-12.
+
+### D-042 Nada baixado roda, nem durante a resolução
+O `uv pip compile` roda o backend de build de uma dependência que só publica
+sdist para ler os metadados. Isso executaria código baixado do PyPI antes do
+dry-run reprovar o lock. Por isso, o compile também usa `--no-build`. O CPython
+só é listado, e com o `uv` fixado, porque a lista vem embutida no binário.
+Achado P1 da revisão do desenho.
 
 ### D-041 Checksum calculado do que foi baixado
 O SHA-256 do manifesto é sempre o do arquivo baixado da URL oficial. O
