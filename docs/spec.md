@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 14
+versao_spec: 15
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -794,6 +794,109 @@ decidido pelo usuário em 2026-11-12:
 - Estado: verificado
 - Evidência: docs/USAGE.md (Sair do Data Lab, com saída executada); docs/SECURITY.md (Saída completa e linha na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
 
+**Revisão assistida de manifestos (Bloco H)**
+
+Contexto: item 3 do [ROADMAP](ROADMAP.md). Atualizar versões e checksums dos
+manifestos é trabalho manual. A N-007 e o CONTRIBUTING proíbem que a CLI dos
+usuários consulte versões novas. Escopo decidido pelo usuário em 2026-11-12:
+- uma ferramenta de mantenedor, `scripts/review-manifests.py`, fora do
+  `devshell`;
+- relatório e patch gravados num diretório temporário;
+- cada artefato novo é baixado e conferido;
+- quatro grupos: binários do GitHub, plugins e fonte, ferramentas Python e
+  CPython do uv.
+
+O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
+
+### R-080 Proposta sem tocar o repositório
+- Enunciado: o script consulta as fontes oficiais e gera um relatório e um
+  patch, sem gravar nada no checkout nem na HOME.
+- Critério:
+  - **Execução:** `python3 -I scripts/review-manifests.py` lê
+    `manifests/artifacts.json`, `manifests/python.json` e
+    `manifests/python-tools/`. Para cada item, diz se há versão nova e de onde
+    ela veio.
+  - **Patch:** com alguma proposta, grava em `--out DIR` (padrão: um
+    diretório novo em `mktemp`) um `manifests.patch` aplicável com `git apply`
+    e um `report.json`.
+  - **O que não muda:** a árvore do repositório e a HOME ficam idênticas,
+    comparadas por caminho, modo e SHA-256. Os downloads e o cache do uv vão
+    para dentro de `--out`.
+  - **Opções:** `--only GRUPO` (`github`, `plugins`, `python-tools`,
+    `cpython`) limita a revisão; `--json` imprime o relatório.
+  - **Saídas:** 0 com ou sem proposta, 2 em divergência de checksum ou
+    artefato inválido, e 3 sem rede ou sem `uv` quando o grupo precisa dele.
+- Prioridade: alta
+- Estado: proposto
+
+### R-081 Binários do GitHub, plugins e fonte
+- Enunciado: para `uv`, `chezmoi`, `nu`, plugins e FiraCode, a versão nova vem
+  da última release oficial, e o checksum é calculado do arquivo baixado.
+- Critério:
+  - **Versão:** a última release (não pre-release) do repositório de origem
+    do URL atual. Para os plugins, sem release, vale a última tag.
+  - **URL nova:** é o URL atual com a versão trocada, nos dois formatos (`v1.2`
+    e `1.2`). O host precisa continuar `github.com` ou `api.github.com`, e o
+    redirecionamento final precisa ser HTTPS num host da lista
+    (`github.com`, `api.github.com`, `objects.githubusercontent.com`,
+    `codeload.github.com`).
+  - **Download e checksum:** cada combinação de arquitetura e libc do
+    manifesto é baixada para `--out`, com o limite de 256 MiB, e o SHA-256 é
+    calculado.
+  - **Conferência com o publicado:** quando a release publica checksums
+    (`*.sha256`, `*checksums*.txt`, `SHA256SUMS`) que citam o arquivo, eles
+    precisam bater; se não batem, a saída é 2.
+  - **Conteúdo:** o conteúdo passa por `artifacts.members`. O binário
+    esperado tem de estar lá, e os arquivos de `health` (plugins e fonte) são
+    recalculados.
+  - **Segurança:** nada baixado é executado nem extraído para o disco.
+- Prioridade: alta
+- Estado: proposto
+
+### R-082 Ferramentas Python e locks
+- Enunciado: para `ruff`, `pre-commit` e `ipython`, a versão nova vem do PyPI,
+  e o lock é regenerado e conferido.
+- Critério:
+  - **Versão:** `info.version` de `https://pypi.org/pypi/NOME/json`.
+  - **Lock:** com versão nova, o lock é regenerado em `--out` com o comando do
+    CONTRIBUTING (`uv --no-config pip compile --universal --python-version
+    MINOR --generate-hashes --index-url https://pypi.org/simple`), com HOME e
+    cache temporários.
+  - **Plataformas:** o lock novo é conferido com `uv pip install --dry-run
+    --no-build --require-hashes` nas quatro plataformas. Se alguma falhar, a
+    ferramenta entra no relatório como bloqueada, sem patch.
+  - **Patch:** troca a versão em `python.json` e o lock inteiro.
+- Prioridade: alta
+- Estado: proposto
+
+### R-083 CPython do uv
+- Enunciado: as versões de patch dos interpretadores são propostas a partir
+  do que o `uv` instalado oferece.
+- Critério:
+  - **Versão:** para cada minor de `interpreters`, o patch mais novo listado
+    por `uv python list --all-versions --only-downloads --output-format json`
+    (sem baixar nada), restrito a CPython estável. O relatório mostra a versão
+    do `uv` usada.
+  - **`tool_python`:** se ele muda, o patch o troca também. Como o minor
+    continua o mesmo, os locks não mudam, mas o relatório lembra de conferir
+    `UV_HASH_FLOOR` e a nova validação.
+- Prioridade: média
+- Estado: proposto
+
+### R-084 Validação e documentação
+- Enunciado: o CONTRIBUTING descreve o fluxo, e o script é testado sem rede.
+- Critério:
+  - **Fluxo no CONTRIBUTING:** rodar o script, revisar o relatório e o patch,
+    `git apply`, rodar `scripts/check.sh` e o `workflow_dispatch`, e auditar
+    as notas da release. O script nunca roda no `check.sh` nem no CI.
+  - **Testes:** com HTTP e `uv` simulados, os testes cobrem versão nova,
+    nenhuma versão nova, divergência de checksum, host fora da lista,
+    artefato sem o binário, lock que falha numa plataforma, CPython e a árvore
+    inalterada.
+  - **CHANGELOG:** a ferramenta nova fica registrada na seção do mantenedor.
+- Prioridade: média
+- Estado: proposto
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -833,6 +936,11 @@ decidido pelo usuário em 2026-11-12:
 ### N-018 Apagar o cache de artefatos, ou apagar o estado sem `--purge-state` ou antes de desfazer a cadeia inteira
 ### N-019 Desinstalar `uv`, `chezmoi`, `nu`, o CPython do uv ou pacotes do sistema na saída
 ### N-020 Restaurar originais de transações já podadas
+
+### N-021 Comando do `devshell` que consulte versões novas (a N-007 continua valendo para a CLI dos usuários)
+### N-022 Aplicar o patch, fazer commit ou abrir PR pelo script
+### N-023 Atualizar o `pyinit` (fluxo da skill `bump-pyinit`) ou os pacotes da distribuição (`packages.tsv` não fixa versões)
+### N-024 Token do GitHub ou qualquer segredo: o script usa a API pública, e o limite de requisições é dito na mensagem
 
 ## Decisões
 
@@ -1180,6 +1288,25 @@ deixa consultar o que foi feito e recuperar um original. Com
 por completo. Ela só existe depois da saída completa, porque antes disso os
 backups ainda são necessários, e pede a palavra `apagar`, como `substituir` e
 `retirar`. A opção não aprova nada: só faz a pergunta aparecer.
+
+### D-039 Ferramenta de mantenedor, fora da CLI
+A CLI dos usuários nunca consulta a rede por versões (N-007). A revisão é um
+passo de quem mantém os manifestos, rodado à mão, como a geração dos locks no
+CONTRIBUTING. Ficar em `scripts/` também a tira do `setup` e do `doctor`.
+Decidido pelo usuário em 2026-11-12.
+
+### D-040 Proposta como patch, nunca gravação no checkout
+O script escreve só em `--out`. O patch, com caminhos `a/` e `b/`, é revisado e
+aplicado pela pessoa com `git apply`. Assim, "versões mudam por revisão de
+manifesto" (AGENTS.md) continua literal: nada muda sem um diff revisado.
+Decidido pelo usuário em 2026-11-12.
+
+### D-041 Checksum calculado do que foi baixado
+O SHA-256 do manifesto é sempre o do arquivo baixado da URL oficial. O
+checksum publicado pelo projeto, quando existe, é uma segunda conferência e
+não substitui o download. A proposta também passa pelo mesmo
+`artifacts.members` do install: um artefato com layout novo é pego aqui, e não
+na HOME de quem instala. Decidido pelo usuário em 2026-11-12.
 
 ## Restrições
 
