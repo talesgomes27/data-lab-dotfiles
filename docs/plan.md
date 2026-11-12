@@ -82,6 +82,10 @@ dispensas:
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
+revisao_do_bloco_e0:
+  por: subagente revisor de desenho
+  em: "2026-11-12"
+  resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
 proximo_passo: aprovação do usuário do Bloco E0 (R-047, R-048; T-351 a T-354) e do plano revisto do Bloco E, antes do código; implementar E0 primeiro
 pendencias: ["R-010: execução agendada na main"]
 ```
@@ -464,11 +468,19 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
     perfis não muda;
   - o mesmo com `--profile minimal`, com HOME trocada mantendo o
     `XDG_STATE_HOME`, e com `setup --dry-run`, `doctor`, `status`, `diff`,
-    `install --component python` e `rollback`;
-  - `project` e `install --component devshell` não são bloqueados;
-  - registro vazio, ausente ou só com a âncora atual não bloqueia;
-  - registro com as duas âncoras, a atual e uma antiga, não bloqueia (o Bloco
-    E trata a antiga como `forget-outside`);
+    `update`, `install --component python`, `install --component devshell`,
+    `rollback` e `rollback --prune`;
+  - `project` e `rollback --list` não são bloqueados;
+  - registro sem `devshell/components` (o alvo estava igual no primeiro apply)
+    e com outra chave do universo sob a raiz antiga também bloqueia;
+  - registro que mistura chaves da raiz atual e de uma antiga bloqueia;
+  - registro vazio, ausente, só com chaves da raiz atual ou com chave de um
+    dotfile que não existe mais no checkout não bloqueia;
+  - ordem: sem registro de perfis e com a configuração alternativa além de
+    `minimal`, a mensagem é a do estado de outra configuração, não a dica
+    "rode setup --profile";
+  - `XDG_CONFIG_HOME` com barra final é aceito; com `..`, sai com a mensagem de
+    caminho inseguro;
   - a árvore de estado fica idêntica em todos os casos de recusa;
   - a mensagem mostra o diretório de estado e a configuração registrada.
 - Verificação: os testes novos falham só nos casos novos.
@@ -479,9 +491,11 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 - Arquivos: `bin/devshell` (junto do `profiles-check`), `lib/state.py`
   (`state-check`)
 - Dependências: T-351
-- Critério de aceite: os casos de T-351 passam. A checagem roda antes de
-  `profiles-source`, para que o padrão `minimal` nunca seja escolhido a partir
-  de um estado alheio. Ela lê o registro com as mesmas guardas de `registry()`
+- Critério de aceite: os casos de T-351 passam. A checagem (`state-check`)
+  roda antes de `profiles-source` e antes do desvio de
+  `project`/`rollback`/lançador em `bin/devshell`, para que o padrão `minimal`
+  nunca seja escolhido a partir de um estado alheio e o `rollback` também
+  fique coberto. Ela lê o registro com as mesmas guardas de `registry()`
   e não grava nada. Os testes existentes continuam verdes sem ajuste de
   asserção.
 - Verificação: `python3 -m unittest`; Bats no CI.
@@ -495,10 +509,12 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 - Critério de aceite:
   - testes falham antes do código;
   - `apply` sem arquivos e com perfis novos cria uma transação `committed` com
-    `files: []` e `previous_profiles`;
-  - o `rollback` dela devolve os perfis anteriores, e `--list` e a poda a
-    aceitam;
-  - com perfis iguais, nada é gravado (árvore idêntica);
+    os mesmos campos do caminho com escrita, e `latest` aponta para ela;
+  - o `rollback` dela devolve os perfis anteriores, inclusive com
+    `previous_profiles: null`; `--list` e a poda a aceitam, sem o aviso de
+    "dotfiles de antes do primeiro apply";
+  - com perfis iguais, ou com registro equivalente mas não canônico
+    (`minimal,personal`), nada é gravado (árvore idêntica);
   - o caminho de falha restaura o registro anterior;
   - o caso do `setup` "Registrar os perfis" passa a gerar transação, e o teste
     dele confere isso.
@@ -509,7 +525,9 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 - Objetivo: documentação, CHANGELOG, VALIDATION e evidência.
 - Arquivos:
   - `docs/USAGE.md`, `docs/SECURITY.md` e `docs/TROUBLESHOOTING.md` (estado
-    de outra configuração e a saída manual da D-029);
+    de outra configuração e a saída manual da D-029, com o que o estado
+    antigo leva e como consultá-lo; com `--keep 1`, transações só de perfis
+    contam na poda);
   - `CONTRIBUTING.md` (testar sempre com HOME e todos os XDG temporários
     juntos);
   - `CHANGELOG.md`, `docs/ROADMAP.md` (item 0 concluído), `docs/VALIDATION.md`

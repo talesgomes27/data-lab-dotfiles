@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 8
+versao_spec: 9
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -341,16 +341,26 @@ pertence, e a mudança do registro não deixa rastro.
 ### R-047 Estado de outra configuração é recusado
 - Enunciado: um comando não usa um estado que registra arquivos de outra HOME
   ou de outro `XDG_CONFIG_HOME`.
-- Critério: Dado um `current.json` que registra `devshell/components` ou
-  `.bash_aliases` (alvos que todo perfil gera) num caminho diferente do atual
-  e não registra o caminho atual, Quando qualquer comando, exceto `project` e
-  `install --component devshell`, roda com ou sem `--profile`, Então sai com 2
-  antes de qualquer plano, sem gravar nada. A mensagem mostra o diretório de
+- Critério: Dado um `current.json` com alguma chave que é um alvo deste
+  checkout sob outra raiz (o mesmo caminho relativo de
+  `desired_files(all_components=True)`, mas sob outra HOME ou outro
+  `XDG_CONFIG_HOME`), Quando qualquer comando roda com ou sem `--profile`,
+  Então sai com 2 antes de qualquer plano, sem gravar nada. Isso vale também
+  para `rollback`, `rollback --prune`, `update`, `setup` e `install`, inclusive
+  `install --component devshell`, porque o recibo do lançador fica no mesmo
+  estado. A checagem roda antes de `profiles-source` e antes do desvio de
+  `project`/`rollback`/lançador em `bin/devshell`. Só ficam isentos `project`,
+  que não usa o estado, e `rollback --list`, que só lê e serve para examinar o
+  estado antes da saída manual. A recusa acontece também quando o registro
+  mistura chaves da raiz atual e de outra. Uma chave fora do universo que não
+  corresponde a nenhum alvo, como um dotfile removido do repositório, não
+  bloqueia. A mensagem mostra o diretório de
   estado e a configuração a que ele pertence, e sugere rodar com o mesmo
   `XDG_CONFIG_HOME` e a mesma HOME, ou usar um `XDG_STATE_HOME` próprio. Um
   registro vazio ou ausente não bloqueia. Para mudar de vez o
   `XDG_CONFIG_HOME`, o caminho é manual e documentado: mover o diretório de
-  estado antigo para fora (D-029).
+  estado antigo para fora (D-029). HOME ou XDG com `..` são recusados antes,
+  pela mensagem de caminho inseguro, e não como "outra configuração".
 - Prioridade: alta
 - Estado: proposto
 
@@ -359,10 +369,16 @@ pertence, e a mudança do registro não deixa rastro.
   alterar também cria uma transação.
 - Critério: Dado um plano aprovado sem arquivos a alterar, com perfis
   diferentes dos registrados, Quando `apply --approve HASH` roda, Então é
-  criada uma transação com `files: []`, `previous_profiles` e `created`, o
-  registro é gravado dentro dela, `rollback --list` a mostra e o `rollback`
-  aprovado devolve os perfis anteriores. Com perfis iguais aos registrados, o
-  `apply` sem mudanças não grava nada. A poda trata a transação como as outras.
+  criada uma transação com os mesmos campos do caminho com escrita (`files:
+  []`, `previous_registry`, `previous_latest`, `previous_profiles`, `created`,
+  `status`), `latest` passa a apontar para ela e o registro é gravado dentro
+  dela. `rollback --list` a mostra, e o `rollback` aprovado devolve os perfis
+  anteriores, inclusive quando `previous_profiles` é `null` (remove o
+  registro). A comparação usa a forma canônica dos perfis: um registro
+  equivalente, mas escrito de outro jeito, não gera transação. Com perfis
+  iguais, o `apply` sem mudanças não grava nada. A poda trata a transação como
+  as outras; o aviso de "dotfiles de antes do primeiro apply" não aparece para
+  uma transação sem arquivos.
 - Prioridade: alta
 - Estado: proposto
 
@@ -771,17 +787,25 @@ conferir), e `previous_profiles` já é restaurado. Uma alternativa seria um log
 só de perfis, mas teria leitura, poda e rollback próprios. Substitui o "sem
 transação" da D-014.
 
-### D-029 Âncoras do estado e saída manual
-As âncoras são `CONFIG/devshell/components` e `HOME/.bash_aliases`, que todo
-perfil gera. O teste compara o texto exato das chaves do registro: o estado
-pertence a outra configuração quando há uma chave com o mesmo final de uma
-âncora (`/devshell/components` ou `/.bash_aliases`) e prefixo diferente, e a
-âncora atual não está registrada. Não muda o formato do estado e vale para
-estados criados antes deste bloco. Não há flag para contornar (como a N-008).
+### D-029 Todas as chaves do registro contra o universo, e saída manual
+O universo é decomposto em pares (raiz, caminho relativo): HOME para
+`.zshenv` e `.bash_aliases`, e `XDG_CONFIG_HOME` para o resto. Uma chave do
+registro pertence a outra configuração quando termina em `/` + um desses
+caminhos relativos e o prefixo é diferente da raiz atual. A comparação é feita
+no texto exato da chave, sem `stat` nem leitura. Usar todas as chaves, e não
+só algumas âncoras, cobre registros em que um alvo nunca entrou (porque
+estava igual no primeiro apply) e registros que misturam duas configurações.
+Não muda o formato do estado e vale para estados criados antes deste bloco.
+Não há flag para contornar (como a N-008).
+
 Para mudar de vez a configuração, a pessoa move o diretório de estado antigo
-para fora, ficando com os backups dele, e roda `setup --profile` na nova. O
-Bloco E, ao retirar órfãos, nunca vê um estado de outra configuração, porque a
-recusa vem antes.
+para fora e roda `setup --profile` na nova. O estado antigo leva junto as
+transações, o recibo do lançador, `permission-repairs` e o registro de perfis.
+Para consultá-lo ou fazer rollback dele, basta rodar com `XDG_STATE_HOME`
+apontando para o diretório pai dele e com o `XDG_CONFIG_HOME` antigo. Como a
+recusa vem antes de qualquer plano, o Bloco E nunca classifica chaves de outra
+configuração: `forget-outside` fica restrito a chaves que não correspondem a
+nenhum alvo.
 
 ## Restrições
 
