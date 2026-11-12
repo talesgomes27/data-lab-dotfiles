@@ -15,6 +15,11 @@ Atualizado em 2026-11-12.
   rollback, CI semanal, ferramentas Python em venvs com hash obrigatório e
   setup com perfis lembrados.
 - **Nenhum achado aberto da revisão independente do T-900.**
+- **R-046 (#21):** na HOME do mantenedor, um registro de perfis `minimal`
+  levou o `setup` a tirar 24 componentes com uma confirmação de diff comum
+  (transação `c7209d5c`, que pode ser desfeita). Agora os comandos sem
+  `--profile` param quando os perfis lembrados tirariam componentes
+  aplicados. A causa do registro errado foi encontrada (item 0).
 - **Em observação:** R-010 depende da primeira execução agendada na `main`
   (segunda, 2026-11-16, 09:17 UTC).
 
@@ -24,14 +29,58 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 
 | # | Item | Origem | Tamanho | Depende de |
 |---|---|---|---|---|
-| 1 | Migrações declarativas | N-009, D-013 | médio a grande | — |
+| 0 | Estado preso à configuração (origem do registro errado) | R-046, R-047, R-048 | pequeno | — |
+| 1 | Retirada de arquivos órfãos (escopo reduzido das migrações declarativas) | N-009, D-013, D-022 | médio | 0 |
 | 2 | Desinstalação de componentes | N-005, N-009 | médio | 1 |
 | 3 | Revisão assistida de manifestos | N-005 | médio | — |
 | 4 | Poda dos demais diretórios de estado | N-001 | pequeno a médio | — |
 | 5 | Quarto como componente | N-005 | médio | 3 (recomendado) |
 | 6 | Configuração Git gerenciada | N-005 | médio | — |
 
-### 1. Migrações declarativas
+### 0. Estado preso à configuração (origem do registro de perfis errado)
+
+**Problema:** no incidente do R-046, o registro dizia `minimal` sem nenhuma
+transação que explicasse isso. A retirada de órfãos (item 1) confia nos
+perfis do comando; um caminho que grava perfis errados passaria a remover
+arquivos, não só componentes.
+
+**O que já foi descartado (2026-11-12):** os testes. A suíte unittest rodada
+com HOME e XDG apontando para um diretório-sentinela não gravou nada nele, e
+todos os Bats carregam `tests/core_setup.bash`, que exporta HOME e XDG
+temporários.
+
+**Caminhos que gravam o registro:** o `apply` (com e sem arquivos a alterar) e
+o `rollback`/caminho de falha (que restauram `previous_profiles`). O `apply`
+sem arquivos a alterar grava o registro **sem transação**, então não deixa
+rastro. Hipótese principal: um comando rodado com `XDG_CONFIG_HOME` ou HOME
+diferentes, mas o mesmo `XDG_STATE_HOME`. Nesse contexto, a configuração
+correspondia a `minimal`, e o `apply` sem mudanças gravou `minimal` no estado
+compartilhado.
+
+**Causa encontrada (2026-11-12):** na HOME afetada, o registro passou a
+`minimal` entre a transação `49dd88de` (anterior ao Bloco D) e a `c7209d5c`
+(`previous_profiles: minimal`), sem nenhuma transação entre elas. O caso foi
+reproduzido numa HOME simulada: com a HOME e o estado reais, mas com
+`XDG_CONFIG_HOME` apontando para um diretório já em `minimal`, `plan` e
+`apply` sem `--profile` gravam `minimal` no registro real pelo caminho sem
+mudanças. Esse registro tira os mesmos 24 componentes. O comando exato não foi
+identificado sem o histórico da shell, mas o mecanismo está demonstrado.
+
+**Correção:** Bloco E0 (R-047 e R-048), implementado. O estado passa a ser
+recusado quando pertence a outra configuração, e toda mudança do registro de
+perfis abre uma transação.
+
+### 1. Retirada de arquivos órfãos
+
+Escopo reduzido das migrações declarativas, desenhado na spec v7 (R-050 a
+R-055, D-022 a D-027): o registro `current.json` é a fonte, sem manifesto de
+migrações (D-022). A remoção de arquivos pede uma confirmação digitada à parte
+no `setup`, por causa do incidente do R-046.
+
+Texto original do item, mantido como referência para um manifesto futuro
+(N-010):
+
+#### Migrações declarativas
 
 **Problema:** mudar o formato do estado exige passos manuais do usuário. A
 D-013, por exemplo, obriga a rodar `uv tool uninstall NOME` antes de instalar
@@ -64,8 +113,8 @@ combina isso com o rollback dos dotfiles.
 - pacotes do sistema, CPython do uv e ambientes de projeto nunca são
   removidos.
 
-**Depende de 1:** a desinstalação precisa saber em que formato cada
-instalação foi registrada.
+**Depende de 1:** a desinstalação reaproveita a remoção com backup e
+rollback do item 1.
 
 ### 3. Revisão assistida de manifestos
 

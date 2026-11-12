@@ -55,6 +55,11 @@ apply_config() { "$FOUNDRY_ROOT/bin/devshell" apply --approve "$(approve)" "$@";
     apply_config
     [ -e "$XDG_CONFIG_HOME/zsh/.zshrc" ]
     export XDG_CONFIG_HOME=relativo
+    # R-047: o estado registra a configuração com espaço; com o default, ele é de outra configuração.
+    run "$FOUNDRY_ROOT/bin/devshell" plan --json
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'outra configuração'* ]]
+    export XDG_STATE_HOME="$HOME/estado-do-default"
     run "$FOUNDRY_ROOT/bin/devshell" plan --json
     [ "$status" -eq 0 ]
     printf '%s' "$output" | python3 -c 'import json,sys,os;assert any(f["path"]==os.environ["HOME"]+"/.config/zsh/.zshrc" for f in json.load(sys.stdin)["files"])'

@@ -17,6 +17,15 @@ estão aplicados, os comandos param com saída 2 e pedem
 `./bin/devshell setup --profile PERFIS` uma vez, com os perfis que você usa.
 Em JSON, o `doctor` traz o campo `next_step`.
 
+O estado em `~/.local/state/devshell` pertence a uma HOME e a um
+`XDG_CONFIG_HOME`. Um comando rodado com outra HOME ou outro
+`XDG_CONFIG_HOME` sobre o mesmo estado para com saída 2 e mostra a
+configuração que o estado registra. Para testar outra configuração, use
+também um `XDG_STATE_HOME` próprio, ou HOME e todos os XDG temporários
+juntos. Só `rollback --list` e `project` funcionam nesse caso. Mudar os
+perfis registrados, mesmo sem arquivos a alterar, cria uma transação, que
+aparece em `rollback --list` e pode ser desfeita.
+
 ## Navegar entre pastas
 
 Visite uma pasta pelo caminho completo. O zoxide guarda visitas localmente e,

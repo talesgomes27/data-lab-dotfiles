@@ -2,6 +2,15 @@
 
 ## Não publicado
 
+- Comandos rodados com outra HOME ou outro `XDG_CONFIG_HOME` sobre o mesmo
+  estado param com saída 2 antes de qualquer plano, mostrando a configuração
+  que o estado registra; só `rollback --list` e `project` seguem. Era o
+  caminho do incidente do R-046: com o `XDG_CONFIG_HOME` trocado, um `apply`
+  sem mudanças gravava `minimal` no registro de perfis real.
+- Mudar os perfis registrados sem arquivos a alterar agora cria uma transação,
+  que aparece em `rollback --list` e pode ser desfeita. Antes, o registro era
+  gravado sem rastro.
+
 - Comandos sem `--profile` param com saída 2 quando os perfis lembrados
   tirariam componentes já aplicados em `~/.config/devshell/components`, e pedem
   `setup --profile ...` uma vez. Antes, um registro errado reduzia a HOME com

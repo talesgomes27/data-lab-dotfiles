@@ -483,6 +483,105 @@ class RememberedProfiles(unittest.TestCase):
                     state.apply_configuration()
         self.assertEqual((state.STATE / 'profiles').read_text().strip(), 'minimal')
 
+    def latest_manifest(self):
+        return json.loads((state.STATE / 'transactions' / (state.STATE / 'latest').read_text() / 'manifest.json').read_text())
+
+    def test_r048_profile_change_without_files_opens_a_transaction(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        registry = json.loads((state.STATE / 'current.json').read_text())
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'chezmoi_render') as render:
+            os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+            state.apply_configuration()
+            render.assert_not_called()
+        tx = self.latest_manifest()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), first)
+        self.assertEqual(tx['status'], 'committed')
+        self.assertEqual(tx['files'], [])
+        self.assertEqual(tx['previous_latest'], first)
+        self.assertEqual(tx['previous_profiles'], 'minimal')
+        self.assertEqual(tx['previous_registry'], registry)
+        self.assertIn('created', tx)
+        self.assertEqual(record.read_text().strip(), 'personal')
+        listed = [row['id'] for row in state.history()['transactions']]
+        self.assertIn((state.STATE / 'latest').read_text(), listed)
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+        self.assertEqual((state.STATE / 'latest').read_text(), first)
+
+    def test_r048_rollback_with_null_previous_profiles_removes_the_record(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        record.unlink()
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), first)
+        self.assertIsNone(self.latest_manifest()['previous_profiles'])
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertFalse(record.exists())
+
+    def test_r048_plan_reports_equivalent_record_as_recorded(self):
+        self.apply()
+        (state.STATE / 'profiles').write_text('minimal,personal\n')
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.assertTrue(state.build_plan()['profiles_recorded'])
+
+    def test_r048_same_or_equivalent_profiles_write_nothing(self):
+        self.apply()
+
+        def tree():
+            return sorted((str(p), p.read_bytes() if p.is_file() else b'') for p in state.STATE.rglob('*') if p.name != 'lock')
+        before = tree()
+        self.apply()
+        self.assertEqual(tree(), before)
+        (state.STATE / 'profiles').write_text('minimal,personal\n')
+        before = tree()
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        self.assertEqual(tree(), before)
+
+    def test_r048_failed_profile_transaction_restores_the_record(self):
+        record = state.STATE / 'profiles'
+        self.apply()
+        first = (state.STATE / 'latest').read_text()
+        real_atomic = state.atomic
+
+        def fail_on_commit(path, content, *args, **kwargs):
+            if path.name == 'manifest.json' and b'"committed"' in content:
+                raise OSError('falha injetada no commit')
+            return real_atomic(path, content, *args, **kwargs)
+
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'atomic', side_effect=fail_on_commit):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        self.assertEqual(record.read_text().strip(), 'minimal')
+        self.assertEqual((state.STATE / 'latest').read_text(), first)
+        statuses = {row['id']: row['status'] for row in state.history()['transactions']}
+        self.assertEqual(sorted(statuses.values()), ['committed', 'failed-restored'])
+
+    def test_r048_prune_does_not_call_a_profile_only_transaction_the_original_backup(self):
+        record = state.STATE / 'profiles'
+        record.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        record.write_text('minimal\n')
+        # Primeira transação sem arquivos: só perfis (HOME já em dia antes do primeiro apply).
+        for target, content in state.desired_files().items():
+            Path(target).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            Path(target).write_bytes(content)
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        first = (state.STATE / 'latest').read_text()
+        self.assertEqual(self.latest_manifest()['files'], [])
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()
+        plan = state.prune_plan(1)
+        self.assertIn(first, [row['id'] for row in plan['transactions'] if row['action'] == 'delete'])
+        self.assertFalse(any('antes do primeiro apply' in warning for warning in plan.get('warnings', [])), plan.get('warnings'))
+
     def test_r040_rollback_shows_profiles_and_refuses_unsafe_record_before_restoring(self):
         record = state.STATE / 'profiles'
         self.apply()
@@ -954,6 +1053,167 @@ class StaticChezmoiSource(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'não estática'):
                         state.chezmoi_render()
                     run.assert_not_called()
+
+
+
+
+class StateOwnership(unittest.TestCase):
+    """R-047: estado que registra alvos de outra HOME ou de outro XDG_CONFIG_HOME é recusado (incidente do R-046)."""
+
+    FULL = 'personal,science,extras'
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.home = self.base / 'H'
+        self.other = self.base / 'T'
+        for path in (self.home, self.other):
+            path.mkdir(mode=0o700)
+        self.state = self.home / '.local/state/devshell'
+
+    def env(self, **extra):
+        env = {'PATH': '/usr/bin:/bin', 'HOME': str(self.home), 'LANG': 'C.UTF-8'}
+        env.update({key: str(value) for key, value in extra.items()})
+        return env
+
+    def populate(self, profile, config):
+        """Escreve os alvos do perfil em config (sem Chezmoi) e devolve o registro correspondente."""
+        script = ('fail(){ echo "$1" >&2; exit 2; }; ROOT=$DEVSHELL_ROOT; source "$ROOT/lib/profiles.sh"; '
+                  'resolve_profiles "$1"; DEVSHELL_PROFILES=$1 /usr/bin/python3 -I -c "$2" "$3"')
+        code = ('import json,sys; from pathlib import Path; sys.path.insert(0, sys.argv[1]); import state\n'
+                'reg = {}\n'
+                'for target, content in state.desired_files().items():\n'
+                '    path = Path(target); path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)\n'
+                '    path.write_bytes(content); path.chmod(0o600); reg[target] = state.digest(content)\n'
+                'print(json.dumps(reg))')
+        import subprocess
+        result = subprocess.run(['bash', '-c', script, 'x', profile, code + '\n', str(ROOT / 'lib')], check=True,
+                                capture_output=True, text=True, env=self.env(DEVSHELL_ROOT=ROOT, XDG_CONFIG_HOME=config))
+        return json.loads(result.stdout)
+
+    def apply_real(self, profile=FULL):
+        registry = self.populate(profile, self.home / '.config')
+        self.state.mkdir(parents=True, mode=0o700)
+        for path in (self.home / '.local', self.home / '.local/state'):
+            path.chmod(0o700)
+        (self.state / 'current.json').write_text(json.dumps(registry))
+        return registry
+
+    def devshell(self, *arguments, **extra):
+        import subprocess
+        return subprocess.run([str(ROOT / 'bin/devshell'), *arguments], check=False, capture_output=True, text=True,
+                              env=self.env(**extra), cwd=self.base)
+
+    def tree(self):
+        return sorted((str(p.relative_to(self.base)), p.stat().st_mode, p.read_bytes() if p.is_file() else b'')
+                      for p in self.base.rglob('*') if not p.is_symlink())
+
+    def assert_foreign(self, result):
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn(str(self.state), result.stderr)
+        self.assertIn('outra configuração', result.stderr)
+
+    def test_r047_incident_reproduction_is_refused_without_writing(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        before = self.tree()
+        plan = self.devshell('plan', '--json', XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(plan)
+        self.assertIn(str(self.home / '.config'), plan.stderr)
+        apply = self.devshell('apply', '--approve', 'a' * 64, XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(apply)
+        self.assertFalse((self.state / 'profiles').exists())
+        self.assertEqual(self.tree(), before)
+
+    def test_r047_every_state_command_is_refused_with_or_without_profile(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        before = self.tree()
+        commands = [['plan'], ['status'], ['diff'], ['doctor'], ['update'], ['apply', '--approve', 'a' * 64],
+                    ['setup', '--dry-run'], ['install', '--component', 'python', '--dry-run'],
+                    ['install', '--component', 'devshell', '--dry-run'], ['rollback'], ['rollback', '--prune', '--keep', '1']]
+        for command in commands:
+            for profile in ([], ['--profile', 'minimal']):
+                if command[0] == 'rollback' and profile:
+                    continue
+                with self.subTest(command=command, profile=profile):
+                    self.assert_foreign(self.devshell(*command, *profile, XDG_CONFIG_HOME=self.other))
+        self.assertEqual(self.tree(), before)
+
+    def test_r047_other_home_with_same_state_is_refused(self):
+        self.apply_real()
+        other_home = self.base / 'H2'
+        other_home.mkdir(mode=0o700)
+        result = self.devshell('plan', HOME=other_home, XDG_STATE_HOME=self.home / '.local/state')
+        self.assert_foreign(result)
+
+    def test_r047_registry_without_components_or_mixing_roots_is_refused(self):
+        registry = self.apply_real()
+        components = str(self.home / '.config/devshell/components')
+        del registry[components]
+        (self.state / 'current.json').write_text(json.dumps(registry))
+        self.assert_foreign(self.devshell('plan', '--profile', 'minimal', XDG_CONFIG_HOME=self.other))
+        mixed = registry | self.populate('minimal', self.other)
+        (self.state / 'current.json').write_text(json.dumps(mixed))
+        self.assert_foreign(self.devshell('plan', '--profile', 'minimal', XDG_CONFIG_HOME=self.other))
+
+    def test_r047_foreign_message_comes_before_the_profile_hint(self):
+        self.apply_real()
+        self.populate('personal', self.other)
+        result = self.devshell('plan', XDG_CONFIG_HOME=self.other)
+        self.assert_foreign(result)
+        self.assertNotIn('nenhum perfil lembrado', result.stderr)
+
+    def test_r047_legitimate_states_are_not_blocked(self):
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        registry = self.apply_real('minimal')
+        (self.state / 'profiles').write_text('minimal\n')
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        self.assertEqual(self.devshell('plan', '--json', XDG_CONFIG_HOME=str(self.home / '.config') + '/').returncode, 0)
+        # Dotfile que saiu do checkout não corresponde a nenhum alvo: não é outra configuração.
+        removed = registry | {str(self.home / '.config/ferramenta-antiga/config.toml'): 'b' * 64}
+        (self.state / 'current.json').write_text(json.dumps(removed))
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+        (self.state / 'current.json').write_text('{}')
+        self.assertEqual(self.devshell('plan', '--json').returncode, 0)
+
+    def test_r047_rollback_list_and_project_are_exempt(self):
+        self.apply_real()
+        self.populate('minimal', self.other)
+        listing = self.devshell('rollback', '--list', XDG_CONFIG_HOME=self.other)
+        self.assertEqual(listing.returncode, 0, listing.stderr)
+        project = self.devshell('project', 'doctor', '--path', str(self.base), XDG_CONFIG_HOME=self.other)
+        self.assertNotIn('outra configuração', project.stderr)
+
+    def test_r047_group_writable_local_does_not_block_before_the_setup_repair(self):
+        # D-015: um ~/.local com escrita de grupo (umask 002) é assunto da revisão de permissões do setup.
+        (self.home / '.local').mkdir(mode=0o700)
+        (self.home / '.local').chmod(0o775)
+        result = self.devshell('setup', '--dry-run', '--json', '--profile', 'minimal')
+        self.assertNotIn('permissões inseguras', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.apply_real('minimal')
+        (self.home / '.local').chmod(0o775)
+        result = self.devshell('setup', '--dry-run', '--json', '--profile', 'minimal')
+        self.assertNotIn('outra configuração', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_r047_removed_dotfile_with_a_target_name_is_not_foreign(self):
+        # Um dotfile antigo em CONFIG/x/starship.toml termina como um alvo, mas está dentro da configuração atual.
+        registry = self.apply_real('minimal')
+        nested = registry | {str(self.home / '.config/ferramenta-antiga/starship.toml'): 'b' * 64,
+                             str(self.home / '.config/antigo/.bash_aliases'): 'c' * 64}
+        (self.state / 'current.json').write_text(json.dumps(nested))
+        result = self.devshell('plan', '--json', '--profile', 'minimal')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_r047_dot_dot_in_xdg_is_unsafe_not_foreign(self):
+        self.apply_real()
+        result = self.devshell('plan', XDG_CONFIG_HOME=self.home / 'x/../.config')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('caminho inseguro', result.stderr)
+        self.assertNotIn('outra configuração', result.stderr)
 
 
 if __name__ == '__main__':

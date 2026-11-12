@@ -447,13 +447,20 @@ assert "dotfiles:" in block and "a atualizar" in block,block'
 @test 'R-040 setup pergunta antes de registrar os perfis quando os dotfiles já estão em dia' {
     install_science
     /usr/bin/rm "$XDG_STATE_HOME/devshell/profiles"
+    latest=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
     run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Registrar os perfis science=n" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [[ "$output" == *'Perfis não registrados'* ]]
     [ ! -e "$XDG_STATE_HOME/devshell/profiles" ]
+    [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")" = "$latest" ]
     run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Registrar os perfis science=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/profiles")" = science ]
+    # R-048: registrar os perfis abre uma transação sem arquivos (o rollback dela é testado em RememberedProfiles).
+    new=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
+    [ "$new" != "$latest" ]
+    python3 -c 'import json,sys;m=json.load(open(sys.argv[1]));assert m["files"]==[] and m["status"]=="committed" and m["previous_profiles"] is None,m' \
+        "$XDG_STATE_HOME/devshell/transactions/$new/manifest.json"
 }
 
 @test 'R-041 com tudo em dia o setup diz nada a fazer, sai com 0 e não pergunta' {

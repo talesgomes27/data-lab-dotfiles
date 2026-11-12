@@ -2,12 +2,12 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 5
+versao_spec: 9
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
 
-# Spec: histórico de transações, CI agendado, lock das ferramentas uv e setup simplificado
+# Spec: histórico de transações, CI agendado, lock das ferramentas uv, setup simplificado e retirada de órfãos
 
 ## Contexto
 
@@ -323,6 +323,196 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 - Estado: implementado
 - Evidência: tests/profiles.bats (2 testes R-046)
 
+**Estado preso à configuração (Bloco E0)**
+
+Contexto: apuração do incidente do R-046 (ROADMAP, item 0). A cadeia de
+transações da HOME afetada mostra o registro de perfis passando a `minimal`
+entre a transação `49dd88de` (2026-11-09, criada antes do Bloco D, sem
+`previous_profiles`) e a `c7209d5c` (2026-11-12, `previous_profiles:
+minimal`), sem transação no meio. O único caminho que grava o registro sem
+transação é o `apply` sem arquivos a alterar. O caso foi reproduzido numa HOME
+simulada: com a HOME e o `XDG_STATE_HOME` reais, mas com `XDG_CONFIG_HOME`
+apontando para um diretório que já correspondia a `minimal`, `plan` e
+`apply` sem `--profile` caem no padrão `minimal` e no caminho sem mudanças, e
+gravam `minimal` no registro real. No ambiente normal, esse registro tiraria os
+mesmos 24 componentes do incidente. O estado não sabe a que configuração
+pertence, e a mudança do registro não deixa rastro.
+
+### R-047 Estado de outra configuração é recusado
+- Enunciado: um comando não usa um estado que registra arquivos de outra HOME
+  ou de outro `XDG_CONFIG_HOME`.
+- Critério: Dado um `current.json` com alguma chave que é um alvo deste
+  checkout sob outra raiz (o mesmo caminho relativo de
+  `desired_files(all_components=True)`, mas sob outra HOME ou outro
+  `XDG_CONFIG_HOME`), Quando qualquer comando roda com ou sem `--profile`,
+  Então sai com 2 antes de qualquer plano, sem gravar nada. Isso vale também
+  para `rollback`, `rollback --prune`, `update`, `setup` e `install`, inclusive
+  `install --component devshell`, porque o recibo do lançador fica no mesmo
+  estado. A checagem roda antes de `profiles-source` e antes do desvio de
+  `project`/`rollback`/lançador em `bin/devshell`. Só ficam isentos `project`,
+  que não usa o estado, e `rollback --list`, que só lê e serve para examinar o
+  estado antes da saída manual. A recusa acontece também quando o registro
+  mistura chaves da raiz atual e de outra. Uma chave fora do universo que não
+  corresponde a nenhum alvo, como um dotfile removido do repositório, não
+  bloqueia. A mensagem mostra o diretório de
+  estado e a configuração a que ele pertence, e sugere rodar com o mesmo
+  `XDG_CONFIG_HOME` e a mesma HOME, ou usar um `XDG_STATE_HOME` próprio. Um
+  registro vazio ou ausente não bloqueia. Para mudar de vez o
+  `XDG_CONFIG_HOME`, o caminho é manual e documentado: mover o diretório de
+  estado antigo para fora (D-029). HOME ou XDG com `..` são recusados antes,
+  pela mensagem de caminho inseguro, e não como "outra configuração".
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::StateOwnership (reprodução do incidente, todos os comandos com e sem --profile, outra HOME, registro sem `components` e misto, ordem da mensagem, estados legítimos, isenções, `..`, `.local` 775 e dotfile antigo com nome de alvo); tests/profiles.bats::R-047; tests/transactions.bats (XDG relativo); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43229631375](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43229631375)
+
+### R-048 Toda mudança do registro de perfis deixa transação
+- Enunciado: o `apply` que muda os perfis registrados sem ter arquivos a
+  alterar também cria uma transação.
+- Critério: Dado um plano aprovado sem arquivos a alterar, com perfis
+  diferentes dos registrados, Quando `apply --approve HASH` roda, Então é
+  criada uma transação com os mesmos campos do caminho com escrita (`files:
+  []`, `previous_registry`, `previous_latest`, `previous_profiles`, `created`,
+  `status`), `latest` passa a apontar para ela e o registro é gravado dentro
+  dela. `rollback --list` a mostra, e o `rollback` aprovado devolve os perfis
+  anteriores, inclusive quando `previous_profiles` é `null` (remove o
+  registro). A comparação usa a forma canônica dos perfis: um registro
+  equivalente, mas escrito de outro jeito, não gera transação. Com perfis
+  iguais, o `apply` sem mudanças não grava nada. A poda trata a transação como
+  as outras; o aviso de "dotfiles de antes do primeiro apply" não aparece para
+  uma transação sem arquivos.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::RememberedProfiles.test_r048_* (transação sem arquivos, rollback com `null`, perfis iguais ou equivalentes, caminho de falha, poda, registro equivalente no plano); tests/setup.bats (R-040 "Registrar os perfis" abre transação); suíte completa sem skips no [workflow_dispatch 43229631375](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43229631375)
+
+**Retirada de arquivos órfãos (Bloco E)**
+
+Contexto: o registro `$XDG_STATE_HOME/devshell/current.json` só cresce. O
+`apply` grava `registro anterior | arquivos escritos` e nunca tira uma
+entrada. Quem troca `personal` por `minimal` fica com `nushell/config.nu`,
+`nushell/env.nu`, `starship.toml` e `direnv/lib/devshell-python.sh` no disco e
+no registro, sem aviso no `plan` nem no `doctor` (observado em 2026-11-12 numa
+HOME temporária). Um dotfile removido ou renomeado no repositório também fica,
+mas sai do universo: pela D-024 ele só deixa o registro (`forget-outside`) e a
+remoção do arquivo é manual. É o item 1 do [ROADMAP](ROADMAP.md), com o escopo reduzido pela
+D-022.
+
+Termos: **órfão** é uma entrada do registro cujo caminho não está em
+`desired_files()` dos perfis atuais. **Universo** é
+`desired_files(all_components=True)`: todos os alvos que alguma combinação de
+componentes deste checkout pode gerar, o mesmo conjunto que o rollback já usa
+como escopo.
+
+### R-050 Plano mostra os órfãos sem gravar
+- Enunciado: `plan`, `status`, `diff` e `doctor` listam os órfãos e o que o
+  próximo `apply` faria com cada um.
+- Critério: Dado um registro com caminhos fora dos perfis atuais, Quando
+  `plan` roda, Então cada órfão aparece com uma ação:
+  - `remove`: está no universo, é arquivo regular do usuário com link único,
+    em caminho seguro, e o SHA-256 atual é igual ao registrado;
+  - `forget-edited`: o conteúdo atual difere do registrado (D-023);
+  - `forget-missing`: o arquivo não existe mais;
+  - `forget-outside`: fora do universo e sem corresponder a nenhum alvo, por
+    exemplo dotfile removido do repositório (D-024). Chaves de outra HOME ou
+    de outro `XDG_CONFIG_HOME` não chegam aqui: o R-047 recusa o comando
+    antes;
+  - `forget-unsafe`: no universo, mas inseguro: qualquer motivo de
+    `path_issues` (symlink no caminho ou em ancestral, outro dono, permissões,
+    caminho inválido), hardlink, tipo não regular ou `PermissionError` na
+    leitura.
+
+  A classificação segue esta ordem, e a primeira que vale decide:
+  `forget-outside` → `forget-unsafe` → `forget-missing` → `forget-edited` →
+  `remove`. O teste de universo compara o texto exato da chave com as chaves de
+  `desired_files(all_components=True)` antes de qualquer `stat` ou leitura, de
+  modo que um registro adulterado não faz a CLI tocar caminhos fora do
+  universo. Nenhum caso lança exceção. A lista entra no hash de aprovação com
+  caminho, ação, motivo e, nos `remove`, o snapshot completo; o JSON ganha o
+  campo `retire`. O `diff` em texto mostra cada `remove` como diff unificado
+  para vazio; conteúdo que não é UTF-8 aparece como "(conteúdo binário)".
+  Nenhum desses comandos grava nada (AGENTS.md).
+- Prioridade: alta
+- Estado: proposto
+
+### R-051 Apply retira na mesma transação
+- Enunciado: o `apply` aprovado remove os órfãos `remove` e tira do registro
+  todos os órfãos, dentro da transação que já existe.
+- Critério: Dado um plano aprovado com órfãos, Quando `apply --approve HASH`
+  roda, Então, sob o lock, a CLI replaneja e confere o hash. Para cada
+  `remove`, copia o arquivo para a transação e confere que o SHA-256 do backup
+  é igual ao do `before`. Depois abre o diretório pai sem seguir symlinks,
+  confere a identidade (`st_dev`, `st_ino`) do pai e do arquivo e o snapshot, e
+  remove com `dir_fd`. A entrada vai para a lista do caminho de falha logo
+  depois da remoção. O `current.json` final não tem nenhum órfão. Um plano só
+  com órfãos, sem arquivos a escrever, também abre uma transação; só com
+  `forget-*`, a transação tem `files: []`. Uma transação sem escrita não
+  executa o Chezmoi. Se algo falha no meio, os arquivos já removidos voltam do
+  backup e o registro anterior é restaurado, como numa escrita que falha. Diretórios que ficarem vazios não
+  são removidos (D-025). Arquivos `forget-*` nunca são tocados.
+- Prioridade: alta
+- Estado: proposto
+
+### R-052 Rollback devolve o que foi retirado
+- Enunciado: o `rollback` da transação recoloca os arquivos removidos e o
+  registro anterior.
+- Critério: Dado um `apply` que removeu órfãos, Quando `rollback` aprovado
+  roda, Então cada arquivo volta com o conteúdo, o modo e o dono do backup, e
+  `current.json` volta ao anterior, inclusive as entradas `forget-*`. Se o
+  caminho de um arquivo removido foi recriado e editado depois do `apply`, o
+  rollback recusa, como já faz com arquivo editado. Se o dotfile de um
+  `remove` saiu do repositório depois do `apply`, o rollback recusa a
+  transação (o caminho saiu do universo) com uma mensagem que aponta o backup
+  em `transactions/ID` para a recuperação manual. O rollback de uma transação
+  só com `forget-*` devolve as entradas ao registro. A poda (`rollback
+  --prune`) trata essas transações como as outras e avisa quando remove a única
+  cópia de um arquivo retirado.
+- Prioridade: alta
+- Estado: proposto
+
+### R-053 Doctor e setup tratam órfãos como pendência do setup
+- Enunciado: o `doctor` acusa os órfãos, e o `setup` os resolve na etapa de
+  aplicação.
+- Critério: Dado um registro com órfãos, Quando `doctor` roda, Então cada
+  órfão gera um diagnóstico `arquivo gerenciado fora dos perfis: CAMINHO
+  (AÇÃO)`, saída 3 e `next_step` `setup` (D-019). O resumo do `setup` conta os
+  órfãos na etapa de aplicação e nunca a marca `em dia` com órfãos, nem só com
+  `forget-*`. A etapa de aplicação considera os órfãos (R-042): um plano só com
+  órfãos pergunta "Aplicar os dotfiles…", e a pergunta "Registrar os perfis…"
+  nunca aparece nem aprova o hash quando `retire` não está vazio. A pergunta de
+  confirmação diz quantos arquivos serão removidos e quantos só saem do
+  registro. Quando há algum `remove`, o setup lista os arquivos e só segue se a
+  pessoa digitar `retirar`, como já faz com `substituir` nos conflitos; outra
+  resposta ou EOF cancela sem gravar nada. Motivo: no incidente do R-046, uma
+  confirmação de diff comum bastou para tirar 24 componentes. Os órfãos do
+  universo entram na revisão de permissões do setup (D-027). Depois do `setup`, o `doctor` não
+  acusa mais órfãos.
+- Prioridade: média
+- Estado: proposto
+
+### R-055 Registro válido
+- Enunciado: um `current.json` com formato inválido é recusado antes de
+  qualquer classificação.
+- Critério: Dado um `current.json` que não é objeto JSON, ou que tem chave que
+  não é caminho absoluto em texto, ou valor que não é SHA-256 (64 hexadecimais
+  minúsculos), Quando qualquer comando lê o registro, Então sai com 2 e uma
+  mensagem que aponta o arquivo, sem traceback e sem gravar nada.
+- Prioridade: alta
+- Estado: proposto
+
+### R-054 Documentação da retirada
+- Enunciado: README, USAGE, SECURITY e CHANGELOG explicam que trocar de perfil
+  retira os arquivos que ficaram de fora, o que é preservado e como desfazer.
+- Critério: Dado o diff final, Quando revisado, Então a USAGE tem um exemplo
+  executado de troca de perfil com retirada, a tabela de recuperação do
+  SECURITY inclui "arquivo retirado", com dois limites: o rollback recusa a
+  transação se o dotfile saiu do repositório, e a poda pode remover a única
+  cópia de um arquivo retirado. A SECURITY também lembra que, num perfil
+  aplicado com `--replace-existing`, o original do usuário está só na
+  transação daquele apply. A USAGE explica que um `XDG_CONFIG_HOME` diferente
+  numa sessão é recusado pelo R-047, e não vira retirada. O CHANGELOG
+  marca a mudança de comportamento do `apply`.
+- Prioridade: média
+- Estado: proposto
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -348,6 +538,11 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 ### N-007 `git pull`, atualização do checkout ou verificação de versões nova pela CLI
 ### N-008 `--yes` ou aprovação automática no setup
 ### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta)
+
+### N-010 Manifesto de migrações declarativas (`manifests/migrations.json`): sem caso que o registro não cubra (D-022)
+### N-011 Migração automática das instalações pelo `uv tool` (a D-013 continua manual)
+### N-012 Remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte
+### N-013 Remoção de arquivo fora do universo ou editado, mesmo com `--replace-existing`
 
 ## Decisões
 
@@ -438,8 +633,9 @@ na transação, depois de `current.json`, e o manifesto guarda
 `previous_profiles` (texto ou `null`); o caminho de falha e o `rollback` o
 restauram (`null` remove o registro; manifesto antigo sem a chave deixa o
 registro como está e o rollback avisa "perfis anteriores desconhecidos; informe
---profile"). Num `apply` sem arquivos a alterar, o registro é gravado sob
-`locked()` por escrita atômica, sem transação. O registro nunca é um item de
+--profile"). Num `apply` sem arquivos a alterar e sem órfãos (Bloco E), o registro só é
+gravado se os perfis mudarem, e então numa transação com `files: []` (R-048,
+D-028). O registro nunca é um item de
 `transactions/ID`, o que preserva a poda e o `--list` do Bloco A.
 
 ### D-015 Precedência: informado, lembrado, `minimal`
@@ -544,6 +740,83 @@ flowchart LR
   PR --> H2[hash aprovado + lock]
   H2 --> X[remove só os ids do plano]
 ```
+
+### D-022 O registro é a fonte da retirada, sem manifesto de migrações
+O registro já diz o que a CLI escreveu e com que conteúdo. Arquivo renomeado no
+repositório equivale a "o antigo fica órfão e o novo é escrito". No histórico
+do repositório não houve migração de dotfile que precisasse de mais do que
+isso. A única migração real, a D-013, mexe num ambiente externo sem desfazer e
+continua manual. Um manifesto (N-010) só entra quando houver um caso concreto.
+Decidido pelo usuário em 2026-11-12.
+
+### D-023 Órfão editado é preservado e sai do registro
+Se o SHA-256 atual difere do registrado, o conteúdo é do usuário: o arquivo
+fica intacto, a entrada sai do registro e o plano avisa. Não há flag para
+removê-lo (N-013). Decidido pelo usuário em 2026-11-12.
+
+### D-024 Só o universo pode ser removido
+Remover só caminhos de `desired_files(all_components=True)` mantém a retirada
+dentro do escopo que o rollback já aceita (`rollback_plan` recusa caminhos fora
+dele). Um registro adulterado não consegue apontar a remoção para fora dos
+alvos que o checkout pode gerar. O que está fora, como um dotfile removido do
+repositório, é preservado e sai do registro com aviso para remoção manual. Um
+`XDG_CONFIG_HOME` antigo não chega à classificação, porque o R-047 recusa o
+comando antes.
+
+### D-025 Diretórios ficam
+Diretórios vazios depois da retirada não são removidos, como já diz a tabela de
+recuperação do SECURITY ("diretórios criados podem permanecer vazios").
+Remover diretórios exigiria saber quais a CLI criou, o que o journal não
+registra.
+
+### D-026 Formato no journal
+Cada `remove` entra em `files` do manifesto da transação com `action:
+remove`, `before` (snapshot), `after: null`, `backup` e, depois da remoção,
+`applied: null`. Assim `restore_entry` e `rollback_plan` funcionam sem mudança
+de formato. As entradas `forget-*` vão para um campo `forgotten`, só para
+relatório; o registro anterior já fica em `previous_registry`. Manifestos
+antigos, sem esses campos, continuam aceitos.
+
+### D-027 Órfãos do universo na revisão de permissões do setup
+Um ancestral com escrita de grupo transformaria o órfão em `forget-unsafe`, e a
+entrada sairia do registro sem que o arquivo pudesse ser removido depois.
+Para evitar isso, `target_paths` inclui os órfãos que estão no universo. O
+setup oferece o reparo antes da etapa de aplicação, e o plano é recalculado
+depois. Fora do setup, `forget-unsafe` é definitivo: a entrada sai do registro
+e o arquivo fica para remoção manual. Achado P2 da revisão do plano.
+
+### D-028 Transação sem arquivos para a mudança de perfis
+A transação leve reaproveita o journal, o `rollback`, o `--list` e a poda sem
+formato novo: `files: []` já é aceito por `rollback_plan` (nenhuma entrada a
+conferir), e `previous_profiles` já é restaurado. Uma alternativa seria um log
+só de perfis, mas teria leitura, poda e rollback próprios. Substitui o "sem
+transação" da D-014.
+
+### D-029 Todas as chaves do registro contra o universo, e saída manual
+O universo é decomposto em pares (raiz, caminho relativo): HOME para
+`.zshenv` e `.bash_aliases`, e `XDG_CONFIG_HOME` para o resto. Uma chave do
+registro pertence a outra configuração quando termina em `/` + um desses
+caminhos relativos e o prefixo é diferente da raiz atual. A comparação é feita
+no texto exato da chave, sem `stat` nem leitura. Um prefixo dentro da
+configuração atual não conta como outra raiz: é um arquivo antigo que termina
+com o nome de um alvo, como `CONFIG/ferramenta-antiga/starship.toml`. O
+`current.json` é lido conferindo só o próprio arquivo (`read_own_regular`).
+Ancestrais com escrita de grupo continuam sendo assunto da revisão de
+permissões do setup (D-015) e não bloqueiam antes dela. Achado P1 da revisão
+do código. Usar todas as chaves, e não
+só algumas âncoras, cobre registros em que um alvo nunca entrou (porque
+estava igual no primeiro apply) e registros que misturam duas configurações.
+Não muda o formato do estado e vale para estados criados antes deste bloco.
+Não há flag para contornar (como a N-008).
+
+Para mudar de vez a configuração, a pessoa move o diretório de estado antigo
+para fora e roda `setup --profile` na nova. O estado antigo leva junto as
+transações, o recibo do lançador, `permission-repairs` e o registro de perfis.
+Para consultá-lo ou fazer rollback dele, basta rodar com `XDG_STATE_HOME`
+apontando para o diretório pai dele e com o `XDG_CONFIG_HOME` antigo. Como a
+recusa vem antes de qualquer plano, o Bloco E nunca classifica chaves de outra
+configuração: `forget-outside` fica restrito a chaves que não correspondem a
+nenhum alvo.
 
 ## Restrições
 

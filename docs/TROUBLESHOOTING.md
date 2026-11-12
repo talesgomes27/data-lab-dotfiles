@@ -99,6 +99,7 @@ o novo hash e aprovando conflitos com `--replace-existing` e backup.
 |---|---|
 | Chezmoi ausente | Use o setup ou planeje/aprove `install --component chezmoi`. |
 | Aprovação inválida | Gere e revise novo plano com a mesma seleção; conteúdo ou estado mudou. |
+| "O estado em … pertence a outra configuração" | O comando rodou com HOME ou `XDG_CONFIG_HOME` diferentes dos que o estado registra. Rode de novo no ambiente de sempre ou, para um teste, use também um `XDG_STATE_HOME` próprio. Para mudar de vez a configuração, veja [Segurança](SECURITY.md#estado-de-outra-configuração). |
 | Dotfiles em conflito | Leia o diff e preserve as edições; a substituição explícita tem backup. |
 | Permissões inseguras | Use setup com dry-run para enumerar os alvos. O reparo exige confirmação e não é recursivo. |
 | Symlink, hardlink ou dono inesperado | Revise os caminhos e use arquivos regulares sob seu controle; não force o journal. |

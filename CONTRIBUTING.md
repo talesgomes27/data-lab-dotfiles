@@ -38,7 +38,9 @@ bash scripts/check.sh
 O script executa ShellCheck, shfmt, Ruff (regras de defeitos em `ruff.toml`),
 sintaxe Python, Bats e unittest. Os testes
 usam HOME/XDG/cache temporários. Mudanças de comportamento exigem testes
-pertinentes, sem enfraquecer guardas. Não use sua HOME como fixture.
+pertinentes, sem enfraquecer guardas. Não use sua HOME como fixture. Ao
+verificar algo à mão, troque HOME e todos os XDG juntos: trocar só o
+`XDG_CONFIG_HOME` mantém o estado real, e a CLI recusa o comando (R-047).
 
 Os testes de integração são operações adicionais, com downloads:
 

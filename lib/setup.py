@@ -221,7 +221,7 @@ def summary(inspection):
         recorded = fs.read_own_regular(fs.profiles_record())
     except (OSError, ValueError):
         recorded = None
-    remembered = (recorded or '').strip() == os.environ['DEVSHELL_PROFILES']
+    remembered = recorded is not None and fs.canonical_profiles(recorded.strip()) == fs.canonical_profiles(os.environ['DEVSHELL_PROFILES'])
     steps.append({'step': 'perfis', 'status': 'em dia' if remembered else 'registrar', 'detail': '' if remembered else os.environ['DEVSHELL_PROFILES']})
     return {'steps': steps, 'blockers': inspection['blockers'],
             'nothing_to_do': not inspection['blockers'] and all(step['status'] == 'em dia' for step in steps)}
