@@ -311,6 +311,18 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 - Estado: verificado
 - Evidência: README.md (Atualizar); docs/INSTALLATION.md (Atualizar configuração e versões); CHANGELOG.md; revisão de documentação do T-900 (docs/VALIDATION.md)
 
+### R-046 Perfis lembrados não encolhem a HOME aplicada
+- Enunciado: um registro de perfis que não corresponde ao que está aplicado
+  não pode tirar componentes em silêncio.
+- Critério: Dado `~/.config/devshell/components` com componentes que os perfis
+  lembrados não geram, Quando um comando roda sem `--profile`, Então sai com 2
+  antes de qualquer plano, lista os componentes que sairiam e pede `setup
+  --profile ...` uma vez, sem gravar nada. Com `--profile` informado, vale o
+  informado. Perfis lembrados que só acrescentam componentes seguem normalmente.
+- Prioridade: alta
+- Estado: implementado
+- Evidência: tests/profiles.bats (2 testes R-046)
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -505,6 +517,18 @@ nele, sem pedir para mover a venv. No doctor, o interpretador aparece como
 `interpretador uv com caminho inseguro`, ação manual. O setup não corrige esses
 modos: o diretório é do uv e pode servir outros projetos, fora do escopo
 restrito das escritas. Achado P2 da revisão do T-900.
+
+### D-021 Registro de perfis conferido contra os componentes aplicados
+Em 2026-11-12, uma HOME aplicada com `personal,science,extras` tinha o registro
+`minimal`, e o `setup` propôs, como um diff comum, tirar 24 componentes de
+`components`; a mudança foi aplicada. A origem do registro não foi apurada: não
+há transação entre 2026-11-09 e 2026-11-12 que o explique. Depois de
+`resolve_profiles`, quando a origem é `lembrados`, `state.py profiles-check`
+compara o `components` aplicado com os componentes dos perfis lembrados e sai
+com 2 se algum sairia. Só a remoção bloqueia: uma versão nova que acrescenta
+componente a um perfil segue o caminho comum. Uma versão que tira componente
+de um perfil também passa a pedir `--profile` uma vez; é o custo aceito, porque
+encolher a HOME precisa ser uma escolha explícita.
 
 ```mermaid
 flowchart LR

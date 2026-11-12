@@ -194,6 +194,18 @@ def profiles_source(informed):
     return 'lembrados', canonical_profiles(text)
 
 
+def remembered_profiles_check():
+    """R-046: perfis lembrados que tirariam componentes já aplicados param antes de qualquer plano."""
+    try:
+        applied = read_own_regular(CONFIG / 'devshell/components')
+    except ValueError:
+        return  # Arquivo irregular é assunto do plano, que o recusa com mensagem própria.
+    removed = [name for name in (applied or '').split() if name not in COMPONENTS]
+    if removed:
+        raise ValueError(f"os perfis lembrados ({os.environ['DEVSHELL_PROFILES']}) tirariam componentes já aplicados: "
+                         f"{', '.join(removed)}; rode ./bin/devshell setup --profile PERFIS uma vez, com os perfis que você aplicou")
+
+
 def registry():
     safe_path(STATE / 'current.json')
     path = STATE / 'current.json'
@@ -826,6 +838,9 @@ def main():
     if command == 'profiles-source':
         source, profiles = profiles_source(os.environ.get('DEVSHELL_PROFILE_INFORMED') or None)
         print(source, profiles)
+        return 0
+    if command == 'profiles-check':
+        remembered_profiles_check()
         return 0
     if command == 'update' and not os.environ['DEVSHELL_APPROVAL']:
         command = 'plan'

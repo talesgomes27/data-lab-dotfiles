@@ -143,6 +143,8 @@ fi
 # shellcheck source=lib/profiles.sh
 source "$ROOT/lib/profiles.sh"
 resolve_profiles "$profile"
+# R-046: um registro que não corresponde ao aplicado não pode encolher a HOME em silêncio.
+[[ "$profile_source" != lembrados ]] || DEVSHELL_PROFILES="$profile" devshell_python "$ROOT/lib/state.py" profiles-check
 export DEVSHELL_PROFILE_SOURCE="$profile_source"
 export DEVSHELL_PROFILES="$profile" DEVSHELL_JSON="$json" DEVSHELL_OFFLINE="$offline"
 export DEVSHELL_APPROVAL="$approval" DEVSHELL_REPLACE="$replace" DEVSHELL_COMPONENT="$component"

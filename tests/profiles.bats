@@ -191,3 +191,30 @@ assert d["next_step"]["kind"]=="manual",d["next_step"]'
     [ "$status" -eq 0 ]
     [[ "$output" == *'Perfis: personal (lembrados)'* ]]
 }
+
+@test 'R-046 perfis lembrados que tirariam componentes aplicados exigem --profile' {
+    apply_profile personal
+    # Registro que não corresponde ao que está aplicado (incidente de 2026-11-12).
+    printf 'minimal\n' >"$(record)"
+    before=$(state_digest)
+    for command in plan doctor 'setup --dry-run'; do
+        # shellcheck disable=SC2086 # O subcomando com opção é dividido de propósito.
+        run "$FOUNDRY_ROOT/bin/devshell" $command
+        [ "$status" -eq 2 ]
+        [[ "$output" == *'--profile'* && "$output" == *'starship'* ]]
+    done
+    [ "$(state_digest)" = "$before" ]
+    run bash -c '"$FOUNDRY_ROOT/bin/devshell" setup </dev/null'
+    [ "$status" -eq 2 ]
+    [ "$(state_digest)" = "$before" ]
+    run "$FOUNDRY_ROOT/bin/devshell" plan --profile personal
+    [ "$status" -eq 0 ]
+}
+
+@test 'R-046 perfis lembrados que só acrescentam componentes seguem sem --profile' {
+    apply_profile minimal
+    printf 'personal\n' >"$(record)"
+    run --separate-stderr "$FOUNDRY_ROOT/bin/devshell" plan --json
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s' "$output" | field)" = 'personal lembrados' ]
+}
