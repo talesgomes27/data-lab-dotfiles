@@ -1,7 +1,9 @@
 # ADR 004 — Venv com hash obrigatório para as ferramentas Python
 
 Status: adotada em 2026-11-09, depois do teste de Q-001 da `docs/spec.md`.
-Substitui, para as CLI Python, o uso de `uv tool` do ADR 003.
+Substitui, para as CLI Python, o uso de `uv tool` do ADR 003. Registra as decisões
+D-007 (um lock por ferramenta) e D-008 (venv com `--require-hashes`) da
+`docs/spec.md`.
 
 As CLI Python do perfil `science` (ruff, pre-commit, ipython) fixam a versão
 raiz, mas o uv resolve as dependências transitivas a cada instalação. Duas
