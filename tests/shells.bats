@@ -219,10 +219,16 @@ BIN
         [ "$status" -eq 0 ]
     done
     printf 'bash zsh git uv chezmoi\n' >"$XDG_CONFIG_HOME/devshell/components"
+    printf 'alias ls="ls --color=auto"\nalias l="ls -CF"\n' >"$HOME/.bashrc"
+    # A distribuição pode definir atalhos na shell interativa (o bash.bashrc do openSUSE define la e ll);
+    # o Data Lab não pode acrescentar nem mudar nenhum deles sem o componente eza.
+    shortcuts='alias la ll lla lt lta 2>/dev/null; exit 0'
+    system=$(bash --noprofile -ic "$shortcuts" 2>/dev/null)
     # shellcheck disable=SC2016 # Código literal do bashrc da fixture.
-    printf 'alias ls="ls --color=auto"\nalias l="ls -CF"\nsource "$HOME/.bash_aliases"\n' >"$HOME/.bashrc"
-    run bash --noprofile -ic '[[ ${BASH_ALIASES[ls]} == "ls --color=auto" && ${BASH_ALIASES[l]} == "ls -CF" ]] || exit 10; for shortcut in la ll lla lt lta; do alias "$shortcut" >/dev/null 2>&1 && exit 9; done; exit 0'
+    printf 'source "$HOME/.bash_aliases"\n' >>"$HOME/.bashrc"
+    run bash --noprofile -ic '[[ ${BASH_ALIASES[ls]} == "ls --color=auto" && ${BASH_ALIASES[l]} == "ls -CF" ]] || exit 10'
     [ "$status" -eq 0 ]
+    [ "$(bash --noprofile -ic "$shortcuts" 2>/dev/null)" = "$system" ]
 }
 
 @test 'atalhos interativos preservam comandos existentes e oferecem gst gl du1' {
