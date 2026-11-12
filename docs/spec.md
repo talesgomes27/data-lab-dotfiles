@@ -362,7 +362,8 @@ pertence, e a mudança do registro não deixa rastro.
   estado antigo para fora (D-029). HOME ou XDG com `..` são recusados antes,
   pela mensagem de caminho inseguro, e não como "outra configuração".
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::StateOwnership (reprodução do incidente, todos os comandos com e sem --profile, outra HOME, registro sem `components` e misto, ordem da mensagem, estados legítimos, isenções, `..`, `.local` 775 e dotfile antigo com nome de alvo); tests/profiles.bats::R-047; tests/transactions.bats (XDG relativo); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43229631375](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43229631375)
 
 ### R-048 Toda mudança do registro de perfis deixa transação
 - Enunciado: o `apply` que muda os perfis registrados sem ter arquivos a
@@ -380,7 +381,8 @@ pertence, e a mudança do registro não deixa rastro.
   as outras; o aviso de "dotfiles de antes do primeiro apply" não aparece para
   uma transação sem arquivos.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::RememberedProfiles.test_r048_* (transação sem arquivos, rollback com `null`, perfis iguais ou equivalentes, caminho de falha, poda, registro equivalente no plano); tests/setup.bats (R-040 "Registrar os perfis" abre transação); suíte completa sem skips no [workflow_dispatch 43229631375](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43229631375)
 
 **Retirada de arquivos órfãos (Bloco E)**
 

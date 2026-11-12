@@ -33,6 +33,44 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Estado preso à configuração (Bloco E0) — 2026-11-12
+
+**Apuração do incidente do R-046.**
+- A cadeia de transações da HOME afetada mostra o registro passando a `minimal`
+  entre a `49dd88de`, criada antes do Bloco D e sem `previous_profiles`, e a
+  `c7209d5c`, com `previous_profiles: minimal`. Não há transação entre elas.
+- Os testes foram descartados: a suíte unittest, rodada com HOME e XDG de um
+  diretório-sentinela, não gravou nada nele, e todos os Bats isolam HOME e XDG.
+- Reprodução numa HOME simulada: com a HOME e o estado reais, mas com
+  `XDG_CONFIG_HOME` apontando para um diretório já em `minimal`, `plan` e
+  `apply` sem `--profile` gravaram `minimal` no registro real pelo caminho sem
+  mudanças. No ambiente normal, esse registro tira os mesmos 24 componentes.
+- O comando exato não foi identificado sem o histórico da shell.
+
+**Correção.**
+- R-047: o estado de outra HOME ou de outro `XDG_CONFIG_HOME` é recusado
+  antes de escolher perfis. Ficam isentos só `project` e `rollback --list`.
+- R-048: toda mudança do registro de perfis abre uma transação, inclusive
+  sem arquivos a alterar.
+- Os testes foram escritos antes do código: 24 recusas e cinco casos do R-048
+  foram vistos falhando pelo motivo esperado.
+
+**Revisão independente do código.** Encontrou um P1, corrigido: a checagem
+conferia os ancestrais do `current.json` e, com `~/.local` em 775, bloqueava o
+`setup` antes do reparo (D-015). O CI anterior à correção falhou em seis
+cenários Bats por esse motivo. Também foram corrigidos os P2 (perfis
+comparados na forma canônica no plano e no resumo do setup; decisão e
+gravação sob um único lock) e os P3 (prefixo dentro da configuração atual não
+conta como outra raiz; pares do universo pela origem; aviso da poda). Cada
+correção tem um teste que falhou antes.
+
+**Verificação.**
+- CI: o [workflow_dispatch 43229631375](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43229631375),
+  no commit `f38ff27`, aprovou os sete jobs: 229 Bats e 98 unittest sem
+  skips, cinco imagens e smoke online.
+- Local: Ruff 0.17.3, `bash -n` e os 98 unittest. Bats, ShellCheck e shfmt
+  ficaram com o CI.
+
 ## Guarda dos perfis lembrados (R-046) — 2026-11-12
 
 Incidente na HOME do mantenedor: o registro dizia `minimal`, a HOME estava
