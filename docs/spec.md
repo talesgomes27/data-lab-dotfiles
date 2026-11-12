@@ -702,7 +702,8 @@ decidido pelo usuário em 2026-11-12:
   - `--all` não se combina com `--list`, `--prune` ou `--keep`. Nem o plano
     nem `--dry-run` criam o diretório de estado ou o arquivo de lock.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::ChainRollback (plano em ordem sem gravar, hash, aplicação que volta a HOME a antes da primeira transação, edição no meio, modo alterado, backup ausente, poda, cadeia inválida, latest ausente, pendurado ou malformado, ciclo, estados interrompidos, manifestos antigos, falha no meio com contagem, rollback simples inalterado); tests/leave.bats; suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
 
 ### R-071 Comando `leave` por etapas
 - Enunciado: `leave` coordena a saída: desinstala os componentes e desfaz a
@@ -734,7 +735,8 @@ decidido pelo usuário em 2026-11-12:
     restaura os perfis de antes.
   - A checagem do R-047 vale também aqui.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers (resumo em ordem, todos os bloqueios); tests/leave.bats (etapas com confirmação própria, arquivo editado antes da primeira pergunta, recusa no meio, --dry-run sem gravar, opções recusadas); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
 
 ### R-072 O que fica depois da saída
 - Enunciado: o `leave` termina dizendo o que continua na máquina.
@@ -754,7 +756,8 @@ decidido pelo usuário em 2026-11-12:
   `--purge-state`, o `leave` não apaga nada disso; com a opção, só o
   diretório de estado sai (R-074).
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers.test_r072_remains_lists_what_stays; tests/leave.bats (mensagem final); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
 
 ### R-074 Apagar o estado da CLI, por opção
 - Enunciado: com `leave --purge-state`, a última etapa apaga o diretório de
@@ -778,7 +781,8 @@ decidido pelo usuário em 2026-11-12:
   - **Sem a opção:** nada muda no estado, e `--purge-state` com `--dry-run`
     só mostra o plano.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers.test_r074_* (oferecido só depois da cadeia inteira, recusado com transações fora da cadeia, remove só o estado, symlink e hash vencido, falha do rmtree, aviso do original do lançador); tests/leave.bats (palavra apagar); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
 
 ### R-073 Documentação da saída
 - Enunciado: README, USAGE, SECURITY e CHANGELOG explicam o `leave` e o
@@ -787,7 +791,8 @@ decidido pelo usuário em 2026-11-12:
   `devshell` lista os dois; o SECURITY diz o que a saída restaura e o que não
   restaura (originais podados, arquivos editados).
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: docs/USAGE.md (Sair do Data Lab, com saída executada); docs/SECURITY.md (Saída completa e linha na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
 
 **Documentação**
 

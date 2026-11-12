@@ -33,6 +33,57 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Saída completa (Bloco G) — 2026-11-12
+
+Item 2b do ROADMAP:
+- **`rollback --all`:** um só plano e um só hash para a cadeia inteira. Ele é
+  conferido por simulação antes de qualquer gravação, com a mesma regra de
+  cada passo.
+- **Comando `leave`:** desinstala os componentes e desfaz a cadeia, com uma
+  confirmação por etapa e todos os bloqueios listados antes da primeira
+  pergunta.
+- **`--purge-state`:** pedido do usuário. Apaga o estado com a palavra
+  `apagar`, só depois da cadeia inteira desfeita.
+- **D-038:** a lógica de desfazer virou `undo_transaction`, sem lock próprio,
+  porque o `flock` não é reentrante.
+
+**Testes.** Escritos antes do código e vistos falhando pelo motivo esperado:
+`ChainRollback` (14 casos), `LeaveHelpers` (9) e `tests/leave.bats` (5,
+ponta a ponta no CI, com Chezmoi). O teste do ciclo travava o código antigo,
+como esperado.
+
+**Revisões independentes.**
+- **Desenho:** sem P1. Os seis P2 foram incorporados antes do código: lock
+  não reentrante, regra única da simulação, cadeia inválida diferente de
+  poda, bloqueios de todos os planos, replanejamento entre etapas e aviso dos
+  perfis.
+- **Código:** três P1, corrigidos:
+  - o purge era oferecido com transações inválidas ou aplicadas fora da
+    cadeia, que podem guardar originais; o teste fixava esse buraco porque
+    usava um manifesto inválido;
+  - um `latest` pendurado ou malformado virava "podada";
+  - uma etapa do `leave` que falhava não dizia como continuar.
+- **P2 corrigidos:** ciclo na cadeia, contagem na falha, resto de purge e
+  aviso do original do lançador.
+
+**Verificação.**
+- CI: o [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103),
+  no commit `c83d6fe`, aprovou os sete jobs: 239 Bats e 177 unittest sem
+  skips, cinco imagens e smoke online.
+- **Rodada anterior:** a do commit `c480cfa`, antes das correções, ficou com
+  o job Debian parado na suíte sem rede por mais de 15 minutos e foi
+  cancelada. Os outros seis jobs dela passaram, e o mesmo job passou no tempo
+  normal na rodada seguinte. Fica em observação como possível teste
+  intermitente.
+- **Local:** Ruff 0.17.3, `bash -n` e os unittest. O `leave` também foi
+  executado de ponta a ponta numa HOME temporária, com e sem a palavra
+  `apagar`.
+
+**Limites.**
+- Uma edição entre duas etapas é detectada pelo replanejamento antes da etapa
+  seguinte, mas não há Bats que a simule.
+- Originais de transações já podadas não voltam.
+
 ## Desinstalação de componentes (Bloco F) — 2026-11-12
 
 Item 2 do ROADMAP. O comando novo é
