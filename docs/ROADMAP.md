@@ -32,7 +32,7 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 | 0 | Estado preso à configuração (implementado) | R-046, R-047, R-048 | pequeno | — |
 | 1 | Retirada de arquivos órfãos (implementado) | N-009, D-013, D-022 | médio | 0 |
 | 2 | Desinstalação de componentes (implementado) | N-005, N-009 | médio | 1 |
-| 2b | Saída completa | N-016 | médio | 2 |
+| 2b | Saída completa (implementado) | N-016 | médio | 2 |
 | 3 | Revisão assistida de manifestos | N-005 | médio | — |
 | 4 | Poda dos demais diretórios de estado | N-001 | pequeno a médio | — |
 | 5 | Quarto como componente | N-005 | médio | 3 (recomendado) |
@@ -122,7 +122,11 @@ combina isso com o rollback dos dotfiles.
 **Depende de 1:** a desinstalação reaproveita a remoção com backup e
 rollback do item 1.
 
-### 2b. Saída completa
+### 2b. Saída completa (implementado)
+
+Feito no Bloco G (R-070 a R-074): `rollback --all` e o comando `leave` por
+etapas, com `--purge-state` opcional.
+
 
 **Problema:** sair do Data Lab hoje exige rodar `uninstall` por componente e
 o rollback até antes do primeiro apply, à mão.

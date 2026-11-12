@@ -2158,5 +2158,323 @@ class Uninstall(unittest.TestCase):
         self.assertFalse((self.state_dir / 'install-receipts/firacode.json').exists())
 
 
+
+class ChainRollback(unittest.TestCase):
+    """R-070: rollback --all, com a cadeia inteira conferida antes de qualquer gravação."""
+
+    def setUp(self):
+        TransactionBoundary.setUp(self)
+        (self.root / 'dotfiles/dot_config/starship.toml').write_text('format = "x"\n')
+        self.full = ['bash', 'zsh', 'uv', 'chezmoi', 'starship']
+        active = patch.object(state, 'COMPONENTS', list(self.full))
+        active.start()
+        self.addCleanup(active.stop)
+        self.initial = self.home_tree()
+        self.apply()                                   # A: perfis completos
+        self.ids = [self.latest()]
+        (self.root / 'dotfiles/dot_zshenv').write_text('nova versão\n')
+        self.apply()                                   # B: dotfile alterado
+        self.ids.append(self.latest())
+        state.COMPONENTS[:] = ['bash', 'zsh', 'uv', 'chezmoi']
+        self.apply()                                   # C: retira o starship.toml
+        self.ids.append(self.latest())
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.apply()                               # D: só perfis
+        self.ids.append(self.latest())
+        os.environ['DEVSHELL_APPROVAL'] = ''
+
+    apply = TransactionBoundary.apply
+
+    def latest(self):
+        return (state.STATE / 'latest').read_text()
+
+    def home_tree(self):
+        return sorted((str(p.relative_to(self.home)), p.read_bytes() if p.is_file() else b'')
+                      for p in self.home.rglob('*') if '.state' not in p.parts and not p.is_dir())
+
+    def manifest(self, name):
+        return state.STATE / 'transactions' / name / 'manifest.json'
+
+    def edit_manifest(self, name, change):
+        data = json.loads(self.manifest(name).read_text())
+        change(data)
+        self.manifest(name).write_text(json.dumps(data))
+
+    def run_all(self):
+        plan = state.chain_rollback_plan()
+        os.environ['DEVSHELL_APPROVAL'] = plan['approval']
+        reports = []
+        with patch.object(state, 'report', side_effect=reports.append):
+            state.chain_rollback()
+        return reports
+
+    def test_r070_plan_lists_the_chain_newest_first_without_writing(self):
+        before = sorted(str(p) for p in state.STATE.rglob('*'))
+        plan = state.chain_rollback_plan()
+        self.assertEqual([row['id'] for row in plan['transactions']], list(reversed(self.ids)))
+        self.assertEqual(sorted(str(p) for p in state.STATE.rglob('*')), before)
+        oldest = plan['transactions'][-1]
+        self.assertTrue(any(row['path'].endswith('.zshenv') and row['to'] == 'remover' for row in oldest['files']))
+        self.assertIn('profiles_restore', plan['transactions'][0])
+        (self.home / '.zshenv').write_text('nova versão\n')
+        self.assertEqual(state.chain_rollback_plan()['approval'], plan['approval'])
+        self.edit_manifest(self.ids[0], lambda data: data.update(created='2020-01-01T00:00:00Z'))
+        self.assertNotEqual(state.chain_rollback_plan()['approval'], plan['approval'])
+
+    def test_r070_apply_returns_the_home_to_before_the_first_transaction(self):
+        reports = self.run_all()
+        self.assertEqual(len(reports), 1)
+        self.assertEqual(reports[0]['restored_transactions'], 4)
+        self.assertEqual(self.home_tree(), self.initial)
+        self.assertFalse((state.STATE / 'latest').exists())
+        self.assertFalse((state.STATE / 'profiles').exists())
+        self.assertEqual(json.loads((state.STATE / 'current.json').read_text()), {})
+
+    def test_r070_edit_in_the_middle_is_found_before_any_write(self):
+        (self.home / '.zshenv').write_text('editado por mim\n')
+        before = sorted((str(p), p.read_bytes() if p.is_file() else b'') for p in self.home.rglob('*'))
+        with self.assertRaises((RuntimeError, ValueError)) as error:
+            state.chain_rollback_plan()
+        self.assertIn('.zshenv', str(error.exception))
+        self.assertIn(self.ids[1], str(error.exception))
+        self.assertEqual(sorted((str(p), p.read_bytes() if p.is_file() else b'') for p in self.home.rglob('*')), before)
+
+    def test_r070_mode_only_change_says_mode(self):
+        (self.home / '.zshenv').chmod(0o644)
+        with self.assertRaisesRegex((RuntimeError, ValueError), 'modo alterado'):
+            state.chain_rollback_plan()
+
+    def test_r070_missing_backup_is_refused(self):
+        data = json.loads(self.manifest(self.ids[1]).read_text())
+        entry = next(e for e in data['files'] if e['path'].endswith('.zshenv'))
+        (state.STATE / 'transactions' / self.ids[1] / entry['backup']).unlink()
+        with self.assertRaisesRegex((RuntimeError, ValueError), 'backup'):
+            state.chain_rollback_plan()
+
+    def test_r070_pruned_chain_warns_and_still_undoes_what_remains(self):
+        import shutil as sh
+        sh.rmtree(state.STATE / 'transactions' / self.ids[0])
+        plan = state.chain_rollback_plan()
+        self.assertEqual(len(plan['transactions']), 3)
+        self.assertTrue(any('podad' in warning for warning in plan['warnings']))
+        self.run_all()
+        self.assertFalse((state.STATE / 'latest').exists())
+
+    def test_r070_invalid_chain_and_missing_latest_are_errors_not_nothing_to_do(self):
+        (state.STATE / 'transactions' / self.ids[0] / 'intruso').write_text('x')
+        with self.assertRaisesRegex(ValueError, 'inválida'):
+            state.chain_rollback_plan()
+        (state.STATE / 'transactions' / self.ids[0] / 'intruso').unlink()
+        (state.STATE / 'latest').unlink()
+        with self.assertRaisesRegex(ValueError, 'latest'):
+            state.chain_rollback_plan()
+
+    def test_r070_interrupted_states(self):
+        self.edit_manifest(self.ids[3], lambda data: data.update(status='pending'))
+        state.chain_rollback_plan()
+        self.edit_manifest(self.ids[3], lambda data: data.update(status='committed'))
+        self.edit_manifest(self.ids[1], lambda data: data.update(status='pending'))
+        with self.assertRaisesRegex(ValueError, 'interrompida'):
+            state.chain_rollback_plan()
+        for status in ('rolled-back', 'failed-restored'):
+            with self.subTest(status):
+                self.edit_manifest(self.ids[1], lambda data, s=status: data.update(status=s))
+                with self.assertRaisesRegex(ValueError, status):
+                    state.chain_rollback_plan()
+
+    def test_r070_old_manifests_without_applied_or_profiles(self):
+        def strip(data):
+            data.pop('previous_profiles', None)
+            for entry in data['files']:
+                entry.pop('applied', None)
+        self.edit_manifest(self.ids[0], strip)
+        plan = state.chain_rollback_plan()
+        self.assertEqual(plan['transactions'][-1]['profiles_restore'], 'desconhecidos')
+        self.run_all()
+        self.assertEqual(self.home_tree(), self.initial)
+
+    def test_r070_failure_midway_keeps_undone_and_next_plan_continues(self):
+        real = state.undo_transaction
+        calls = []
+
+        def fail_third(*args):
+            calls.append(args)
+            if len(calls) == 3:
+                raise OSError('falha injetada')
+            return real(*args)
+        with patch.object(state, 'undo_transaction', side_effect=fail_third), self.assertRaises(RuntimeError):
+            self.run_all()
+        self.assertEqual(json.loads(self.manifest(self.ids[3]).read_text())['status'], 'rolled-back')
+        remaining = state.chain_rollback_plan()['transactions']
+        self.assertEqual([row['id'] for row in remaining], [self.ids[1], self.ids[0]])
+        self.run_all()
+        self.assertEqual(self.home_tree(), self.initial)
+
+    def test_r070_single_rollback_is_unchanged(self):
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(self.latest(), self.ids[2])
+
+
+
+    def test_r070_dangling_or_malformed_latest_is_an_error(self):
+        for value in ('f' * 32, 'lixo'):
+            with self.subTest(value):
+                (state.STATE / 'latest').write_text(value)
+                with self.assertRaisesRegex(ValueError, 'latest'):
+                    state.chain_rollback_plan()
+
+    def test_r070_cycle_in_the_chain_is_an_error(self):
+        self.edit_manifest(self.ids[3], lambda data: data.update(previous_latest=self.ids[3]))
+        with self.assertRaisesRegex(ValueError, 'ciclo'):
+            state.chain_rollback_plan()
+
+    def test_r070_failure_message_counts_what_was_undone(self):
+        real = state.undo_transaction
+        calls = []
+
+        def fail_second(*args):
+            calls.append(args)
+            if len(calls) == 2:
+                raise OSError('falha injetada')
+            return real(*args)
+        with patch.object(state, 'undo_transaction', side_effect=fail_second), \
+                self.assertRaisesRegex(RuntimeError, '1 transação'):
+            self.run_all()
+
+
+class LeaveHelpers(unittest.TestCase):
+    """R-071, R-072 e R-074: resumo, o que fica e a remoção opcional do estado."""
+
+    def setUp(self):
+        import leave
+        self.leave = leave
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / 'home'
+        self.home.mkdir(mode=0o700)
+        self.state_dir = self.home / '.local/state/devshell'
+        for module, key, value in ((state, 'HOME', self.home), (state, 'STATE', self.state_dir),
+                                   (state, 'CONFIG', self.home / '.config'),
+                                   (artifacts, 'DATA', self.home / '.local/share'),
+                                   (artifacts, 'CACHE', self.home / '.cache/devshell/artifacts'),
+                                   (artifacts, 'BIN', self.home / '.local/bin')):
+            active = patch.object(module, key, value)
+            active.start()
+            self.addCleanup(active.stop)
+
+    def plans(self, uninstall_items, chain, errors=()):
+        def fake(*arguments):
+            if arguments[0] == 'rollback':
+                return (None, 'devshell: arquivo editado após aplicação') if 'rollback' in errors else ({'transactions': chain}, '')
+            component = arguments[2]
+            if component in errors:
+                return None, f'devshell: falha em {component}'
+            return {'items': uninstall_items.get(component, []), 'warnings': []}, ''
+        return patch.object(self.leave, 'cli_json', side_effect=fake)
+
+    def test_r071_summary_lists_only_steps_with_work_in_order(self):
+        items = {'python': [{'action': 'remove', 'path': '/v'}], 'devshell': [{'action': 'remove', 'path': '/l'}],
+                 'plugins': [{'action': 'manual', 'path': '/p'}]}
+        with self.plans(items, [{'id': 'a' * 32, 'files': []}]):
+            summary = self.leave.summary(purge=False)
+        self.assertEqual([step['step'] for step in summary['steps']], ['uninstall python', 'uninstall devshell', 'rollback --all'])
+        self.assertEqual(summary['blockers'], [])
+
+    def test_r071_every_failing_plan_is_a_blocker_before_any_question(self):
+        with self.plans({}, [], errors=('rollback', 'plugins')):
+            summary = self.leave.summary(purge=False)
+        self.assertEqual(len(summary['blockers']), 2)
+        self.assertTrue(any('editado' in blocker for blocker in summary['blockers']))
+        self.assertTrue(any('plugins' in blocker for blocker in summary['blockers']))
+
+    def make_state(self, status='rolled-back'):
+        manifest = json.dumps({'status': status, 'files': [], 'previous_latest': None, 'previous_registry': {}})
+        for name, content in (('transactions/' + 'a' * 32 + '/manifest.json', manifest), ('launcher-backups/x/0', '{}'),
+                              ('permission-repairs/r.json', '{}'), ('install-receipts/plugins.json', '{}'),
+                              ('current.json', '{}'), ('profiles', 'minimal\n')):
+            path = self.state_dir / name
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.write_text(content)
+        return self.state_dir
+
+    def test_r074_purge_is_offered_only_after_the_whole_chain(self):
+        self.make_state()
+        (self.state_dir / 'latest').write_text('a' * 32)
+        plan = self.leave.purge_plan()
+        self.assertFalse(plan['offered'])
+        self.assertIn('latest', plan['reason'])
+        (self.state_dir / 'latest').unlink()
+        plan = self.leave.purge_plan()
+        self.assertTrue(plan['offered'])
+        self.assertIn('transactions', plan['contents'])
+        self.assertGreater(plan['bytes'], 0)
+
+    def test_r074_purge_removes_only_the_state_directory(self):
+        self.make_state()
+        cache = self.home / '.cache/devshell/artifacts/x'
+        cache.parent.mkdir(parents=True, mode=0o700)
+        cache.write_text('pacote')
+        sibling = self.home / '.local/state/outro-programa'
+        sibling.mkdir(mode=0o700)
+        plan = self.leave.purge_plan()
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}):
+            self.leave.purge(plan)
+        self.assertFalse(self.state_dir.exists())
+        self.assertTrue(cache.exists())
+        self.assertTrue(sibling.exists())
+        self.assertEqual([p.name for p in self.state_dir.parent.iterdir()], ['outro-programa'])
+
+    def test_r074_purge_refuses_symlink_and_stale_approval(self):
+        target = self.home / 'elsewhere'
+        target.mkdir(mode=0o700)
+        (target / 'importante').write_text('x')
+        self.state_dir.parent.mkdir(parents=True, mode=0o700)
+        self.state_dir.symlink_to(target, target_is_directory=True)
+        self.assertFalse(self.leave.purge_plan()['offered'])
+        self.state_dir.unlink()
+        self.make_state()
+        plan = self.leave.purge_plan()
+        (self.state_dir / 'novo').write_text('x')
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}), self.assertRaises((ValueError, RuntimeError)):
+            self.leave.purge(plan)
+        self.assertTrue(self.state_dir.exists())
+        self.assertTrue((target / 'importante').exists())
+
+    def test_r072_remains_lists_what_stays(self):
+        self.make_state()
+        with self.plans({'python': [{'action': 'manual', 'path': '/venv-minha', 'reason': 'arquivo meu'}]}, []):
+            remains = self.leave.remains()
+        text = ' '.join(remains)
+        self.assertIn(str(self.state_dir), text)
+        self.assertIn('/venv-minha', text)
+        self.assertIn('./bin/devshell', text)
+        self.assertIn('CPython', text)
+
+
+    def test_r074_purge_is_refused_with_transactions_outside_the_chain(self):
+        for status in ('committed', 'pending'):
+            with self.subTest(status):
+                self.make_state(status)
+                plan = self.leave.purge_plan()
+                self.assertFalse(plan['offered'])
+        self.make_state()
+        (self.state_dir / 'transactions' / ('a' * 32) / 'manifest.json').write_text('{}')
+        self.assertFalse(self.leave.purge_plan()['offered'])
+
+    def test_r074_failed_removal_reports_where_the_state_went(self):
+        self.make_state()
+        plan = self.leave.purge_plan()
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}), \
+                patch.object(self.leave.shutil, 'rmtree', side_effect=OSError('falha')), \
+                self.assertRaisesRegex(RuntimeError, 'devshell-purge'):
+            self.leave.purge(plan)
+        self.assertTrue(any('devshell-purge' in line for line in self.leave.remains_paths()))
+
+    def test_r074_purge_plan_warns_about_the_launcher_original(self):
+        self.make_state()
+        self.assertTrue(any('lançador' in warning for warning in self.leave.purge_plan()['warnings']))
+
+
 if __name__ == '__main__':
     unittest.main()

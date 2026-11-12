@@ -114,6 +114,26 @@ ambientes de projeto. O original de um lançador instalado com
 `--replace-existing` aparece no plano com o comando de restauração, mas não
 volta sozinho.
 
+## Saída completa
+
+`rollback --all` confere a cadeia inteira antes de gravar qualquer coisa. Ela
+simula cada transação, da mais nova para a mais antiga, com a mesma regra do
+`rollback`.
+- **Recusas:** a saída é recusada inteira por um arquivo editado ou com o
+  modo alterado depois do apply, por um backup que falta ou não bate, e por
+  uma transação inválida ou interrompida no meio.
+- **Cadeia podada:** se a cadeia foi podada, os originais anteriores à poda
+  não voltam, e o plano avisa disso.
+- **Dotfile que saiu do checkout:** um dotfile que saiu do repositório depois
+  do apply também bloqueia. O plano aponta o backup, que você pode copiar à
+  mão para o lugar, e a transação. Mova o diretório dessa transação para fora
+  do estado só se aceitar perder a restauração automática dela.
+
+O `leave` não remove o `uv`, o `chezmoi`, o `nu`, o CPython do uv nem os
+pacotes do sistema. Com `--purge-state`, ele apaga só
+`$XDG_STATE_HOME/devshell`, e só depois da cadeia inteira desfeita. Isso pede
+a palavra `apagar` e é irreversível.
+
 ## Estado de outra configuração
 
 O estado em `$XDG_STATE_HOME/devshell` registra os caminhos que a CLI
@@ -284,6 +304,7 @@ A poda recusa o histórico inteiro quando encontra:
 | Diretórios criados | podem permanecer vazios |
 | Binários/plugins instalados | `uninstall --component X` remove só o que a CLI prova que é dela; o resto fica para remoção manual |
 | Componente desinstalado | `install --component X` de novo, que devolve os mesmos bytes; não há backup |
+| Saída completa (`leave`) | `setup --profile PERFIS` aplica de novo; com `--purge-state`, o histórico e os backups não voltam |
 | uv Python/tools/cache | manutenção manual por uv; sem remoção automática |
 | Ambiente pessoal `geral` | criação/manutenção explícita por uv; fora do rollback dos dotfiles |
 | Pacotes do sistema via setup | comando exibido e confirmado separadamente; recuperação manual |

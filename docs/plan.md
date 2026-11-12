@@ -57,6 +57,18 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
+  - item: desenho e plano revistos do Bloco G (spec v14, R-070 a R-074, D-035 a D-038; T-601 a T-605, T-690), autorização só para o merge
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "resposta 'Aprovar e implementar' na conversa"
+  - item: opção para apagar o estado da CLI por completo no Bloco G (R-074, --purge-state)
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "mensagem 'adicionar uma opção para excluir completamente o estado da CLI (transações, backups, registros)' na conversa"
+  - item: escopo do Bloco G (leave por etapas; parar antes de tocar se houver arquivo editado; o estado fica)
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "respostas 'Comando leave por etapas (Recomendado)', 'Parar antes de tocar (Recomendado)' e 'Fica (Recomendado)' na conversa"
   - item: desenho e plano revistos do Bloco F (spec v11, R-060 a R-065, D-030 a D-034; T-501 a T-506, T-590), autorização só para o merge
     por: usuario
     em: "2026-11-12"
@@ -85,6 +97,10 @@ revisao_do_bloco_e:
   por: subagente revisor de plano
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 7 P2 e 9 P3 incorporados (spec v7: R-055 e D-027 novos, R-050 a R-054 detalhados, D-014 ajustada)"
+revisao_do_bloco_g:
+  por: subagente revisor de desenho
+  em: "2026-11-12"
+  resultado: "pronto com ressalvas; 6 P2 e 6 P3 incorporados (spec v14: D-038 undo_transaction sem lock, D-035 com a regra do rollback_plan, cadeia inválida, bloqueios do leave, replanejamento entre etapas)"
 revisao_do_bloco_f:
   por: subagente revisor de desenho
   em: "2026-11-12"
@@ -102,7 +118,7 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: merge do Bloco F pelo usuário; depois, escolher o próximo item do ROADMAP (2b, saída completa, ou 3)
+proximo_passo: merge do Bloco G pelo usuário; depois, escolher o próximo item do ROADMAP (3, revisão assistida de manifestos)
 pendencias: ["R-010: execução agendada na main"]
 ```
 
@@ -844,6 +860,123 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
   skips; revisão independente sem P0/P1; evidência por requisito. O merge é
   decidido pelo usuário.
 
+## Bloco G: saída completa
+
+Item 2b do ROADMAP. Escopo decidido em 2026-11-12:
+- comando `leave` por etapas, com uma confirmação por etapa;
+- se algum dotfile foi editado, nada é tocado;
+- o estado fica por padrão; com `--purge-state`, uma etapa final o apaga
+  (R-074).
+
+Testes antes do código; unittest vistos falhando nesta sessão e Bats no
+`workflow_dispatch`.
+
+### T-601 Testes do `rollback --all`
+- Requisitos: R-070
+- Arquivos: `tests/test_boundaries.py` (classe `ChainRollback`),
+  `tests/history.bats`
+- Dependências: nenhuma
+- Critério de aceite:
+  - **Plano:** uma cadeia de três transações (escrita, retirada e só
+    perfis) é listada em ordem, com o destino de cada arquivo e os perfis que
+    voltam, sem gravar nada; o hash muda com um arquivo;
+  - **Edição detectada antes de gravar:** um arquivo editado depois da
+    transação do meio faz o plano sair com 2, apontando o arquivo e a
+    transação;
+  - **Backups:** um backup ausente ou corrompido também faz o plano sair
+    com 2;
+  - **Cadeia podada:** gera o aviso;
+  - **Aplicação:** o apply aprovado deixa a HOME como antes da primeira
+    transação (árvore comparada) e o registro e os perfis como antes;
+  - **Falha no meio:** as transações já desfeitas ficam `rolled-back`, e o
+    plano seguinte continua;
+  - **Opções:** `--all` com `--list`, `--prune` ou `--keep` sai com 2;
+  - **Estado de outra configuração:** recusado pelo R-047;
+  - **Topo interrompido:** topo `pending` ou `rolling-back` aceito pela
+    regra do `rollback_plan`; `pending` fora do topo recusado; transação
+    `rolled-back` ou `failed-restored` dentro da cadeia recusada;
+  - **Cadeia inválida:** cadeia com transação `invalida` sai com 2; `latest`
+    ausente com transações `committed` sai com 2, e não "nada a fazer";
+  - **Manifestos antigos:** sem `applied` e sem `previous_profiles`; neste
+    último caso, perfis "desconhecidos";
+  - **Modo alterado:** recusado com a mensagem de modo;
+  - **Saída:** um JSON só com `--json`;
+  - **Sem gravar:** plano e `--dry-run` não criam `STATE` nem o lock.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-602 `rollback --all`
+- Requisitos: R-070
+- Objetivo: D-035.
+- Arquivos: `bin/devshell` (opção `--all`), `lib/state.py`
+  (`undo_transaction` extraído do `rollback`, D-038; `chain_rollback_plan`;
+  `chain_rollback`)
+- Dependências: T-601
+- Critério de aceite: os casos de T-601 passam; o `rollback` sem `--all`
+  continua igual.
+- Verificação: `python3 -m unittest`.
+
+### T-603 Testes do `leave`
+- Requisitos: R-071, R-072
+- Arquivos: `tests/test_setup.py` ou `tests/test_boundaries.py`,
+  `tests/leave.bats` (novo)
+- Dependências: T-602
+- Critério de aceite:
+  - **Resumo:** lista só as etapas com algo a fazer;
+  - **Arquivo editado:** o `leave` sai com 2 antes da primeira pergunta;
+  - **Confirmações:** cada etapa pergunta com o próprio texto, conferido pelo
+    `tests/answer.py`, e uma resposta não aprova outra;
+  - **Recusa no meio:** cancela as seguintes e mantém as feitas;
+  - **`--dry-run`:** não grava nada, e `--json` traz o resumo;
+  - **Ordem:** o lançador é a última desinstalação e o `rollback --all` vem
+    depois;
+  - **Bloqueios:** qualquer plano com erro (uninstall, backup ausente,
+    caminho fora do checkout) para o `leave` antes da primeira pergunta e
+    lista todos os bloqueios;
+  - **Editado entre etapas:** um arquivo editado entre etapas para o `leave`
+    com a mensagem do que foi feito e de como continuar; uma falha de um
+    uninstall no meio também;
+  - **Etapa vazia:** etapa sem nada a fazer é pulada sem pergunta;
+  - **Opções:** `--profile`, `--approve` e `--replace-existing` saem com 2,
+    e `--json` exige `--dry-run`;
+  - **Mensagem final:** lista o que fica;
+  - **Estado de outra configuração:** recusado pelo R-047;
+  - **R-074, `--purge-state`:**
+    - a etapa só aparece com a opção e depois da cadeia inteira desfeita;
+    - com `latest` restante ou transação interrompida, ela não é oferecida;
+    - resposta diferente de `apagar` ou EOF mantém o estado;
+    - com `apagar`, o diretório some e nada fora dele muda (árvore
+      comparada);
+    - diretório de estado symlink é recusado;
+    - o cache de artefatos fica.
+- Verificação: os testes novos falham só nos casos novos (Bats no CI).
+
+### T-604 Comando `leave`
+- Requisitos: R-071, R-072, R-074
+- Objetivo: D-036 e D-037.
+- Arquivos: `bin/devshell`, `lib/leave.sh` (novo, no estilo de
+  `lib/setup.sh`), `lib/leave.py` (resumo e mensagem final)
+- Dependências: T-603
+- Critério de aceite: os casos de T-603 passam; nenhum comando novo
+  aceita `--yes`.
+- Verificação: `python3 -m unittest`; `bash -n`; Bats no CI.
+
+### T-605 Documentação
+- Requisitos: R-073
+- Arquivos: `README.md`, `docs/USAGE.md`, `docs/SECURITY.md`,
+  `docs/ARCHITECTURE.md`, `CHANGELOG.md`, `docs/ROADMAP.md`
+- Dependências: T-604
+- Critério de aceite: exemplo executado em HOME temporária; o ROADMAP marca
+  o item 2b como implementado.
+- Verificação: links locais conferidos.
+
+### T-690 Encerramento do Bloco G
+- Requisitos: R-070 a R-074
+- Arquivos: `docs/spec.md`, `docs/VALIDATION.md`
+- Dependências: T-605
+- Critério de aceite: `workflow_dispatch` com os sete jobs verdes e zero
+  skips; revisão independente sem P0/P1; evidência por requisito. O merge é
+  decidido pelo usuário.
+
 ## Encerramento
 
 ### T-900 Verificação final e revisão independente
@@ -864,7 +997,7 @@ Testes antes do código; unittest vistos falhando nesta sessão e Bats no
 | Consulta ao PyPI com cache temporário (geração dos locks e conferência das quatro plataformas) | T-202 | pypi.org, via `uv pip compile` e `uv pip install --dry-run` |
 | Commit na branch de trabalho | cada bloco | repositório local |
 | Push da branch e PR | cada bloco | `origin` (talesgomes27/data-lab-dotfiles) |
-| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-354, T-490, T-590 | GitHub Actions do repositório |
+| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-354, T-490, T-590, T-690 | GitHub Actions do repositório |
 | Migração das suas instalações atuais (`uv tool uninstall` e nova instalação) | depois do merge do Bloco C | sua HOME; feita por você, não pela CLI |
 | Execução semanal após o merge, sem prazo, com os mesmos downloads e notificação de falha para quem editou o cron | T-101 | GitHub Actions; desativada após 60 dias sem atividade |
 

@@ -293,6 +293,40 @@ O plano os confere contra o pacote em cache e, sem cache, os deixa como
 `--approve` uma vez; o `setup` não faz isso quando o componente já está em
 dia.
 
+## Sair do Data Lab
+
+`leave` desinstala os componentes e desfaz a cadeia inteira de transações,
+voltando os dotfiles ao estado de antes do primeiro `apply`:
+- **Antes de perguntar:** calcula todos os planos. Se algum recusa (um
+  arquivo que você editou, um backup que falta), mostra todos os bloqueios e
+  não muda nada.
+- **Uma confirmação por etapa:** cada etapa pede a sua. Recusar uma cancela
+  as seguintes e mantém as já feitas.
+
+Saída executada em HOME temporária com o lançador instalado:
+
+```console
+$ ./bin/devshell leave
+Resumo da saída (cada etapa pede a própria confirmação):
+  uninstall devshell: 2 item(ns) a remover
+...
+Desinstalar o componente devshell conforme este plano? [s/N] s
+2 item(ns) removido(s). Para desfazer: ./bin/devshell install --component devshell.
+O que continua na máquina:
+  - estado da CLI (transações e backups): ~/.local/state/devshell; ...
+  - CPython do uv: ~/.local/share/uv/python (remova com uv python uninstall)
+  - pacotes do sistema instalados pelo setup: remova com o gerenciador da distribuição
+```
+
+- **Ver o resumo sem mudar nada:** `./bin/devshell leave --dry-run`, ou com
+  `--json`.
+- **Só a cadeia:** `./bin/devshell rollback --all` mostra o plano com um
+  único hash, e `rollback --all --approve HASH` desfaz as transações.
+- **O que não sai:** o estado da CLI fica, com as transações e os backups.
+  Com `./bin/devshell leave --purge-state`, uma última etapa oferece apagá-lo
+  por completo, depois de a cadeia inteira ter sido desfeita. Ela pede que
+  você digite `apagar`. É irreversível, e o cache de artefatos fica.
+
 ## Consultar e podar o histórico de backups
 
 ```bash

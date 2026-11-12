@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 11
+versao_spec: 14
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -653,6 +653,147 @@ completa fica para depois (N-016).
 - Estado: verificado
 - Evidência: docs/USAGE.md (Desinstalar um componente, com saída executada); docs/SECURITY.md (seção e duas linhas na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
 
+**Saída completa (Bloco G)**
+
+Contexto: item 2b do [ROADMAP](ROADMAP.md). Sair do Data Lab hoje exige rodar
+`uninstall` por componente e repetir `rollback` uma vez por transação. Numa
+HOME real são umas dezesseis transações, cada uma com o próprio hash. Escopo
+decidido pelo usuário em 2026-11-12:
+- um comando `leave`, por etapas, como o `setup`;
+- se algum dotfile foi editado, nada é tocado;
+- o estado da CLI fica por padrão;
+- com `--purge-state`, o estado pode ser apagado por completo numa etapa
+  final (R-074).
+
+### R-070 Rollback da cadeia inteira num só plano
+- Enunciado: `rollback --all` planeja, com um só hash, desfazer todas as
+  transações da cadeia, da atual até a primeira.
+- Critério:
+  - **Plano, sem `--approve`:** sem gravar nada, lista as transações em ordem
+    e, para cada arquivo, o que ele volta a ser: o original do backup ou
+    removido. Também mostra os perfis que voltam.
+  - **Conferência antes de qualquer gravação:** a cadeia inteira é simulada
+    (D-035). Se algum arquivo foi editado depois do apply que o escreveu, ou
+    se um backup falta ou não bate, o plano sai com 2, aponta o arquivo e a
+    transação e não muda nada.
+  - **Cadeia podada:** só conta como poda um `previous_latest` que não existe
+    mais. Nesse caso o plano avisa que os originais anteriores não podem mais
+    ser restaurados e lista o que continua gerenciado (o `previous_registry`
+    da mais antiga) e os perfis que ficam lembrados.
+  - **Cadeia inválida:** uma transação inválida ou ilegível na cadeia, um
+    `previous_latest` presente e ilegível, ou `latest` ausente com
+    transações `committed` fora da cadeia saem com 2. Nunca são tratados como
+    "nada a fazer". A validação é uma só, a de `transaction_entry`.
+  - **Estados:** `pending` ou `rolling-back` só são aceitos na transação do
+    topo, com a mesma regra do `rollback_plan`. Em outra posição, saem com 2,
+    assim como uma transação `rolled-back` ou `failed-restored` dentro da
+    cadeia, cada caso com mensagem própria.
+  - **Perfis desconhecidos:** um manifesto sem `previous_profiles` faz o
+    plano dizer que os perfis que voltam são desconhecidos.
+  - **Com `--approve HASH`:** sob um único lock, a CLI replaneja a cadeia,
+    confere o hash e desfaz as transações uma a uma com a mesma rotina do
+    `rollback` (D-038). Cada passo ainda confere a própria transação. Uma
+    falha no meio deixa as já desfeitas como `rolled-back`, e o plano
+    seguinte continua de onde parou. A saída é um relatório só, inclusive em
+    `--json`.
+  - **Modo alterado:** uma divergência só de modo, como um `chmod` depois do
+    apply, bloqueia como edição, com a mensagem "modo alterado" e o `chmod`
+    sugerido.
+  - `--all` não se combina com `--list`, `--prune` ou `--keep`. Nem o plano
+    nem `--dry-run` criam o diretório de estado ou o arquivo de lock.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::ChainRollback (plano em ordem sem gravar, hash, aplicação que volta a HOME a antes da primeira transação, edição no meio, modo alterado, backup ausente, poda, cadeia inválida, latest ausente, pendurado ou malformado, ciclo, estados interrompidos, manifestos antigos, falha no meio com contagem, rollback simples inalterado); tests/leave.bats; suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
+
+### R-071 Comando `leave` por etapas
+- Enunciado: `leave` coordena a saída: desinstala os componentes e desfaz a
+  cadeia, com uma confirmação por etapa.
+- Critério:
+  - **Ordem:** o `leave` primeiro calcula todos os planos: o `rollback --all`
+    e cada `uninstall`. Se qualquer um sai com erro (arquivo editado, backup
+    ausente, caminho fora do checkout, R-047), o `leave` sai com 2 antes de
+    qualquer pergunta e lista todos os bloqueios de uma vez.
+  - **Entre etapas:** antes de cada etapa, o plano do `rollback --all` é
+    recalculado (só leitura). Se ele passou a recusar, ou se uma etapa falha,
+    o `leave` para e diz o que já foi feito e o comando para continuar. Uma
+    etapa cujo plano recalculado não tem mais nada a fazer é pulada sem
+    pergunta.
+  - **Resumo:** mostra o que cada etapa fará — os `uninstall` de `python`,
+    `plugins`, `firacode`, `pyinit` e `devshell`, nessa ordem, só os que têm
+    algo a remover, e por último o `rollback --all`.
+  - **Uma confirmação por etapa (`[s/N]`):** cada etapa mostra o próprio
+    plano, pergunta e aplica com o próprio hash, recalculado na hora. Uma
+    resposta nunca aprova outra etapa, e não há `--yes`.
+  - **Cancelamento:** recusar uma etapa cancela as seguintes; as já feitas
+    ficam.
+  - **`--dry-run`:** só mostra o resumo, sem criar estado nem lock; com
+    `--json`, o resumo vem em JSON.
+  - **Perfis:** o `leave` não lê o registro de perfis para decidir, como o
+    `rollback` e o `uninstall`, e recusa `--profile`, `--approve` e
+    `--replace-existing`. O aviso do `uninstall` de que o próximo `setup`
+    reinstalaria o componente é explicado no resumo: o `rollback --all`
+    restaura os perfis de antes.
+  - A checagem do R-047 vale também aqui.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers (resumo em ordem, todos os bloqueios); tests/leave.bats (etapas com confirmação própria, arquivo editado antes da primeira pergunta, recusa no meio, --dry-run sem gravar, opções recusadas); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
+
+### R-072 O que fica depois da saída
+- Enunciado: o `leave` termina dizendo o que continua na máquina.
+- Critério: a mensagem final lista:
+  - o diretório de estado, com as transações e os backups;
+  - o cache de artefatos;
+  - os itens `manual` de cada `uninstall`;
+  - os diretórios que a CLI criou e que ficaram (D-025), o `.zshenv.local` e
+    o original do lançador em `launcher-backups`;
+  - o `uv`, o `chezmoi` e o `nu`, se presentes;
+  - o CPython do uv;
+  - os pacotes do sistema.
+
+  Para cada um, mostra o comando ou o caminho para remover à mão, usando
+  `./bin/devshell`, porque o lançador já saiu. O SECURITY traz o caminho
+  manual para um dotfile que saiu do checkout e bloqueia a cadeia. Sem
+  `--purge-state`, o `leave` não apaga nada disso; com a opção, só o
+  diretório de estado sai (R-074).
+- Prioridade: média
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers.test_r072_remains_lists_what_stays; tests/leave.bats (mensagem final); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
+
+### R-074 Apagar o estado da CLI, por opção
+- Enunciado: com `leave --purge-state`, a última etapa apaga o diretório de
+  estado inteiro.
+- Critério:
+  - **Quando aparece:** só com a opção, e só depois de o `rollback --all` ter
+    desfeito a cadeia inteira (sem `latest` e sem transação
+    `pending`/`rolling-back`). Se algo ficou para trás, a etapa não é
+    oferecida e a mensagem diz por quê.
+  - **Plano:** mostra o diretório, o tamanho e o que ele contém
+    (transações e backups, `launcher-backups`, `permission-repairs`,
+    `install-receipts`, perfis, `current.json`). Avisa que é irreversível e
+    que os backups somem.
+  - **Confirmação:** a etapa só segue se a pessoa digitar `apagar`.
+    Qualquer outra resposta ou EOF mantém tudo.
+  - **Remoção:** sob o lock, o diretório é renomeado para um nome
+    temporário ao lado dele e só então apagado, sem seguir symlinks. Se o
+    diretório for symlink ou tiver ancestral inseguro, a etapa recusa.
+  - **O que não sai:** o cache de artefatos e o CPython do uv; a mensagem
+    final mostra como removê-los à mão.
+  - **Sem a opção:** nada muda no estado, e `--purge-state` com `--dry-run`
+    só mostra o plano.
+- Prioridade: média
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::LeaveHelpers.test_r074_* (oferecido só depois da cadeia inteira, recusado com transações fora da cadeia, remove só o estado, symlink e hash vencido, falha do rmtree, aviso do original do lançador); tests/leave.bats (palavra apagar); suíte completa sem skips no [workflow_dispatch 43265525103](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43265525103)
+
+### R-073 Documentação da saída
+- Enunciado: README, USAGE, SECURITY e CHANGELOG explicam o `leave` e o
+  `rollback --all`.
+- Critério: a USAGE traz um exemplo executado em HOME temporária; a ajuda do
+  `devshell` lista os dois; o SECURITY diz o que a saída restaura e o que não
+  restaura (originais podados, arquivos editados).
+- Prioridade: média
+- Estado: verificado
+- Evidência: docs/USAGE.md (Sair do Data Lab, com saída executada); docs/SECURITY.md (Saída completa e linha na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -688,6 +829,10 @@ completa fica para depois (N-016).
 ### N-015 Remover o CPython do uv, pacotes do sistema ou ambientes de projeto
 ### N-016 Saída completa (desinstalar tudo e voltar os dotfiles ao estado anterior ao Data Lab): item próprio no ROADMAP
 ### N-017 Backup do que é desinstalado; desfazer é reinstalar
+
+### N-018 Apagar o cache de artefatos, ou apagar o estado sem `--purge-state` ou antes de desfazer a cadeia inteira
+### N-019 Desinstalar `uv`, `chezmoi`, `nu`, o CPython do uv ou pacotes do sistema na saída
+### N-020 Restaurar originais de transações já podadas
 
 ## Decisões
 
@@ -998,6 +1143,43 @@ Não há registro de quem criou cada diretório. Por isso só são removidos, co
 `devshell/plugins/NOME`, de `fonts/FiraCodeNerdFont` e da venv, incluindo
 esses três. `rmdir` falha se o diretório não está vazio, então nada do
 usuário sai. Os demais diretórios ficam, como na D-025.
+
+### D-035 Simulação da cadeia antes de qualquer gravação
+A conferência percorre as transações da mais nova para a mais antiga e mantém,
+para cada caminho, o conteúdo esperado naquele ponto. Começa pelo snapshot
+atual. Em cada transação, o esperado precisa ser igual ao `applied` (ou
+`after`) da entrada, e passa a ser o `before` dela. Os backups com `before` são
+conferidos por SHA-256. Assim, um arquivo editado é encontrado antes de
+qualquer gravação, e não só quando o rollback chegasse nele. A comparação usa
+exatamente a regra do `rollback_plan`: o snapshot inteiro (SHA-256, modo, uid,
+gid) contra o `applied` e, nos manifestos antigos, só o SHA-256 contra o
+`after`. Na transação do topo em `pending` ou `rolling-back`, o `before` também
+é aceito, inclusive para os backups. O hash cobre os manifestos inteiros, como
+`encode(tx)` no `rollback_plan`, e os snapshots atuais.
+
+### D-038 Desfazer uma transação sem lock próprio
+O lock da CLI não é reentrante: `flock(LOCK_EX|LOCK_NB)` num segundo `open()`
+do mesmo processo falha. A lógica do `rollback()` passa para
+`undo_transaction(plan, directory, tx)`, que não pega o lock, não confere
+aprovação e não chama `report`, e devolve os avisos. O `rollback` e o
+`rollback --all` a chamam sob o próprio lock. Achado P2 da revisão do
+desenho.
+
+### D-036 Etapas do `leave` e confirmação por etapa
+O `leave` reaproveita os comandos públicos (`uninstall`, `rollback --all`),
+como o `setup` faz com o `install` e o `apply`. Cada etapa recalcula o próprio
+plano e só aplica com o próprio hash, depois de uma confirmação. Os
+componentes saem antes da cadeia, para que o rollback dos dotfiles seja o
+último passo, e o lançador sai por último entre os componentes. Decidido pelo
+usuário em 2026-11-12.
+
+### D-037 O estado fica, salvo `--purge-state`
+O diretório de estado guarda o histórico e os backups. Mantê-lo por padrão
+deixa consultar o que foi feito e recuperar um original. Com
+`--purge-state`, o usuário pediu (2026-11-12) uma etapa final para apagá-lo
+por completo. Ela só existe depois da saída completa, porque antes disso os
+backups ainda são necessários, e pede a palavra `apagar`, como `substituir` e
+`retirar`. A opção não aprova nada: só faz a pergunta aparecer.
 
 ## Restrições
 
