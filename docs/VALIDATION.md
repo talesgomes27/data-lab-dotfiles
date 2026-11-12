@@ -40,7 +40,8 @@ Fecha os Blocos A a D do [plano](plan.md). A branch parte do commit `b8a83f3`
 openSUSE Leap 16 (execução 42665398454).
 
 - **CI completo:** o [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822),
-  no commit `3d7bfec`, aprovou os sete jobs. No runner Ubuntu 24.04 passaram
+  no commit `3d7bfec` (após o merge do #16, rebaseado como `149455d`, com a
+  mesma árvore `1560c85`), aprovou os sete jobs. No runner Ubuntu 24.04 passaram
   ShellCheck, shfmt, Ruff, 226 Bats e 76 unittest, sem skips, e o passo que
   exige zero skips também passou. Passaram ainda as cinco imagens (Debian 13,
   Ubuntu 24.04, Fedora 44, Arch e openSUSE Leap 16.0, todas x86_64/glibc) e o
