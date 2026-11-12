@@ -33,6 +33,22 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## P3 da revisão do T-900 e Q-003 — 2026-11-12
+
+A Q-003 foi respondida: fica a notificação padrão do GitHub, com um mantenedor
+só. Os quatro P3 da revisão foram corrigidos, cada um com um teste que falhou
+antes pelo motivo esperado:
+
+| Achado | Correção | Teste |
+|---|---|---|
+| `ValueError` do ajuste de modos deixava a venv criada | A venv é removida, como nas outras falhas (D-012). | `PythonToolLocks.test_r022_mode_fix_failure_removes_created_venv` |
+| `next_step` com `--profile` desnecessário | Só sugere `--profile` quando os perfis informados diferem dos lembrados. A leitura usa `O_NOFOLLOW` e não grava nada. | `DoctorNextStep.test_r044_informed_profiles_equal_to_remembered_omit_profile` |
+| Rollback sem `previous_profiles` recusado por registro inseguro | A checagem antecipada só acontece quando o registro vai ser restaurado; o registro inseguro não é tocado. | `RememberedProfiles.test_r040_rollback_without_previous_profiles_ignores_unsafe_record` |
+| `apply` sem mudanças conferia o estado fora do lock | Sob o lock, replaneja e confere a transação interrompida antes de gravar os perfis. | `RememberedProfiles.test_r040_apply_without_changes_replans_under_lock` |
+
+Local: Ruff 0.17.3 e 82 unittest passaram em HOME temporária. Bats, ShellCheck e
+shfmt ficam com o CI, porque esta sessão não tem essas ferramentas.
+
 ## CPython gerenciado inseguro (D-020) — 2026-11-12
 
 Corrige o P2 pendente da revisão do T-900. Antes, quando o interpretador ou o
@@ -88,11 +104,11 @@ openSUSE Leap 16 (execução 42665398454).
     a ferramenta como divergente e pedirem para mover a venv, o que não resolve.
     A revisão de permissões do setup só olha a raiz desse diretório.
     (`lib/python_tools.py`, `lib/setup.py`)
-  - **P3 registrados, sem correção:** o `ValueError` do ajuste de modos não
-    remove a venv criada; o `next_step` sugere `--profile` mesmo quando os
-    perfis informados são os lembrados; o rollback recusa um registro inseguro
-    mesmo sem `previous_profiles`; o `apply` sem arquivos a alterar confere a
-    transação interrompida fora do lock.
+  - **P3, corrigidos depois (seção "P3 da revisão do T-900"):** o `ValueError`
+    do ajuste de modos não removia a venv criada; o `next_step` sugeria
+    `--profile` mesmo quando os perfis informados eram os lembrados; o rollback
+    recusava um registro inseguro mesmo sem `previous_profiles`; o `apply` sem
+    arquivos a alterar conferia a transação interrompida fora do lock.
 - **Spec:** os requisitos com evidência passaram a `verificado`. R-010 continua
   `implementado` até a primeira execução agendada na `main` (segunda,
   2026-11-16, 09:17 UTC). `spec_check.py --stage a3` não foi executado porque é

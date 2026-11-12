@@ -295,7 +295,8 @@ def apply(plan, dirs):
                         raise RuntimeError(f"executável {row['name']} não criado na venv")
                     # O uv copia os modos do cache, que podem ter escrita de grupo.
                     fs.drop_group_write_tree(venv)
-                except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
+                # ValueError: item trocado durante o ajuste de modos (D-012 vale também aqui).
+                except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as exc:
                     shutil.rmtree(venv)
                     raise RuntimeError(f"instalação de {row['name']} falhou e a venv foi removida; "
                                        f"concluídas: {', '.join(done) or 'nenhuma'}: {exc}") from exc

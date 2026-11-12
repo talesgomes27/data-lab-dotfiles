@@ -444,6 +444,45 @@ class RememberedProfiles(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (state.STATE / 'transactions').iterdir()), before)
         self.assertEqual((state.STATE / 'latest').read_text(), latest)
 
+    def test_r040_rollback_without_previous_profiles_ignores_unsafe_record(self):
+        """Manifesto antigo sem previous_profiles não toca o registro; registro inseguro não bloqueia."""
+        record = state.STATE / 'profiles'
+        self.apply()
+        manifest = state.STATE / 'transactions' / (state.STATE / 'latest').read_text() / 'manifest.json'
+        tx = json.loads(manifest.read_text())
+        del tx['previous_profiles']
+        manifest.write_text(json.dumps(tx))
+        outside = self.home / 'outro'
+        outside.write_text('personal\n')
+        record.unlink()
+        record.symlink_to(outside)
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertFalse((self.home / '.zshenv').exists())
+        self.assertTrue(record.is_symlink())
+        self.assertEqual(outside.read_text(), 'personal\n')
+        self.assertIn('rolled-back', manifest.read_text())
+
+    def test_r040_apply_without_changes_replans_under_lock(self):
+        self.apply()
+        real_build = state.build_plan
+        calls = []
+
+        def changing_plan():
+            plan = real_build()
+            calls.append(plan['approval'])
+            if len(calls) > 1:
+                plan['approval'] = 'mudou'
+            return plan
+
+        os.environ['DEVSHELL_APPROVAL'] = real_build()['approval']
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}), patch.object(state, 'build_plan', side_effect=changing_plan):
+            os.environ['DEVSHELL_APPROVAL'] = real_build()['approval']
+            with self.assertRaisesRegex(RuntimeError, 'planeje novamente'):
+                with patch.object(state, 'chezmoi_render'):
+                    state.apply_configuration()
+        self.assertEqual((state.STATE / 'profiles').read_text().strip(), 'minimal')
+
     def test_r040_rollback_shows_profiles_and_refuses_unsafe_record_before_restoring(self):
         record = state.STATE / 'profiles'
         self.apply()
@@ -465,6 +504,13 @@ class RememberedProfiles(unittest.TestCase):
 
 class DoctorNextStep(unittest.TestCase):
     """R-044: um próximo passo só, manual primeiro, setup depois, nada sem pendência."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        active = patch.object(state, 'STATE', Path(temporary.name))
+        active.start()
+        self.addCleanup(active.stop)
 
     def step(self, issues, source='lembrados', profiles='personal'):
         return state.next_step(issues, profiles, source)
@@ -489,6 +535,16 @@ class DoctorNextStep(unittest.TestCase):
                       'permissões inseguras: /h/.config'):
             with self.subTest(issue):
                 self.assertEqual(self.step([issue])['kind'], 'manual')
+
+    def test_r044_informed_profiles_equal_to_remembered_omit_profile(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(state, 'STATE', Path(temporary)):
+            (Path(temporary) / 'profiles').write_text('science\n')
+            self.assertEqual(self.step(['componente ausente: fzf'], 'informados', 'science')['command'],
+                             ['./bin/devshell', 'setup'])
+            self.assertEqual(self.step(['componente ausente: fzf'], 'informados', 'minimal,science,science')['command'],
+                             ['./bin/devshell', 'setup'])
+            self.assertEqual(self.step(['componente ausente: fzf'], 'informados', 'personal')['command'],
+                             ['./bin/devshell', 'setup', '--profile', 'personal'])
 
     def test_r044_no_issue_means_no_step_and_informed_profiles_are_kept(self):
         self.assertIsNone(self.step([]))
@@ -832,6 +888,27 @@ Prompt_Toolkit==3.0.53 ; sys_platform == 'win32' \\
         self.assertTrue(issues[0].startswith('interpretador uv com caminho inseguro: 3.13.11'), issues)
         self.assertIn('chmod -R go-w', issues[0])
         self.assertEqual(state.next_step(issues, ['minimal'], 'padrão')['kind'], 'manual')
+
+    def test_r022_mode_fix_failure_removes_created_venv(self):
+        """D-012: item trocado durante o ajuste de modos (ValueError) também remove a venv criada."""
+        venv, link = python_tools.paths('ruff', self.dirs)
+        row = {'name': 'ruff', 'state': 'ausente', 'venv': str(venv), 'link': str(link), 'detail': []}
+
+        def fake_run(command, **kwargs):
+            (venv / 'bin').mkdir(parents=True, exist_ok=True)
+            (venv / 'bin/ruff').write_text('')
+
+        with patch.object(state, 'STATE', self.home / '.state/devshell'), \
+                patch.object(python_tools, 'plan_tools', return_value=[row]), \
+                patch.object(python_tools.shutil, 'which', return_value='/usr/bin/uv'), \
+                patch.object(python_tools, 'commands', return_value=[['uv', 'venv']]), \
+                patch.object(python_tools.subprocess, 'run', side_effect=fake_run), \
+                patch.object(state, 'drop_group_write_tree', side_effect=ValueError('item trocado durante o ajuste de modo: x')), \
+                patch.dict(os.environ, {'DEVSHELL_OFFLINE': '1'}):
+            with self.assertRaisesRegex(RuntimeError, 'venv foi removida'):
+                python_tools.apply({'spec': {}, 'tools': [row]}, self.dirs | {'UV_PYTHON_INSTALL_DIR': '/p', 'UV_CACHE_DIR': '/c'})
+        self.assertFalse(os.path.lexists(venv))
+        self.assertFalse(os.path.lexists(link))
 
     def test_r021_uv_environment_drops_active_envs_and_user_uv_settings(self):
         with patch.dict(os.environ, {'VIRTUAL_ENV': '/outra', 'CONDA_PREFIX': '/conda', 'UV_VENV_CLEAR': '1',
