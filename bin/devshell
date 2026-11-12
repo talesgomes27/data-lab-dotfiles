@@ -17,7 +17,7 @@ fail() {
 usage() {
     cat <<'HELP'
 Uso: devshell COMANDO [opções]
-Comandos: setup plan apply status diff doctor update rollback install uninstall project
+Comandos: setup plan apply status diff doctor update rollback install uninstall leave project
   project doctor|fix-permissions  Diagnosticar .venv ou revisar seu reparo
   --path CAMINHO  Diretório do projeto (project; default: diretório atual)
   --profile minimal,personal,work,science,extras   Perfis combináveis (default: os do último apply;
@@ -40,6 +40,8 @@ install --component devshell instala um lançador local para este checkout, sem 
 rollback sem --approve exibe o plano; com --approve restaura a última transação.
 uninstall sem --approve exibe o que a CLI prova que instalou; com --approve remove só isso.
 Desfazer um uninstall é install --component X. Pacotes do sistema e o CPython do uv nunca saem.
+leave desinstala os componentes e desfaz a cadeia inteira, com uma confirmação por etapa;
+  --purge-state oferece, no fim, apagar o estado da CLI (pede a palavra apagar).
 setup coordena instalação e aplicação com confirmações; --dry-run apenas inspeciona.
 HELP
 }
@@ -50,7 +52,7 @@ case "$command" in -h | --help | help)
     exit 0
     ;;
 esac
-case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install | uninstall | project) ;; *) fail "comando desconhecido: $command" ;; esac
+case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install | uninstall | leave | project) ;; *) fail "comando desconhecido: $command" ;; esac
 project_action=doctor project_path=$PWD project_path_set=0
 if [[ "$command" == project && $# -gt 0 && $1 != --* ]]; then
     project_action=$1
@@ -61,7 +63,7 @@ if [[ "$command" == project ]]; then
 fi
 profile=minimal
 json=0 dry_run=0 offline=0 approval='' replace=0 component=uv component_set=0
-rollback_list=0 rollback_prune=0 rollback_all=0 keep='' profile_set=0
+rollback_list=0 rollback_prune=0 rollback_all=0 purge_state=0 keep='' profile_set=0
 while (($#)); do
     case "$1" in
         --profile | --approve | --component | --path | --keep)
@@ -112,6 +114,10 @@ while (($#)); do
             rollback_all=1
             shift
             ;;
+        --purge-state)
+            purge_state=1
+            shift
+            ;;
         --help)
             usage
             exit 0
@@ -123,6 +129,7 @@ done
 if [[ "$command" != rollback && ($rollback_list == 1 || $rollback_prune == 1 || $rollback_all == 1 || -n "$keep") ]]; then
     fail '--list, --prune, --all e --keep só são aceitos por rollback'
 fi
+[[ "$command" == leave || "$purge_state" == 0 ]] || fail '--purge-state só é aceito por leave'
 if [[ $rollback_all == 1 && ($rollback_list == 1 || $rollback_prune == 1 || -n "$keep") ]]; then
     fail 'rollback --all não aceita --list, --prune ou --keep'
 fi
@@ -150,7 +157,7 @@ if [[ "$command" != project ]] && ! [[ "$command" == rollback && "$rollback_list
 fi
 # D-015: informado, lembrado ou minimal; project, rollback e o lançador não dependem do registro.
 profile_source=informados
-if [[ "$command" == project || "$command" == rollback || "$command" == uninstall || ("$command" == install && "$component" == devshell) ]]; then
+if [[ "$command" == project || "$command" == rollback || "$command" == uninstall || "$command" == leave || ("$command" == install && "$component" == devshell) ]]; then
     ((profile_set)) || profile_source=padrão
 else
     remembered=$(DEVSHELL_PROFILE_INFORMED="$( ((profile_set)) && printf '%s' "$profile")" devshell_python "$ROOT/lib/state.py" profiles-source)
@@ -174,6 +181,14 @@ elif [[ "$command" == setup ]]; then
     # shellcheck source=lib/setup.sh
     source "$ROOT/lib/setup.sh"
     setup_environment "$dry_run"
+elif [[ "$command" == leave ]]; then
+    [[ -z "$approval" && "$replace" == 0 && "$profile_set" == 0 && "$component_set" == 0 ]] || fail 'leave usa confirmações próprias; não aceita --approve, --replace-existing, --profile ou --component'
+    ((dry_run || json == 0)) || fail 'leave --json requer --dry-run'
+    # shellcheck source=lib/setup.sh
+    source "$ROOT/lib/setup.sh"
+    # shellcheck source=lib/leave.sh
+    source "$ROOT/lib/leave.sh"
+    leave_environment "$dry_run" "$purge_state"
 elif [[ "$command" == uninstall ]]; then
     ((component_set)) || fail 'uninstall exige --component python|devshell|pyinit|plugins|firacode'
     [[ "$replace" == 0 && "$profile_set" == 0 ]] || fail 'uninstall não aceita --replace-existing nem --profile'

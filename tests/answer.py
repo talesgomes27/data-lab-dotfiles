@@ -13,7 +13,7 @@ import select
 import subprocess
 import sys
 
-PROMPT = re.compile(rb'(\[s/N\] |substituir: |retirar: )$')
+PROMPT = re.compile(rb'(\[s/N\] |substituir: |retirar: |apagar: )$')
 
 
 def main():

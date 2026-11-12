@@ -2316,5 +2316,113 @@ class ChainRollback(unittest.TestCase):
         self.assertEqual(self.latest(), self.ids[2])
 
 
+
+class LeaveHelpers(unittest.TestCase):
+    """R-071, R-072 e R-074: resumo, o que fica e a remoção opcional do estado."""
+
+    def setUp(self):
+        import leave
+        self.leave = leave
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / 'home'
+        self.home.mkdir(mode=0o700)
+        self.state_dir = self.home / '.local/state/devshell'
+        for module, key, value in ((state, 'HOME', self.home), (state, 'STATE', self.state_dir),
+                                   (state, 'CONFIG', self.home / '.config'),
+                                   (artifacts, 'DATA', self.home / '.local/share'),
+                                   (artifacts, 'CACHE', self.home / '.cache/devshell/artifacts'),
+                                   (artifacts, 'BIN', self.home / '.local/bin')):
+            active = patch.object(module, key, value)
+            active.start()
+            self.addCleanup(active.stop)
+
+    def plans(self, uninstall_items, chain, errors=()):
+        def fake(*arguments):
+            if arguments[0] == 'rollback':
+                return (None, 'devshell: arquivo editado após aplicação') if 'rollback' in errors else ({'transactions': chain}, '')
+            component = arguments[2]
+            if component in errors:
+                return None, f'devshell: falha em {component}'
+            return {'items': uninstall_items.get(component, []), 'warnings': []}, ''
+        return patch.object(self.leave, 'cli_json', side_effect=fake)
+
+    def test_r071_summary_lists_only_steps_with_work_in_order(self):
+        items = {'python': [{'action': 'remove', 'path': '/v'}], 'devshell': [{'action': 'remove', 'path': '/l'}],
+                 'plugins': [{'action': 'manual', 'path': '/p'}]}
+        with self.plans(items, [{'id': 'a' * 32, 'files': []}]):
+            summary = self.leave.summary(purge=False)
+        self.assertEqual([step['step'] for step in summary['steps']], ['uninstall python', 'uninstall devshell', 'rollback --all'])
+        self.assertEqual(summary['blockers'], [])
+
+    def test_r071_every_failing_plan_is_a_blocker_before_any_question(self):
+        with self.plans({}, [], errors=('rollback', 'plugins')):
+            summary = self.leave.summary(purge=False)
+        self.assertEqual(len(summary['blockers']), 2)
+        self.assertTrue(any('editado' in blocker for blocker in summary['blockers']))
+        self.assertTrue(any('plugins' in blocker for blocker in summary['blockers']))
+
+    def make_state(self):
+        for name in ('transactions/' + 'a' * 32 + '/manifest.json', 'launcher-backups/x/0', 'permission-repairs/r.json',
+                     'install-receipts/plugins.json', 'current.json', 'profiles'):
+            path = self.state_dir / name
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.write_text('{}')
+        return self.state_dir
+
+    def test_r074_purge_is_offered_only_after_the_whole_chain(self):
+        self.make_state()
+        (self.state_dir / 'latest').write_text('a' * 32)
+        plan = self.leave.purge_plan()
+        self.assertFalse(plan['offered'])
+        self.assertIn('latest', plan['reason'])
+        (self.state_dir / 'latest').unlink()
+        plan = self.leave.purge_plan()
+        self.assertTrue(plan['offered'])
+        self.assertIn('transactions', plan['contents'])
+        self.assertGreater(plan['bytes'], 0)
+
+    def test_r074_purge_removes_only_the_state_directory(self):
+        self.make_state()
+        cache = self.home / '.cache/devshell/artifacts/x'
+        cache.parent.mkdir(parents=True, mode=0o700)
+        cache.write_text('pacote')
+        sibling = self.home / '.local/state/outro-programa'
+        sibling.mkdir(mode=0o700)
+        plan = self.leave.purge_plan()
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}):
+            self.leave.purge(plan)
+        self.assertFalse(self.state_dir.exists())
+        self.assertTrue(cache.exists())
+        self.assertTrue(sibling.exists())
+        self.assertEqual([p.name for p in self.state_dir.parent.iterdir()], ['outro-programa'])
+
+    def test_r074_purge_refuses_symlink_and_stale_approval(self):
+        target = self.home / 'elsewhere'
+        target.mkdir(mode=0o700)
+        (target / 'importante').write_text('x')
+        self.state_dir.parent.mkdir(parents=True, mode=0o700)
+        self.state_dir.symlink_to(target, target_is_directory=True)
+        self.assertFalse(self.leave.purge_plan()['offered'])
+        self.state_dir.unlink()
+        self.make_state()
+        plan = self.leave.purge_plan()
+        (self.state_dir / 'novo').write_text('x')
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}), self.assertRaises((ValueError, RuntimeError)):
+            self.leave.purge(plan)
+        self.assertTrue(self.state_dir.exists())
+        self.assertTrue((target / 'importante').exists())
+
+    def test_r072_remains_lists_what_stays(self):
+        self.make_state()
+        with self.plans({'python': [{'action': 'manual', 'path': '/venv-minha', 'reason': 'arquivo meu'}]}, []):
+            remains = self.leave.remains()
+        text = ' '.join(remains)
+        self.assertIn(str(self.state_dir), text)
+        self.assertIn('/venv-minha', text)
+        self.assertIn('./bin/devshell', text)
+        self.assertIn('CPython', text)
+
+
 if __name__ == '__main__':
     unittest.main()
