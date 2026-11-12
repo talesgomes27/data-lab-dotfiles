@@ -17,7 +17,7 @@ fail() {
 usage() {
     cat <<'HELP'
 Uso: devshell COMANDO [opções]
-Comandos: setup plan apply status diff doctor update rollback install project
+Comandos: setup plan apply status diff doctor update rollback install uninstall project
   project doctor|fix-permissions  Diagnosticar .venv ou revisar seu reparo
   --path CAMINHO  Diretório do projeto (project; default: diretório atual)
   --profile minimal,personal,work,science,extras   Perfis combináveis (default: os do último apply;
@@ -32,10 +32,13 @@ Comandos: setup plan apply status diff doctor update rollback install project
   --prune --keep N  rollback: planejar a remoção irreversível dos backups,
                   mantendo a transação atual e N-1 anteriores (com --approve)
   --component devshell|uv|chezmoi|nu|plugins|python|firacode|pyinit  Alvo de install (default: uv)
+                  uninstall exige --component python|devshell|pyinit|plugins|firacode
   --help          Mostrar esta ajuda
 apply/update alteram só dotfiles. install é separado e exige aprovação.
 install --component devshell instala um lançador local para este checkout, sem downloads.
 rollback sem --approve exibe o plano; com --approve restaura a última transação.
+uninstall sem --approve exibe o que a CLI prova que instalou; com --approve remove só isso.
+Desfazer um uninstall é install --component X. Pacotes do sistema e o CPython do uv nunca saem.
 setup coordena instalação e aplicação com confirmações; --dry-run apenas inspeciona.
 HELP
 }
@@ -46,7 +49,7 @@ case "$command" in -h | --help | help)
     exit 0
     ;;
 esac
-case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install | project) ;; *) fail "comando desconhecido: $command" ;; esac
+case "$command" in setup | plan | apply | status | diff | doctor | update | rollback | install | uninstall | project) ;; *) fail "comando desconhecido: $command" ;; esac
 project_action=doctor project_path=$PWD project_path_set=0
 if [[ "$command" == project && $# -gt 0 && $1 != --* ]]; then
     project_action=$1
@@ -139,7 +142,7 @@ if [[ "$command" != project ]] && ! [[ "$command" == rollback && "$rollback_list
 fi
 # D-015: informado, lembrado ou minimal; project, rollback e o lançador não dependem do registro.
 profile_source=informados
-if [[ "$command" == project || "$command" == rollback || ("$command" == install && "$component" == devshell) ]]; then
+if [[ "$command" == project || "$command" == rollback || "$command" == uninstall || ("$command" == install && "$component" == devshell) ]]; then
     ((profile_set)) || profile_source=padrão
 else
     remembered=$(DEVSHELL_PROFILE_INFORMED="$( ((profile_set)) && printf '%s' "$profile")" devshell_python "$ROOT/lib/state.py" profiles-source)
@@ -163,6 +166,11 @@ elif [[ "$command" == setup ]]; then
     # shellcheck source=lib/setup.sh
     source "$ROOT/lib/setup.sh"
     setup_environment "$dry_run"
+elif [[ "$command" == uninstall ]]; then
+    ((component_set)) || fail 'uninstall exige --component python|devshell|pyinit|plugins|firacode'
+    [[ "$replace" == 0 && "$profile_set" == 0 ]] || fail 'uninstall não aceita --replace-existing nem --profile'
+    ((dry_run == 0)) || export DEVSHELL_APPROVAL=''
+    exec "${python_command[@]}" "$ROOT/lib/uninstall.py"
 elif [[ "$command" == install ]]; then
     # shellcheck source=lib/install.sh
     source "$ROOT/lib/install.sh"

@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 9
+versao_spec: 11
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -519,6 +519,140 @@ como escopo.
 - Estado: verificado
 - Evidência: docs/USAGE.md (Trocar de perfil e retirar o que ficou de fora, com saída executada); docs/SECURITY.md (Retirada de arquivos fora dos perfis e linha da tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md
 
+**Desinstalação de componentes (Bloco F)**
+
+Contexto: item 2 do [ROADMAP](ROADMAP.md). O rollback desfaz só os dotfiles,
+e não há caminho para retirar o que `install` colocou na HOME. A prova de que
+um item é da CLI varia por componente:
+- o lançador e o recibo dele (`devshell`) têm bytes exatos;
+- as venvs das ferramentas (`python`) são conferidas contra o lock, e o
+  symlink aponta para um caminho conhecido;
+- o `pyinit` é um arquivo com o SHA-256 do manifesto;
+- plugins e fonte saem de um pacote baixado, com hash só de alguns arquivos.
+
+Escopo decidido pelo usuário em 2026-11-12: componentes com prova de dono, com
+recibo novo para plugins, fonte e pyinit; desfazer é reinstalar; a saída
+completa fica para depois (N-016).
+
+### R-060 Plano de desinstalação sem gravar
+- Enunciado: `uninstall --component X` mostra, sem gravar nada, o que seria
+  removido e o que fica para remoção manual.
+- Critério: Dado X em `python`, `devshell`, `plugins`, `firacode` ou
+  `pyinit`, Quando `uninstall --component X` roda sem `--approve`, Então a
+  saída lista cada caminho com a ação:
+  - `remove`: a CLI prova que é dela (R-061);
+  - `manual`: existe, mas não há prova, ou é inseguro (symlink, outro dono,
+    hardlink, conteúdo diferente).
+
+  O comando sai com 0, mostra o hash de aprovação e não grava nada; `--json`
+  traz a lista. O plano só lê o cache (`CACHE/SHA256` já existente e
+  conferido contra o manifesto): nunca baixa nem grava. Se X ainda está nos
+  perfis lembrados (`python` corresponde a `python-tools`), o plano avisa que
+  o próximo `setup` o reinstalaria. A lista de ferramentas vem do manifesto
+  inteiro, sem depender dos perfis, e o comando não passa pela checagem do
+  R-046. `uv`, `chezmoi` e `nu` são recusados com saída 2 (N-014). A checagem
+  do R-047 vale também aqui. Restos de uma desinstalação interrompida em
+  `DATA/devshell/uninstalling/` aparecem no plano e entram no hash; restos
+  inesperados ali são `manual`.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall (componentes excluídos e desconhecidos, plano sem gravar, hash, aviso dos perfis lembrados e dos caminhos personalizados, restos em uninstalling/); tests/uninstall.bats; StateOwnership cobre o uninstall (R-047); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
+
+### R-061 Só sai o que a CLI prova que é dela
+- Enunciado: cada componente tem uma regra de prova, e sem ela nada é
+  removido.
+- Critério:
+  - **`devshell`:** `~/.local/bin/devshell` e `STATE/launcher.json` iguais,
+    byte a byte, ao que a CLI geraria para este checkout. Se o install usou
+    `--replace-existing`, o original do usuário em `launcher-backups/ID/N`
+    aparece como `manual`, com o comando de restauração; ele não é devolvido
+    sozinho, porque pode estar desatualizado.
+  - **`python`:** para cada ferramenta do manifesto, a venv em
+    `devshell/tools/NOME` no estado `conforme` ou `sem-link` (D-012) **e** com
+    inventário completo (D-033): cada arquivo da árvore está no RECORD de uma
+    distribuição do lock, com o hash certo, ou numa lista fixa da venv. O
+    digest do inventário entra no hash. Qualquer outro arquivo deixa a venv
+    `manual`. Isso inclui um módulo editado, um `.pth`, um script em `bin/` e
+    `share/` ou `etc/`. O symlink em `UV_TOOL_BIN_DIR/NOME` sai quando aponta
+    para essa venv (`conforme` ou `link-orfao`). Com o link de outro dono, a
+    venv conforme sai e o link fica `manual`. Venv `divergente` é `manual`,
+    com a dica do reparo do setup quando o problema é só de modos. O CPython
+    do uv nunca é removido. Se `UV_TOOL_BIN_DIR` ou `XDG_DATA_HOME` mudaram
+    desde o install, o plano avisa que os caminhos antigos não são vistos.
+  - **`pyinit`:** `~/.local/bin/pyinit` com o SHA-256 do manifesto atual ou
+    com o SHA-256 gravado no recibo, que cobre uma versão anterior.
+  - **`plugins` e `firacode`:** cada arquivo com o SHA-256 gravado no recibo
+    do install (R-062), que vale mesmo depois de o manifesto mudar. Sem recibo,
+    cada arquivo é comparado com o membro do pacote em cache (`CACHE/SHA256`,
+    conferido pelo manifesto atual); uma instalação de versão anterior sem
+    recibo é `manual`. Sem recibo e sem cache, o item é `manual`. Na pasta
+    da fonte, só saem os arquivos com prova; fontes do usuário ficam.
+
+  Diretórios seguem a D-034: só são removidos de baixo para cima, com
+  `rmdir`, quando ficam vazios e estão dentro de `devshell/plugins/NOME`,
+  `fonts/FiraCodeNerdFont` ou da venv.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r061_* (devshell, pyinit, plugins com recibo, cache ou nenhum, symlink e hardlink, inventário da venv e casos de borda, link que fica com a venv, resto sem prova, cache corrompido e recibo de outra versão); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
+
+### R-062 Recibo de instalação para plugins, fonte e pyinit
+- Enunciado: o `install` desses componentes grava o que escreveu.
+- Critério: Dado um `install --component X` aprovado e concluído, Quando ele
+  termina, Então `STATE/install-receipts/X.json` registra cada arquivo
+  escrito ou conferido, com o SHA-256 e o SHA-256 do pacote de origem, e um
+  campo `version`. Os caminhos são relativos ao destino do componente, sem
+  `..`. O uninstall recusa um recibo que fuja disso e trata o componente como
+  sem recibo. A gravação é atômica, sob o lock, depois de todas as escritas,
+  e o arquivo é privado (0600). Um install sem mudança regrava o recibo se ele
+  faltar, e um install que falha não grava recibo. A falta de recibo não torna
+  o install `pending` nem é acusada pelo `doctor`. Um arquivo que já existia
+  igual entra no recibo como "conferido": ao desinstalar ele sai, e ao
+  reinstalar volta com os mesmos bytes e modo 0644. Instalações antigas só
+  ganham recibo com um `install --approve` manual; o `setup` não o roda sem
+  mudanças (R-042).
+- Prioridade: média
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r062_* (recibo privado com todos os arquivos, regravado quando falta, ausente em install que falha e quando o fc-cache falha, recibo que foge do destino ignorado); suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
+
+### R-063 Remoção aprovada, sem backup
+- Enunciado: com `--approve HASH`, a CLI remove os itens `remove` e nada
+  mais.
+- Critério: Dado o hash do plano, Quando `uninstall --component X --approve
+  HASH` roda, Então, sob o lock, a CLI replaneja e confere o hash e remove
+  cada item pelo descritor do diretório pai, sem seguir symlinks, conferindo
+  identidade e conteúdo como na D-026. As venvs são renomeadas para
+  `DATA/devshell/uninstalling/` (irmão de `tools/`, no mesmo sistema de
+  arquivos), conferidas de novo contra o inventário e só então apagadas por
+  um apagador recursivo por `dir_fd`, que não segue links. Se o inventário
+  não bate depois de renomear, a venv volta ao lugar. O recibo do componente
+  sai por último. Itens `manual` não são tocados. Para `firacode`, `fc-cache
+  -f` roda depois, se existir. A saída diz que desfazer é `install
+  --component X`. Uma interrupção deixa só itens inteiros, mais algum resto em
+  `uninstalling/`, que o plano seguinte mostra e o apply aprovado limpa.
+- Prioridade: alta
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::Uninstall.test_r063_* (plugins com diretórios de baixo para cima, arquivo do usuário que fica, hash vencido, falha no meio, fonte e fc-cache, lançador, venv por uninstalling/ mantendo o CPython, venv que volta ao lugar, limpeza de restos, rmtree sem proteção); tests/uninstall.bats; suíte completa sem skips no [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839)
+
+### R-064 Fora do setup e do rollback
+- Enunciado: a desinstalação é sempre um comando explícito.
+- Critério: O `setup` nunca chama `uninstall`; o `rollback` não desfaz uma
+  desinstalação; `uninstall --dry-run` é igual ao plano. Não existe
+  `--component all`, nem desinstalação de vários componentes num só hash.
+- Prioridade: média
+- Estado: verificado
+- Evidência: bin/devshell (sem --component all, recusa de --profile e --replace-existing, --dry-run igual ao plano); tests/uninstall.bats; o setup e o rollback não chamam o uninstall (lib/setup.sh, lib/state.py)
+
+### R-065 Documentação da desinstalação
+- Enunciado: USAGE, SECURITY e CHANGELOG explicam o comando, o que fica e
+  como desfazer.
+- Critério: a USAGE traz um exemplo executado em HOME temporária; a tabela de
+  recuperação do SECURITY ganha a linha "componente desinstalado"
+  (reinstalar); a ajuda do `devshell` lista o comando; o CHANGELOG marca o
+  comando novo e o recibo.
+- Prioridade: média
+- Estado: verificado
+- Evidência: docs/USAGE.md (Desinstalar um componente, com saída executada); docs/SECURITY.md (seção e duas linhas na tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md; bin/devshell --help
+
 **Documentação**
 
 ### R-030 Documentação fiel
@@ -539,16 +673,21 @@ como escopo.
 ### N-002 Poda automática ou por idade, sem aprovação
 ### N-003 Reinstalação automática, `--force` ou remoção pela CLI de ferramentas fora do lock ou instaladas pelo `uv tool`
 ### N-004 Lock do próprio uv, do Chezmoi ou do Nushell (já fixados por SHA-256 em `artifacts.json`)
-### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa)
+### N-005 Revisão assistida de manifestos, Quarto, desinstalação e Git gerenciado (itens 5 a 9 da conversa); a desinstalação passou ao Bloco F
 ### N-006 Alerta por canal além da notificação padrão do GitHub
 ### N-007 `git pull`, atualização do checkout ou verificação de versões nova pela CLI
 ### N-008 `--yes` ou aprovação automática no setup
-### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta)
+### N-009 Migrações declarativas, desinstalação e mudança da D-013 (itens 4 a 6 da proposta); a desinstalação passou ao Bloco F
 
 ### N-010 Manifesto de migrações declarativas (`manifests/migrations.json`): sem caso que o registro não cubra (D-022)
 ### N-011 Migração automática das instalações pelo `uv tool` (a D-013 continua manual)
-### N-012 Remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte
+### N-012 No Bloco E, remoção de diretórios vazios, do launcher, das ferramentas, dos plugins ou da fonte (o Bloco F trata dos componentes, com a regra de diretórios da D-034)
 ### N-013 Remoção de arquivo fora do universo ou editado, mesmo com `--replace-existing`
+
+### N-014 Desinstalar `uv`, `chezmoi` ou `nu`: a CLI depende deles, e eles podem ter vindo de outra fonte
+### N-015 Remover o CPython do uv, pacotes do sistema ou ambientes de projeto
+### N-016 Saída completa (desinstalar tudo e voltar os dotfiles ao estado anterior ao Data Lab): item próprio no ROADMAP
+### N-017 Backup do que é desinstalado; desfazer é reinstalar
 
 ## Decisões
 
@@ -823,6 +962,42 @@ apontando para o diretório pai dele e com o `XDG_CONFIG_HOME` antigo. Como a
 recusa vem antes de qualquer plano, o Bloco E nunca classifica chaves de outra
 configuração: `forget-outside` fica restrito a chaves que não correspondem a
 nenhum alvo.
+
+### D-030 Prova de dono por componente, sem registro global
+Cada componente já tem, ou passa a ter, uma prova local: bytes exatos
+(`devshell`, `pyinit`), conferência contra o lock (`python`) ou recibo
+(`plugins`, `firacode`). Um registro global de instalações exigiria migrar
+todas as HOMEs; a prova por componente vale também para instalações antigas,
+com o pacote em cache como alternativa ao recibo.
+
+### D-031 Desfazer é reinstalar, sem backup
+Só sai o que é idêntico ao manifesto, ao lock ou ao recibo, então reinstalar
+devolve exatamente os mesmos bytes. Copiar venvs e fontes para backups
+ocuparia disco e complicaria a poda, sem proteger nada que a reinstalação não
+proteja. Decidido pelo usuário em 2026-11-12.
+
+### D-032 Recibo em `STATE/install-receipts`
+Um JSON por componente: `{"version": 1, "component": X, "destination":
+CAMINHO, "files": {RELATIVO: SHA-256}, "artifacts": [SHA-256]}`. Fica no
+estado, não em `transactions/`: não entra na poda nem no rollback, e só o
+`uninstall` o remove.
+
+### D-033 Inventário completo da venv
+O estado `conforme` (D-012) prova os metadados, não a árvore. Para remover,
+a CLI percorre a venv sem seguir links. Cada arquivo regular precisa estar no
+RECORD de uma distribuição do lock, com hash igual (ou sem hash no RECORD,
+como o próprio RECORD e o INSTALLER), ou numa lista fixa da venv:
+`pyvenv.cfg`, `bin/activate*`, `bin/python*`, `lib64`, `CACHEDIR.TAG`,
+`.gitignore` e `__pycache__/*.pyc` de módulos listados. Os symlinks precisam
+ser os da venv (`bin/python*`, `lib64`). Qualquer outra entrada torna a venv
+`manual`. Achado P1 da revisão do desenho.
+
+### D-034 Diretórios de baixo para cima, só dentro do destino
+Não há registro de quem criou cada diretório. Por isso só são removidos, com
+`rmdir` de baixo para cima, os diretórios que ficam vazios dentro de
+`devshell/plugins/NOME`, de `fonts/FiraCodeNerdFont` e da venv, incluindo
+esses três. `rmdir` falha se o diretório não está vazio, então nada do
+usuário sai. Os demais diretórios ficam, como na D-025.
 
 ## Restrições
 

@@ -29,9 +29,10 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 
 | # | Item | Origem | Tamanho | Depende de |
 |---|---|---|---|---|
-| 0 | Estado preso à configuração (origem do registro errado) | R-046, R-047, R-048 | pequeno | — |
-| 1 | Retirada de arquivos órfãos (escopo reduzido das migrações declarativas) | N-009, D-013, D-022 | médio | 0 |
-| 2 | Desinstalação de componentes | N-005, N-009 | médio | 1 |
+| 0 | Estado preso à configuração (implementado) | R-046, R-047, R-048 | pequeno | — |
+| 1 | Retirada de arquivos órfãos (implementado) | N-009, D-013, D-022 | médio | 0 |
+| 2 | Desinstalação de componentes (implementado) | N-005, N-009 | médio | 1 |
+| 2b | Saída completa | N-016 | médio | 2 |
 | 3 | Revisão assistida de manifestos | N-005 | médio | — |
 | 4 | Poda dos demais diretórios de estado | N-001 | pequeno a médio | — |
 | 5 | Quarto como componente | N-005 | médio | 3 (recomendado) |
@@ -97,7 +98,13 @@ aprovação, backup e escopo restrito, e confirmação separada das outras etapa
 **Pronto quando:** a migração da D-013 puder ser refeita por esse mecanismo,
 com teste de interrupção e de rollback.
 
-### 2. Desinstalação de componentes
+### 2. Desinstalação de componentes (implementado)
+
+Feito no Bloco F (R-060 a R-065, D-030 a D-034): componentes com prova de
+dono e recibo para plugins, fonte e pyinit; desfazer é reinstalar. A saída
+completa virou o item 2b.
+
+Texto original do item:
 
 **Problema:** o rollback desfaz só os dotfiles. Não existe um caminho para
 retirar o que a CLI instalou.
@@ -114,6 +121,18 @@ combina isso com o rollback dos dotfiles.
 
 **Depende de 1:** a desinstalação reaproveita a remoção com backup e
 rollback do item 1.
+
+### 2b. Saída completa
+
+**Problema:** sair do Data Lab hoje exige rodar `uninstall` por componente e
+o rollback até antes do primeiro apply, à mão.
+
+**Proposta:** um comando que mostra, num só plano, os uninstalls de cada
+componente e o rollback da cadeia de transações até o estado anterior ao
+primeiro apply, e que pede uma confirmação por etapa, como o `setup`. Ele não
+remove o estado nem os backups: isso continua sendo da poda.
+
+**Depende de 2.**
 
 ### 3. Revisão assistida de manifestos
 

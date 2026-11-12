@@ -282,6 +282,19 @@ def download(artifact):
     return content
 
 
+def write_receipt(plan, files):
+    """R-062 / D-032: o que este install escreveu ou conferiu, para o uninstall provar a origem."""
+    root = Path(plan['destination'])
+    receipt = {'version': 1, 'component': COMPONENT, 'destination': str(root),
+               'files': {path.relative_to(root).as_posix(): fs.digest(data) for path, data in sorted(files.items())},
+               'artifacts': [artifact['sha256'] for artifact in plan['artifacts']]}
+    target = fs.STATE / 'install-receipts' / f'{COMPONENT}.json'
+    content = fs.encode(receipt)
+    current = fs.snapshot(target)
+    if not current or current['sha256'] != fs.digest(content):
+        fs.atomic(target, content, mode=0o600)
+
+
 def apply(plan):
     check(plan)
     files = {}
@@ -313,6 +326,9 @@ def apply(plan):
         if COMPONENT == 'firacode':
             # Repetir também após falha anterior na atualização do cache.
             subprocess.run(plan['commands'][0], check=True, capture_output=True)
+        # R-062: só depois de tudo, inclusive o fc-cache; um install que falha não deixa recibo.
+        if COMPONENT in ('plugins', 'firacode', 'pyinit'):
+            write_receipt(plan, files)
     fs.report({'operation': plan['operation'], 'changed': changed,
                'message': 'Instalações não são removidas por rollback de dotfiles; consulte SECURITY.md.'})
 

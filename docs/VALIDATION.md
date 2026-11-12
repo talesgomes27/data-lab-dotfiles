@@ -33,6 +33,56 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Desinstalação de componentes (Bloco F) — 2026-11-12
+
+Item 2 do ROADMAP. O comando novo é
+`uninstall --component python|devshell|pyinit|plugins|firacode`. Ele só
+remove o que a CLI prova que instalou:
+- **devshell:** bytes do lançador e do recibo dele;
+- **pyinit:** SHA-256 do manifesto ou do recibo;
+- **plugins e firacode:** recibo do install, novo, ou pacote em cache
+  conferido pelo manifesto, sem baixar;
+- **python:** inventário completo da venv contra o RECORD do lock (D-033).
+
+Desfazer é reinstalar. O `uv`, o `chezmoi`, o `nu`, o CPython do uv e os
+pacotes do sistema nunca saem.
+
+**Testes.** Escritos antes do código e vistos falhando pelo motivo esperado:
+- 11 do plano, 4 do recibo e 10 da remoção;
+- mais os casos que vieram das revisões, num total de 41 em `Uninstall`.
+
+`tests/uninstall.bats` roda no CI: lançador instalado e desinstalado,
+`--dry-run` sem efeito, arquivo editado que fica e recusas.
+
+**Revisões independentes.**
+- A do desenho veio "não pronto". O P1 era o inventário da venv: o estado
+  `conforme` só conferia os metadados, e um arquivo do usuário sairia junto.
+  Corrigido na spec v11.
+- A do código encontrou três P1:
+  - um resto em `uninstalling/` saía sem prova;
+  - o link saía mesmo com a venv de pé;
+  - faltava o aviso dos caminhos personalizados.
+- Também corrigidos:
+  - quatro P2: o recibo da fonte era gravado antes do `fc-cache`, um
+    diretório ilegível passava no inventário, um teste passava por acaso, e
+    faltavam testes de borda;
+  - os P3.
+- Cada correção tem um teste que falhou antes.
+
+**Verificação.**
+- CI: o [workflow_dispatch 43256501839](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43256501839),
+  no commit `d18ccb6`, aprovou os sete jobs: 234 Bats e 154 unittest sem
+  skips, cinco imagens e smoke online.
+- Local: Ruff 0.17.3, `bash -n` e os 154 unittest, inclusive com
+  `XDG_BIN_HOME` definido.
+- O exemplo da USAGE é uma execução real em HOME temporária.
+
+**Limites.**
+- Plugins, fonte e pyinit instalados antes desta versão só ganham recibo com
+  um `install --approve` manual. Sem recibo e sem cache, viram `manual`.
+- Se `UV_TOOL_BIN_DIR` ou `XDG_DATA_HOME` mudaram desde o install, os
+  caminhos antigos não aparecem no plano; ele só avisa.
+
 ## Retirada de arquivos órfãos (Bloco E) — 2026-11-12
 
 Item 1 do ROADMAP, com o escopo da D-022: o registro `current.json` é a

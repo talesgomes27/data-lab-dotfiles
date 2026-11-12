@@ -2,6 +2,15 @@
 
 ## Não publicado
 
+- Comando novo `uninstall --component python|devshell|pyinit|plugins|firacode`.
+  Sem `--approve`, mostra o plano. Com `--approve`, remove só o que a CLI
+  prova que instalou (bytes iguais ao gerado, ao manifesto, ao recibo, ao
+  pacote em cache ou, nas venvs, ao lock); o resto fica como `manual`.
+  Desfazer é reinstalar. O `uv`, o `chezmoi`, o `nu`, o CPython do uv e os
+  pacotes do sistema nunca saem.
+- O `install` de plugins, firacode e pyinit passa a gravar um recibo em
+  `$XDG_STATE_HOME/devshell/install-receipts/`.
+
 - **Mudança de comportamento do `apply`:** trocar de perfil passa a retirar os
   arquivos gerenciados que ficaram de fora. Só é removido o que está igual ao
   que a CLI escreveu, com backup e rollback; arquivo editado, ausente, inseguro
