@@ -210,7 +210,15 @@ diretório pai. O rollback devolve os arquivos pelo journal, sem formato novo
 
 O plano entra no hash, e a remoção aprovada replaneja sob o lock. A venv
 passa por `$XDG_DATA_HOME/devshell/uninstalling/` antes de sair. Não há
-backup: desfazer é reinstalar (D-031). Os exemplos em `examples/`
+backup: desfazer é reinstalar (D-031).
+
+A saída completa usa `rollback --all`. A função `chain_rollback_plan` simula
+a cadeia com a mesma regra de cada passo (`check_transaction`). A
+`chain_rollback` desfaz uma transação por vez com `undo_transaction`, sob um
+único lock, porque o `flock` não é reentrante (D-038). O `leave`
+(`lib/leave.sh` e `lib/leave.py`) coordena os `uninstall` e o `rollback --all`
+como o `setup`: calcula todos os planos antes, recalcula o da cadeia antes de
+cada etapa e pede uma confirmação por etapa. Os exemplos em `examples/`
 têm ambientes próprios. Os testes e os scripts de verificação ficam em `tests/`
 e `scripts/`. Consulte o [guia de contribuição](../CONTRIBUTING.md) para validar
 mudanças e a [instalação](INSTALLATION.md) para operar a CLI.

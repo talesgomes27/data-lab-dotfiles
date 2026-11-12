@@ -2,6 +2,13 @@
 
 ## Não publicado
 
+- Comando novo `leave`, para a saída completa. Ele desinstala os componentes
+  e desfaz a cadeia inteira de transações, com uma confirmação por etapa, e
+  para antes de tocar em qualquer coisa se algum plano recusa. Com
+  `--purge-state`, oferece no fim apagar o estado da CLI (palavra `apagar`).
+- `rollback --all`: um só plano e um só hash para desfazer todas as
+  transações, conferidas antes de qualquer gravação.
+
 - Comando novo `uninstall --component python|devshell|pyinit|plugins|firacode`.
   Sem `--approve`, mostra o plano. Com `--approve`, remove só o que a CLI
   prova que instalou (bytes iguais ao gerado, ao manifesto, ao recibo, ao

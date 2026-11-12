@@ -239,6 +239,7 @@ isso contornaria o journal da CLI.
 | Dry-run | Inspeção da operação sem aplicá-la. |
 | Rollback | Restauração da última transação de dotfiles, inclusive dos arquivos retirados na troca de perfil; não desfaz instalações. |
 | Uninstall | `uninstall --component X` remove só o que a CLI prova que instalou; desfazer é reinstalar. |
+| Saída | `leave` desinstala os componentes e desfaz a cadeia, com uma confirmação por etapa; `--purge-state` também apaga o estado. |
 
 ## Manuais
 
