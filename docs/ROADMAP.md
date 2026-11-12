@@ -19,7 +19,7 @@ Atualizado em 2026-11-12.
   levou o `setup` a tirar 24 componentes com uma confirmação de diff comum
   (transação `c7209d5c`, que pode ser desfeita). Agora os comandos sem
   `--profile` param quando os perfis lembrados tirariam componentes
-  aplicados. A origem do registro errado está em apuração (item 0).
+  aplicados. A causa do registro errado foi encontrada (item 0).
 - **Em observação:** R-010 depende da primeira execução agendada na `main`
   (segunda, 2026-11-16, 09:17 UTC).
 
@@ -29,7 +29,7 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 
 | # | Item | Origem | Tamanho | Depende de |
 |---|---|---|---|---|
-| 0 | Apurar a origem do registro de perfis errado | R-046, D-021 | pequeno | — |
+| 0 | Estado preso à configuração (origem do registro errado) | R-046, R-047, R-048 | pequeno | — |
 | 1 | Retirada de arquivos órfãos (escopo reduzido das migrações declarativas) | N-009, D-013, D-022 | médio | 0 |
 | 2 | Desinstalação de componentes | N-005, N-009 | médio | 1 |
 | 3 | Revisão assistida de manifestos | N-005 | médio | — |
@@ -37,7 +37,7 @@ Em ordem de prioridade. O tamanho é uma estimativa.
 | 5 | Quarto como componente | N-005 | médio | 3 (recomendado) |
 | 6 | Configuração Git gerenciada | N-005 | médio | — |
 
-### 0. Apurar a origem do registro de perfis errado
+### 0. Estado preso à configuração (origem do registro de perfis errado)
 
 **Problema:** no incidente do R-046, o registro dizia `minimal` sem nenhuma
 transação que explicasse isso. A retirada de órfãos (item 1) confia nos
@@ -57,10 +57,18 @@ diferentes, mas o mesmo `XDG_STATE_HOME`. Nesse contexto, a configuração
 correspondia a `minimal`, e o `apply` sem mudanças gravou `minimal` no estado
 compartilhado.
 
-**Próximos passos:** conferir na HOME afetada o `previous_profiles` de cada
-transação, a data do registro e as variáveis XDG das sessões. Independente da
-causa, toda mudança do registro deve deixar rastro no journal, inclusive no
-`apply` sem arquivos a alterar.
+**Causa encontrada (2026-11-12):** na HOME afetada, o registro passou a
+`minimal` entre a transação `49dd88de` (anterior ao Bloco D) e a `c7209d5c`
+(`previous_profiles: minimal`), sem nenhuma transação entre elas. O caso foi
+reproduzido numa HOME simulada: com a HOME e o estado reais, mas com
+`XDG_CONFIG_HOME` apontando para um diretório já em `minimal`, `plan` e
+`apply` sem `--profile` gravam `minimal` no registro real pelo caminho sem
+mudanças. Esse registro tira os mesmos 24 componentes. O comando exato não foi
+identificado sem o histórico da shell, mas o mecanismo está demonstrado.
+
+**Correção:** Bloco E0 na spec (R-047 e R-048). O estado passa a ser recusado
+quando pertence a outra configuração, e toda mudança do registro de perfis
+abre uma transação.
 
 ### 1. Retirada de arquivos órfãos
 

@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 7
+versao_spec: 8
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -323,6 +323,49 @@ de `./bin/devshell setup`; os comandos individuais não mudam.
 - Estado: implementado
 - Evidência: tests/profiles.bats (2 testes R-046)
 
+**Estado preso à configuração (Bloco E0)**
+
+Contexto: apuração do incidente do R-046 (ROADMAP, item 0). A cadeia de
+transações da HOME afetada mostra o registro de perfis passando a `minimal`
+entre a transação `49dd88de` (2026-11-09, criada antes do Bloco D, sem
+`previous_profiles`) e a `c7209d5c` (2026-11-12, `previous_profiles:
+minimal`), sem transação no meio. O único caminho que grava o registro sem
+transação é o `apply` sem arquivos a alterar. O caso foi reproduzido numa HOME
+simulada: com a HOME e o `XDG_STATE_HOME` reais, mas com `XDG_CONFIG_HOME`
+apontando para um diretório que já correspondia a `minimal`, `plan` e
+`apply` sem `--profile` caem no padrão `minimal` e no caminho sem mudanças, e
+gravam `minimal` no registro real. No ambiente normal, esse registro tiraria os
+mesmos 24 componentes do incidente. O estado não sabe a que configuração
+pertence, e a mudança do registro não deixa rastro.
+
+### R-047 Estado de outra configuração é recusado
+- Enunciado: um comando não usa um estado que registra arquivos de outra HOME
+  ou de outro `XDG_CONFIG_HOME`.
+- Critério: Dado um `current.json` que registra `devshell/components` ou
+  `.bash_aliases` (alvos que todo perfil gera) num caminho diferente do atual
+  e não registra o caminho atual, Quando qualquer comando, exceto `project` e
+  `install --component devshell`, roda com ou sem `--profile`, Então sai com 2
+  antes de qualquer plano, sem gravar nada. A mensagem mostra o diretório de
+  estado e a configuração a que ele pertence, e sugere rodar com o mesmo
+  `XDG_CONFIG_HOME` e a mesma HOME, ou usar um `XDG_STATE_HOME` próprio. Um
+  registro vazio ou ausente não bloqueia. Para mudar de vez o
+  `XDG_CONFIG_HOME`, o caminho é manual e documentado: mover o diretório de
+  estado antigo para fora (D-029).
+- Prioridade: alta
+- Estado: proposto
+
+### R-048 Toda mudança do registro de perfis deixa transação
+- Enunciado: o `apply` que muda os perfis registrados sem ter arquivos a
+  alterar também cria uma transação.
+- Critério: Dado um plano aprovado sem arquivos a alterar, com perfis
+  diferentes dos registrados, Quando `apply --approve HASH` roda, Então é
+  criada uma transação com `files: []`, `previous_profiles` e `created`, o
+  registro é gravado dentro dela, `rollback --list` a mostra e o `rollback`
+  aprovado devolve os perfis anteriores. Com perfis iguais aos registrados, o
+  `apply` sem mudanças não grava nada. A poda trata a transação como as outras.
+- Prioridade: alta
+- Estado: proposto
+
 **Retirada de arquivos órfãos (Bloco E)**
 
 Contexto: o registro `$XDG_STATE_HOME/devshell/current.json` só cresce. O
@@ -570,8 +613,9 @@ na transação, depois de `current.json`, e o manifesto guarda
 `previous_profiles` (texto ou `null`); o caminho de falha e o `rollback` o
 restauram (`null` remove o registro; manifesto antigo sem a chave deixa o
 registro como está e o rollback avisa "perfis anteriores desconhecidos; informe
---profile"). Num `apply` sem arquivos a alterar e sem órfãos (Bloco E), o registro é
-gravado sob `locked()` por escrita atômica, sem transação. O registro nunca é um item de
+--profile"). Num `apply` sem arquivos a alterar e sem órfãos (Bloco E), o registro só é
+gravado se os perfis mudarem, e então numa transação com `files: []` (R-048,
+D-028). O registro nunca é um item de
 `transactions/ID`, o que preserva a poda e o `--list` do Bloco A.
 
 ### D-015 Precedência: informado, lembrado, `minimal`
@@ -719,6 +763,25 @@ Para evitar isso, `target_paths` inclui os órfãos que estão no universo. O
 setup oferece o reparo antes da etapa de aplicação, e o plano é recalculado
 depois. Fora do setup, `forget-unsafe` é definitivo: a entrada sai do registro
 e o arquivo fica para remoção manual. Achado P2 da revisão do plano.
+
+### D-028 Transação sem arquivos para a mudança de perfis
+A transação leve reaproveita o journal, o `rollback`, o `--list` e a poda sem
+formato novo: `files: []` já é aceito por `rollback_plan` (nenhuma entrada a
+conferir), e `previous_profiles` já é restaurado. Uma alternativa seria um log
+só de perfis, mas teria leitura, poda e rollback próprios. Substitui o "sem
+transação" da D-014.
+
+### D-029 Âncoras do estado e saída manual
+As âncoras são `CONFIG/devshell/components` e `HOME/.bash_aliases`, que todo
+perfil gera. O teste compara o texto exato das chaves do registro: o estado
+pertence a outra configuração quando há uma chave com o mesmo final de uma
+âncora (`/devshell/components` ou `/.bash_aliases`) e prefixo diferente, e a
+âncora atual não está registrada. Não muda o formato do estado e vale para
+estados criados antes deste bloco. Não há flag para contornar (como a N-008).
+Para mudar de vez a configuração, a pessoa move o diretório de estado antigo
+para fora, ficando com os backups dele, e roda `setup --profile` na nova. O
+Bloco E, ao retirar órfãos, nunca vê um estado de outra configuração, porque a
+recusa vem antes.
 
 ## Restrições
 

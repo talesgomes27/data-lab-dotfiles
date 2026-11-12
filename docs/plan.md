@@ -82,7 +82,7 @@ dispensas:
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: apurar a origem do registro de perfis errado (ROADMAP, item 0); depois, aprovação do usuário do plano revisto do Bloco E antes do código
+proximo_passo: aprovação do usuário do Bloco E0 (R-047, R-048; T-351 a T-354) e do plano revisto do Bloco E, antes do código; implementar E0 primeiro
 pendencias: ["R-010: execução agendada na main"]
 ```
 
@@ -445,6 +445,82 @@ individuais não mudam. Testes antes do código em cada tarefa.
 - Verificação: `bash scripts/check.sh`; leitura do diff; remota,
   `workflow_dispatch` na branch (smoke e containers), com autorização própria.
 
+## Bloco E0: estado preso à configuração
+
+Correção da causa do incidente do R-046 (ROADMAP, item 0), antes do Bloco E.
+Testes antes do código; unittest vistos falhando nesta sessão e Bats no
+`workflow_dispatch` da branch, como no Bloco E.
+
+### T-351 Testes do estado de outra configuração
+- Requisitos: R-047
+- Objetivo: fixar a recusa e as exceções antes do código.
+- Arquivos: `tests/test_boundaries.py` (classe `StateOwnership`),
+  `tests/profiles.bats`
+- Dependências: nenhuma
+- Critério de aceite:
+  - reprodução do incidente: HOME aplicada com `personal,science,extras` e
+    estado real, `XDG_CONFIG_HOME` apontando para um diretório já em
+    `minimal`; `plan` e `apply` sem `--profile` saem com 2 e o registro de
+    perfis não muda;
+  - o mesmo com `--profile minimal`, com HOME trocada mantendo o
+    `XDG_STATE_HOME`, e com `setup --dry-run`, `doctor`, `status`, `diff`,
+    `install --component python` e `rollback`;
+  - `project` e `install --component devshell` não são bloqueados;
+  - registro vazio, ausente ou só com a âncora atual não bloqueia;
+  - registro com as duas âncoras, a atual e uma antiga, não bloqueia (o Bloco
+    E trata a antiga como `forget-outside`);
+  - a árvore de estado fica idêntica em todos os casos de recusa;
+  - a mensagem mostra o diretório de estado e a configuração registrada.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-352 Recusa no início do comando
+- Requisitos: R-047
+- Objetivo: D-029.
+- Arquivos: `bin/devshell` (junto do `profiles-check`), `lib/state.py`
+  (`state-check`)
+- Dependências: T-351
+- Critério de aceite: os casos de T-351 passam. A checagem roda antes de
+  `profiles-source`, para que o padrão `minimal` nunca seja escolhido a partir
+  de um estado alheio. Ela lê o registro com as mesmas guardas de `registry()`
+  e não grava nada. Os testes existentes continuam verdes sem ajuste de
+  asserção.
+- Verificação: `python3 -m unittest`; Bats no CI.
+
+### T-353 Transação para a mudança de perfis
+- Requisitos: R-048
+- Objetivo: D-028.
+- Arquivos: `tests/test_boundaries.py` e `tests/profiles.bats` (antes),
+  `lib/state.py` (`apply_configuration`)
+- Dependências: T-352
+- Critério de aceite:
+  - testes falham antes do código;
+  - `apply` sem arquivos e com perfis novos cria uma transação `committed` com
+    `files: []` e `previous_profiles`;
+  - o `rollback` dela devolve os perfis anteriores, e `--list` e a poda a
+    aceitam;
+  - com perfis iguais, nada é gravado (árvore idêntica);
+  - o caminho de falha restaura o registro anterior;
+  - o caso do `setup` "Registrar os perfis" passa a gerar transação, e o teste
+    dele confere isso.
+- Verificação: `python3 -m unittest`; Bats no CI.
+
+### T-354 Documentação e encerramento do Bloco E0
+- Requisitos: R-047, R-048
+- Objetivo: documentação, CHANGELOG, VALIDATION e evidência.
+- Arquivos:
+  - `docs/USAGE.md`, `docs/SECURITY.md` e `docs/TROUBLESHOOTING.md` (estado
+    de outra configuração e a saída manual da D-029);
+  - `CONTRIBUTING.md` (testar sempre com HOME e todos os XDG temporários
+    juntos);
+  - `CHANGELOG.md`, `docs/ROADMAP.md` (item 0 concluído), `docs/VALIDATION.md`
+    e `docs/spec.md` (estados e evidências).
+- Dependências: T-353
+- Critério de aceite:
+  - `workflow_dispatch` na branch com os sete jobs verdes e zero skips;
+  - revisão independente do diff sem P0/P1;
+  - a seção da VALIDATION registra a reprodução do incidente.
+- Verificação: comandos acima. O merge é decidido pelo usuário.
+
 ## Bloco E: retirada de arquivos órfãos
 
 Item 1 do [ROADMAP](ROADMAP.md), com o escopo da D-022: o registro
@@ -634,7 +710,7 @@ localmente onde houver as ferramentas.
 | Consulta ao PyPI com cache temporário (geração dos locks e conferência das quatro plataformas) | T-202 | pypi.org, via `uv pip compile` e `uv pip install --dry-run` |
 | Commit na branch de trabalho | cada bloco | repositório local |
 | Push da branch e PR | cada bloco | `origin` (talesgomes27/data-lab-dotfiles) |
-| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-490 | GitHub Actions do repositório |
+| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-354, T-490 | GitHub Actions do repositório |
 | Migração das suas instalações atuais (`uv tool uninstall` e nova instalação) | depois do merge do Bloco C | sua HOME; feita por você, não pela CLI |
 | Execução semanal após o merge, sem prazo, com os mesmos downloads e notificação de falha para quem editou o cron | T-101 | GitHub Actions; desativada após 60 dias sem atividade |
 
