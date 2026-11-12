@@ -524,6 +524,12 @@ class RememberedProfiles(unittest.TestCase):
         state.rollback()
         self.assertFalse(record.exists())
 
+    def test_r048_plan_reports_equivalent_record_as_recorded(self):
+        self.apply()
+        (state.STATE / 'profiles').write_text('minimal,personal\n')
+        with patch.dict(os.environ, {'DEVSHELL_PROFILES': 'personal'}):
+            self.assertTrue(state.build_plan()['profiles_recorded'])
+
     def test_r048_same_or_equivalent_profiles_write_nothing(self):
         self.apply()
 
@@ -1049,8 +1055,6 @@ class StaticChezmoiSource(unittest.TestCase):
                     run.assert_not_called()
 
 
-if __name__ == '__main__':
-    unittest.main()
 
 
 class StateOwnership(unittest.TestCase):
@@ -1182,9 +1186,35 @@ class StateOwnership(unittest.TestCase):
         project = self.devshell('project', 'doctor', '--path', str(self.base), XDG_CONFIG_HOME=self.other)
         self.assertNotIn('outra configuração', project.stderr)
 
+    def test_r047_group_writable_local_does_not_block_before_the_setup_repair(self):
+        # D-015: um ~/.local com escrita de grupo (umask 002) é assunto da revisão de permissões do setup.
+        (self.home / '.local').mkdir(mode=0o700)
+        (self.home / '.local').chmod(0o775)
+        result = self.devshell('setup', '--dry-run', '--json', '--profile', 'minimal')
+        self.assertNotIn('permissões inseguras', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.apply_real('minimal')
+        (self.home / '.local').chmod(0o775)
+        result = self.devshell('setup', '--dry-run', '--json', '--profile', 'minimal')
+        self.assertNotIn('outra configuração', result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_r047_removed_dotfile_with_a_target_name_is_not_foreign(self):
+        # Um dotfile antigo em CONFIG/x/starship.toml termina como um alvo, mas está dentro da configuração atual.
+        registry = self.apply_real('minimal')
+        nested = registry | {str(self.home / '.config/ferramenta-antiga/starship.toml'): 'b' * 64,
+                             str(self.home / '.config/antigo/.bash_aliases'): 'c' * 64}
+        (self.state / 'current.json').write_text(json.dumps(nested))
+        result = self.devshell('plan', '--json', '--profile', 'minimal')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_r047_dot_dot_in_xdg_is_unsafe_not_foreign(self):
         self.apply_real()
         result = self.devshell('plan', XDG_CONFIG_HOME=self.home / 'x/../.config')
         self.assertEqual(result.returncode, 2)
         self.assertIn('caminho inseguro', result.stderr)
         self.assertNotIn('outra configuração', result.stderr)
+
+
+if __name__ == '__main__':
+    unittest.main()

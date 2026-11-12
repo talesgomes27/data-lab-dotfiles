@@ -207,27 +207,34 @@ def remembered_profiles_check():
 
 
 def universe_pairs():
-    """D-029: cada alvo possível como (raiz, caminho relativo); HOME para os arquivos da HOME, CONFIG para o resto."""
-    pairs = []
-    for target in desired_files(all_components=True):
-        path = Path(target)
-        if path.parent == HOME and not path.is_relative_to(CONFIG):
-            pairs.append((str(HOME), path.name))
-        else:
-            pairs.append((str(CONFIG), str(path.relative_to(CONFIG))))
+    """D-029: cada alvo possível como (raiz, caminho relativo), pela origem em dotfiles/, sem ler o conteúdo."""
+    pairs = [(CONFIG, 'devshell/components')]
+    for source in sorted((ROOT / 'dotfiles').rglob('*')):
+        if not source.is_file():
+            continue
+        rel = source.relative_to(ROOT / 'dotfiles')
+        parts = ['.' + p[4:] if p.startswith('dot_') else p for p in rel.parts]
+        pairs.append((CONFIG, '/'.join(parts[1:])) if rel.parts[0] == 'dot_config' else (HOME, parts[0]))
     return pairs
 
 
 def foreign_roots(recorded):
     """Raízes de outra HOME ou de outro XDG_CONFIG_HOME no registro, pelo texto exato das chaves, sem stat."""
-    universe, pairs = set(desired_files(all_components=True)), universe_pairs()
+    pairs = universe_pairs()
+    universe = {str(root / relative) for root, relative in pairs}
     roots = set()
     for key in recorded:
         if key in universe:
             continue
         for root, relative in pairs:
-            if key.endswith('/' + relative) and key[:-len(relative) - 1] != root:
-                roots.add(key[:-len(relative) - 1] or '/')
+            prefix = key[:-len(relative) - 1] if key.endswith('/' + relative) else None
+            if prefix is None or prefix == str(root):
+                continue
+            # Dentro da configuração atual é um arquivo antigo com nome de alvo, não outra raiz.
+            inside = [CONFIG] if root == CONFIG else [HOME, CONFIG]
+            if any(Path(prefix).is_relative_to(current) for current in inside):
+                continue
+            roots.add(prefix or '/')
     return sorted(roots)
 
 
@@ -236,7 +243,12 @@ def state_check():
     for path in (HOME, CONFIG, STATE):
         if '..' in path.parts:
             raise ValueError(f'caminho inseguro: {path}')
-    recorded = registry()
+    # Só o próprio arquivo: ancestrais com escrita de grupo são assunto da revisão de permissões (D-015).
+    text = read_own_regular(STATE / 'current.json')
+    try:
+        recorded = json.loads(text) if text is not None else {}
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'registro inválido: {STATE / "current.json"}') from exc
     if not isinstance(recorded, dict) or not all(isinstance(key, str) for key in recorded):
         raise ValueError(f'registro inválido: {STATE / "current.json"}')
     roots = foreign_roots(recorded)
@@ -318,7 +330,7 @@ def build_plan():
         recorded = read_own_regular(profiles_record())
     except (OSError, ValueError):
         recorded = None
-    result['profiles_recorded'] = (recorded or '').strip() == os.environ['DEVSHELL_PROFILES']
+    result['profiles_recorded'] = recorded is not None and canonical_profiles(recorded.strip()) == canonical_profiles(os.environ['DEVSHELL_PROFILES'])
     return result
 
 
@@ -481,21 +493,7 @@ def apply_configuration():
     if any(e['conflict'] for e in plan['files']) and os.environ['DEVSHELL_REPLACE'] != '1':
         raise ValueError('dotfiles existentes em conflito: revise diff e use --replace-existing explicitamente')
     changed = [entry for entry in plan['files'] if entry['action'] == 'write']
-    if not changed:
-        with locked():
-            # Replanejar e conferir a transação sob o lock, como no caminho com escrita.
-            if build_plan()['approval'] != plan['approval']:
-                raise RuntimeError('o ambiente mudou durante a revisão; planeje novamente')
-            _, transaction = latest_transaction()
-            if transaction and transaction['status'] in ('pending', 'rolling-back'):
-                raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
-            recorded = read_profiles_record()
-            same = recorded is not None and canonical_profiles(recorded) == canonical_profiles(os.environ['DEVSHELL_PROFILES'])
-        if same:
-            report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis já registrados.'})
-            return
-        # R-048: mudar os perfis sem arquivos também é uma transação (D-028), para deixar rastro e permitir rollback.
-    else:
+    if changed:
         chezmoi_render()
     with locked():
         if build_plan()['approval'] != plan['approval']:
@@ -503,6 +501,12 @@ def apply_configuration():
         old_dir, old_tx = latest_transaction()
         if old_tx and old_tx['status'] in ('pending', 'rolling-back'):
             raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
+        if not changed:
+            # R-048: decidir e gravar sob o mesmo lock; perfis novos sem arquivos também são uma transação (D-028).
+            recorded = read_profiles_record()
+            if recorded is not None and canonical_profiles(recorded) == canonical_profiles(os.environ['DEVSHELL_PROFILES']):
+                report({'operation': 'apply', 'changed': 0, 'message': 'Configuração já corresponde ao plano; perfis já registrados.'})
+                return
         import uuid
         name = uuid.uuid4().hex
         directory = STATE / 'transactions' / name
@@ -545,7 +549,10 @@ def apply_configuration():
             tx['status'] = 'failed-restored'
             atomic(directory / 'manifest.json', encode(tx))
             raise
-    report({'operation': 'apply', 'transaction': name, 'changed': len(changed)})
+    result = {'operation': 'apply', 'transaction': name, 'changed': len(changed)}
+    if not changed:
+        result['message'] = f"Configuração já corresponde ao plano; perfis {os.environ['DEVSHELL_PROFILES']} registrados nesta transação."
+    report(result)
 
 
 def rollback_plan():
@@ -740,10 +747,13 @@ def prune_plan(keep):
     rows, warnings = [], []
     if latest is None and entries:
         warnings.append('não há transação atual: todas as transações listadas serão removidas')
+    # A primeira transação com arquivos guarda os dotfiles de antes do primeiro apply; as só de perfis (R-048) não.
+    first_with_files = next((name for name in reversed(chain)
+                             if next((e for e in entries if e['id'] == name), {}).get('files')), None)
     for entry in entries:
         action = 'keep' if entry['id'] in kept else 'delete'
-        # Uma primeira transação sem arquivos (só perfis, R-048) não guarda dotfiles originais.
-        if action == 'delete' and entry['previous_latest'] is None and entry.get('files'):
+        first = entry['id'] == first_with_files or (entry['id'] not in chain and entry['previous_latest'] is None and entry.get('files'))
+        if action == 'delete' and first:
             warnings.append(f"remove a primeira transação ({entry['id']}), que guarda os dotfiles de antes do primeiro apply")
         elif action == 'delete' and entry['originals']:
             warnings.append(f"remove a transação {entry['id']}, única cópia dos originais substituídos: {', '.join(entry['originals'])}")

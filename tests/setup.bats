@@ -456,7 +456,7 @@ assert "dotfiles:" in block and "a atualizar" in block,block'
     run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Registrar os perfis science=s" -- "$SETUP_REPO/bin/devshell" setup --profile science --offline'
     [ "$status" -eq 0 ]
     [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/profiles")" = science ]
-    # R-048: registrar os perfis abre uma transação sem arquivos, desfeita pelo rollback.
+    # R-048: registrar os perfis abre uma transação sem arquivos (o rollback dela é testado em RememberedProfiles).
     new=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
     [ "$new" != "$latest" ]
     python3 -c 'import json,sys;m=json.load(open(sys.argv[1]));assert m["files"]==[] and m["status"]=="committed" and m["previous_profiles"] is None,m' \

@@ -795,7 +795,13 @@ O universo é decomposto em pares (raiz, caminho relativo): HOME para
 `.zshenv` e `.bash_aliases`, e `XDG_CONFIG_HOME` para o resto. Uma chave do
 registro pertence a outra configuração quando termina em `/` + um desses
 caminhos relativos e o prefixo é diferente da raiz atual. A comparação é feita
-no texto exato da chave, sem `stat` nem leitura. Usar todas as chaves, e não
+no texto exato da chave, sem `stat` nem leitura. Um prefixo dentro da
+configuração atual não conta como outra raiz: é um arquivo antigo que termina
+com o nome de um alvo, como `CONFIG/ferramenta-antiga/starship.toml`. O
+`current.json` é lido conferindo só o próprio arquivo (`read_own_regular`).
+Ancestrais com escrita de grupo continuam sendo assunto da revisão de
+permissões do setup (D-015) e não bloqueiam antes dela. Achado P1 da revisão
+do código. Usar todas as chaves, e não
 só algumas âncoras, cobre registros em que um alvo nunca entrou (porque
 estava igual no primeiro apply) e registros que misturam duas configurações.
 Não muda o formato do estado e vale para estados criados antes deste bloco.
