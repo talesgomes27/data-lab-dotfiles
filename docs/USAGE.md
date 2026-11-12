@@ -259,6 +259,40 @@ O [diagnóstico](TROUBLESHOOTING.md) trata ausências, permissões, conflitos e
 problemas dos atalhos. Os componentes declarados estão em `profiles/` e
 `manifests/`; essa relação é diferente do inventário particular de uma máquina.
 
+## Desinstalar um componente
+
+`uninstall --component X` retira o que `install` colocou na HOME. Vale para
+`python` (as venvs das ferramentas e seus symlinks), `devshell` (o lançador),
+`pyinit`, `plugins` e `firacode`. Sem `--approve`, ele só mostra o plano,
+sem gravar nada (saída executada em HOME temporária):
+
+```console
+$ ./bin/devshell uninstall --component devshell
+  remove: ~/.local/bin/devshell
+  remove: ~/.local/state/devshell/launcher.json
+$ ./bin/devshell uninstall --component devshell --approve HASH
+2 item(ns) removido(s). Para desfazer: ./bin/devshell install --component devshell.
+```
+
+O plano marca cada caminho de um de dois jeitos:
+- **`remove`:** a CLI prova que o item é dela: bytes iguais ao gerado, ao
+  manifesto, ao recibo do install ou ao pacote em cache. Para as venvs, cada
+  arquivo precisa estar no lock.
+- **`manual`:** o item existe, mas falta essa prova (por exemplo, um arquivo
+  seu dentro da venv, um plugin editado ou uma fonte sua na mesma pasta).
+  Fica para você remover à mão, se quiser.
+
+Não há backup: desfazer é rodar `install --component X` de novo, que devolve
+os mesmos bytes. O `uv`, o `chezmoi`, o `nu`, o CPython do uv e os pacotes do
+sistema nunca são desinstalados. Se o componente continua nos perfis
+lembrados, o plano avisa que o próximo `setup` o reinstala.
+
+Os plugins, a fonte e o `pyinit` instalados antes desta versão não têm recibo.
+O plano os confere contra o pacote em cache e, sem cache, os deixa como
+`manual`. Para gravar o recibo, rode `install --component X` com
+`--approve` uma vez; o `setup` não faz isso quando o componente já está em
+dia.
+
 ## Consultar e podar o histórico de backups
 
 ```bash

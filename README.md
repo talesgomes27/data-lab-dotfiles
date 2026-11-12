@@ -238,6 +238,7 @@ isso contornaria o journal da CLI.
 | Lock | Arquivo que registra a resolução das dependências, como `uv.lock`. |
 | Dry-run | Inspeção da operação sem aplicá-la. |
 | Rollback | Restauração da última transação de dotfiles, inclusive dos arquivos retirados na troca de perfil; não desfaz instalações. |
+| Uninstall | `uninstall --component X` remove só o que a CLI prova que instalou; desfazer é reinstalar. |
 
 ## Manuais
 

@@ -97,6 +97,23 @@ Lembre que, num perfil aplicado com `--replace-existing`, o original que você
 tinha antes está só na transação daquele apply; a retirada não o devolve. Para
 recuperá-lo, use o rollback dessa transação ou copie o backup antes de podar.
 
+## Desinstalação de componentes
+
+`uninstall --component X` só remove o que a CLI prova que instalou. A prova
+depende do componente: bytes do lançador e do recibo dele; SHA-256 do
+`pyinit` no manifesto ou no recibo; arquivos de plugins e da fonte no recibo
+do install ou no pacote em cache conferido pelo manifesto; e, nas venvs,
+cada arquivo no RECORD de uma distribuição do lock. Um arquivo seu dentro da
+venv a deixa inteira para você.
+
+A remoção usa o descritor do diretório pai e não segue symlinks. A venv é
+renomeada, conferida de novo e só então apagada. Diretórios só saem se
+ficarem vazios dentro das pastas do componente. O comando nunca toca no
+`uv`, no `chezmoi`, no `nu`, no CPython do uv, em pacotes do sistema nem em
+ambientes de projeto. O original de um lançador instalado com
+`--replace-existing` aparece no plano com o comando de restauração, mas não
+volta sozinho.
+
 ## Estado de outra configuração
 
 O estado em `$XDG_STATE_HOME/devshell` registra os caminhos que a CLI
@@ -265,7 +282,8 @@ A poda recusa o histórico inteiro quando encontra:
 | Arquivo retirado (fora dos perfis) | rollback a partir do backup da transação. Ele é recusado se o caminho foi recriado e editado, ou se o dotfile saiu do repositório; nesse caso, copie o backup indicado à mão. A poda pode remover a única cópia e avisa antes. |
 | Transação removida pela poda | irreversível; rollback só alcança as transações mantidas |
 | Diretórios criados | podem permanecer vazios |
-| Binários/plugins instalados | preservar/remover manualmente os paths revistos |
+| Binários/plugins instalados | `uninstall --component X` remove só o que a CLI prova que é dela; o resto fica para remoção manual |
+| Componente desinstalado | `install --component X` de novo, que devolve os mesmos bytes; não há backup |
 | uv Python/tools/cache | manutenção manual por uv; sem remoção automática |
 | Ambiente pessoal `geral` | criação/manutenção explícita por uv; fora do rollback dos dotfiles |
 | Pacotes do sistema via setup | comando exibido e confirmado separadamente; recuperação manual |

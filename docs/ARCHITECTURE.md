@@ -198,7 +198,19 @@ arquivo está igual ao registrado e no conjunto de alvos do checkout, ou
 `forget-*`, nos outros casos. A lista entra no hash de aprovação. O `apply`
 remove na mesma transação, com backup conferido e remoção pelo descritor do
 diretório pai. O rollback devolve os arquivos pelo journal, sem formato novo
-(D-026). Os exemplos em `examples/`
+(D-026).
+
+`lib/uninstall.py` desinstala os componentes com prova de dono (D-030):
+- o lançador, por bytes exatos;
+- o `pyinit`, pelo SHA-256 do manifesto ou do recibo;
+- plugins e fonte, pelo recibo gravado no install em
+  `$XDG_STATE_HOME/devshell/install-receipts` ou pelo pacote em cache,
+  conferido pelo manifesto (o plano nunca baixa);
+- as venvs, por inventário completo contra o RECORD do lock (D-033).
+
+O plano entra no hash, e a remoção aprovada replaneja sob o lock. A venv
+passa por `$XDG_DATA_HOME/devshell/uninstalling/` antes de sair. Não há
+backup: desfazer é reinstalar (D-031). Os exemplos em `examples/`
 têm ambientes próprios. Os testes e os scripts de verificação ficam em `tests/`
 e `scripts/`. Consulte o [guia de contribuição](../CONTRIBUTING.md) para validar
 mudanças e a [instalação](INSTALLATION.md) para operar a CLI.
