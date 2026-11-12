@@ -82,7 +82,7 @@ dispensas:
     motivo: sem fontes de dados a perfilar
   - gate: PC-4
     motivo: nenhuma estrutura antecede o código; os locks nascem em T-202
-proximo_passo: aprovação do usuário do plano revisto do Bloco E (T-401 a T-406, T-490) antes do código
+proximo_passo: apurar a origem do registro de perfis errado (ROADMAP, item 0); depois, aprovação do usuário do plano revisto do Bloco E antes do código
 pendencias: ["R-010: execução agendada na main"]
 ```
 
@@ -567,6 +567,9 @@ localmente onde houver as ferramentas.
     com `forget-*`;
   - com `retire` não vazio, a pergunta "Registrar os perfis…" nunca aparece
     nem aprova o hash;
+  - com algum `remove`, o setup lista os arquivos e exige a palavra
+    `retirar`; resposta diferente ou EOF cancela sem gravar nada (teste com
+    `tests/answer.py` conferindo o texto da pergunta);
   - D-027: um órfão do universo com ancestral de escrita de grupo aparece na
     revisão de permissões; depois do reparo, vira `remove`;
   - um plano só com órfãos pergunta na etapa de aplicação, com o texto

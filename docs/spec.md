@@ -416,8 +416,11 @@ como escopo.
   órfãos pergunta "Aplicar os dotfiles…", e a pergunta "Registrar os perfis…"
   nunca aparece nem aprova o hash quando `retire` não está vazio. A pergunta de
   confirmação diz quantos arquivos serão removidos e quantos só saem do
-  registro. Os órfãos do universo entram na revisão de permissões do setup
-  (D-027). Depois do `setup`, o `doctor` não
+  registro. Quando há algum `remove`, o setup lista os arquivos e só segue se a
+  pessoa digitar `retirar`, como já faz com `substituir` nos conflitos; outra
+  resposta ou EOF cancela sem gravar nada. Motivo: no incidente do R-046, uma
+  confirmação de diff comum bastou para tirar 24 componentes. Os órfãos do
+  universo entram na revisão de permissões do setup (D-027). Depois do `setup`, o `doctor` não
   acusa mais órfãos.
 - Prioridade: média
 - Estado: proposto
