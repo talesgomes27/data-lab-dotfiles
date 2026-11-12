@@ -2,6 +2,10 @@
 
 ## Não publicado
 
+- `apply` recusado por registro de perfis ou `current.json` inseguro (symlink,
+  permissão aberta) não deixa mais um diretório de transação vazio, que depois
+  bloqueava `rollback --prune` até ser removido à mão.
+
 - O setup vira o caminho comum de atualização (`git pull` e `./bin/devshell
   setup`): começa por um resumo das etapas, só pergunta pelos componentes com
   algo a instalar e termina sem perguntas quando está tudo em dia. Oferece, com

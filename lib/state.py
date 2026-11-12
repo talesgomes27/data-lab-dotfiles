@@ -449,11 +449,12 @@ def apply_configuration():
         import uuid
         name = uuid.uuid4().hex
         directory = STATE / 'transactions' / name
-        directory.mkdir(parents=True, mode=0o700)
+        # Ler registro e perfis antes do mkdir: recusa aqui não deixa transação vazia.
         tx = {'status': 'pending', 'files': changed, 'previous_registry': registry(),
               'previous_latest': old_dir.name if old_dir else None,
               'previous_profiles': read_profiles_record(),
               'created': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
+        directory.mkdir(parents=True, mode=0o700)
         contents = desired_files()
         for index, entry in enumerate(changed):
             entry['backup'] = str(index)
