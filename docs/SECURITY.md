@@ -85,6 +85,18 @@ Diretórios adicionados automaticamente ao PATH são recusados se contiverem
 `:`: nesse contexto o caractere dividiria um caminho em entradas separadas.
 O instalador uv também recusa `UV_TOOL_BIN_DIR` com `:` antes de gravar.
 
+## Retirada de arquivos fora dos perfis
+
+Só é removido o arquivo que está no conjunto de alvos deste checkout, em
+caminho seguro, como arquivo regular do usuário e com o mesmo SHA-256 que a
+CLI registrou. A remoção usa o descritor do diretório pai, sem seguir
+symlinks, e acontece depois de conferido o backup. Nenhum arquivo editado é
+removido.
+
+Lembre que, num perfil aplicado com `--replace-existing`, o original que você
+tinha antes está só na transação daquele apply; a retirada não o devolve. Para
+recuperá-lo, use o rollback dessa transação ou copie o backup antes de podar.
+
 ## Estado de outra configuração
 
 O estado em `$XDG_STATE_HOME/devshell` registra os caminhos que a CLI
@@ -250,6 +262,7 @@ A poda recusa o histórico inteiro quando encontra:
 |---|---|
 | Dotfile preexistente aplicado | rollback do backup, se não houve edição posterior |
 | Dotfile criado pela transação | remoção pelo rollback, se ainda corresponde ao aplicado |
+| Arquivo retirado (fora dos perfis) | rollback a partir do backup da transação. Ele é recusado se o caminho foi recriado e editado, ou se o dotfile saiu do repositório; nesse caso, copie o backup indicado à mão. A poda pode remover a única cópia e avisa antes. |
 | Transação removida pela poda | irreversível; rollback só alcança as transações mantidas |
 | Diretórios criados | podem permanecer vazios |
 | Binários/plugins instalados | preservar/remover manualmente os paths revistos |

@@ -20,6 +20,22 @@ def target_paths():
     if 'zsh' in fs.COMPONENTS:
         paths.add(fs.CONFIG / 'zsh/.zshenv.local')
     paths.update(fs.STATE / name for name in ('current.json', 'latest', 'lock', 'transactions', 'pruning', 'profiles'))
+    # D-027: órfãos do universo entram na revisão, para que um ancestral inseguro seja reparado antes da retirada.
+    try:
+        managed = fs.registry()
+    except (OSError, ValueError):
+        managed = {}
+    universe, desired = fs.desired_files(all_components=True), fs.desired_files()
+    for key in managed:
+        if key not in universe or key in desired:
+            continue
+        # Só entra o que o reparo de modos resolve; symlink, dono ou hardlink viram forget-unsafe sem bloquear.
+        try:
+            kinds = {issue['kind'] for issue in fs.path_issues(Path(key))}
+        except OSError:
+            continue
+        if kinds <= {'permissions'}:
+            paths.add(Path(key))
     paths.update(artifacts.BIN / tool for tool in ('uv', 'chezmoi', 'nu', 'pyinit') if tool in fs.COMPONENTS)
     if 'uv' in fs.COMPONENTS:
         paths.add(artifacts.BIN / 'uvx')
@@ -213,7 +229,12 @@ def summary(inspection):
     if plan:
         writes = sum(entry['action'] == 'write' for entry in plan['files'])
         conflicts = sum(entry['conflict'] for entry in plan['files'])
-        status, detail = ('atualizar', f'{writes} arquivo(s) a atualizar, {conflicts} em conflito') if writes else ('em dia', '')
+        removes = sum(row['action'] == 'remove' for row in plan.get('retire', []))
+        forgets = len(plan.get('retire', [])) - removes
+        detail = f'{writes} arquivo(s) a atualizar, {conflicts} em conflito'
+        if removes or forgets:
+            detail += f', {removes} a remover, {forgets} só saem do registro'
+        status, detail = ('atualizar', detail) if writes or removes or forgets else ('em dia', '')
     else:
         status, detail = unavailable(error)
     steps.append({'step': 'dotfiles', 'status': status, 'detail': detail})

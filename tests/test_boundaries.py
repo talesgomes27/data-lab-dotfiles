@@ -1216,5 +1216,447 @@ class StateOwnership(unittest.TestCase):
         self.assertNotIn('outra configuração', result.stderr)
 
 
+
+class OrphanRetirement(unittest.TestCase):
+    """R-050 e R-055: classificação dos órfãos do registro, sem gravar nada."""
+
+    def setUp(self):
+        TransactionBoundary.setUp(self)
+        (self.root / 'dotfiles/dot_config/starship.toml').write_text('format = "x"\n')
+        (self.root / 'dotfiles/dot_config/nushell').mkdir()
+        (self.root / 'dotfiles/dot_config/nushell/config.nu').write_text('# nu\n')
+        self.full = ['bash', 'zsh', 'uv', 'chezmoi', 'starship', 'nu']
+        active = patch.object(state, 'COMPONENTS', list(self.full))
+        active.start()
+        self.addCleanup(active.stop)
+        self.apply()
+        state.COMPONENTS[:] = ['bash', 'zsh', 'uv', 'chezmoi']
+        self.starship = self.home / '.config/starship.toml'
+        self.nu = self.home / '.config/nushell/config.nu'
+
+    apply = TransactionBoundary.apply
+
+    def retire(self):
+        return {row['path']: row for row in state.build_plan()['retire']}
+
+    def write_registry(self, data):
+        (state.STATE / 'current.json').write_text(json.dumps(data))
+
+    def test_r050_unchanged_orphan_is_remove_with_snapshot(self):
+        rows = self.retire()
+        self.assertEqual(rows[str(self.starship)]['action'], 'remove')
+        self.assertEqual(rows[str(self.starship)]['before']['sha256'], state.digest(self.starship.read_bytes()))
+        self.assertEqual(rows[str(self.nu)]['action'], 'remove')
+        self.assertNotIn(str(self.home / '.config/devshell/components'), rows)
+
+    def test_r050_edited_missing_outside_and_unsafe_are_forgotten(self):
+        self.starship.write_text('editado por mim\n')
+        self.nu.unlink()
+        registry = json.loads((state.STATE / 'current.json').read_text())
+        registry[str(self.home / '.config/ferramenta-antiga/x.conf')] = 'b' * 64
+        self.write_registry(registry)
+        rows = self.retire()
+        self.assertEqual(rows[str(self.starship)]['action'], 'forget-edited')
+        self.assertEqual(rows[str(self.nu)]['action'], 'forget-missing')
+        self.assertEqual(rows[str(self.home / '.config/ferramenta-antiga/x.conf')]['action'], 'forget-outside')
+
+    def test_r050_unsafe_cases_are_forget_unsafe_without_exception(self):
+        target = self.starship
+        cases = {}
+
+        def check(label):
+            cases[label] = self.retire()[str(target)]['action']
+
+        content = target.read_bytes()
+        target.unlink()
+        target.symlink_to(self.home / 'algum-lugar')
+        check('symlink')
+        target.unlink()
+        target.mkdir()
+        check('diretório')
+        target.rmdir()
+        target.write_bytes(content)
+        os.link(target, self.home / 'outro-link')
+        check('hardlink')
+        (self.home / 'outro-link').unlink()
+        # Leitura negada (modo 000 para quem não é root): simulada para não depender do usuário do teste.
+        real_read = Path.read_bytes
+
+        def denied(path):
+            if str(path) == str(target):
+                raise PermissionError(13, 'Permission denied', str(path))
+            return real_read(path)
+        with patch.object(Path, 'read_bytes', denied):
+            check('leitura negada')
+        # Ancestral só do órfão: ~/.config com escrita de grupo recusaria o plano inteiro, como hoje.
+        self.nu.parent.chmod(0o775)
+        cases['ancestral com escrita de grupo'] = self.retire()[str(self.nu)]['action']
+        self.nu.parent.chmod(0o700)
+        # Outro dono: só o arquivo, simulado no stat da classificação (sem root para chown).
+        real_lstat = os.lstat
+
+        def foreign_owner(path, *args, **kwargs):
+            info = real_lstat(path, *args, **kwargs)
+            if str(path) == str(target):
+                return os.stat_result((info.st_mode, info.st_ino, info.st_dev, info.st_nlink, info.st_uid + 1,
+                                       info.st_gid, info.st_size, int(info.st_atime), int(info.st_mtime), int(info.st_ctime)))
+            return info
+        with patch.object(state.os, 'lstat', foreign_owner):
+            check('outro dono')
+        self.assertEqual(len(cases), 6)
+        for label, action in cases.items():
+            with self.subTest(label):
+                self.assertEqual(action, 'forget-unsafe')
+
+    def test_r050_precedence_outside_before_anything_and_no_disk_access(self):
+        weird = str(self.home / '.config/fora/fifo')
+        registry = json.loads((state.STATE / 'current.json').read_text())
+        registry[weird] = 'b' * 64
+        self.write_registry(registry)
+        real_lstat, real_stat = os.lstat, os.stat
+
+        def guarded(real):
+            def call(path, *args, **kwargs):
+                if str(path) == weird:
+                    raise AssertionError('caminho fora do universo foi consultado no disco')
+                return real(path, *args, **kwargs)
+            return call
+        with patch.object(state.os, 'lstat', guarded(real_lstat)), patch.object(state.os, 'stat', guarded(real_stat)), \
+                patch.object(state, 'path_issues', side_effect=lambda p: (
+                (_ for _ in ()).throw(AssertionError('path_issues fora do universo')) if str(p) == weird else state_path_issues(p))):
+            rows = self.retire()
+        self.assertEqual(rows[weird]['action'], 'forget-outside')
+        # Editado e inseguro ao mesmo tempo: vale o inseguro (primeiro na ordem).
+        self.nu.write_text('editado\n')
+        self.nu.parent.chmod(0o775)
+        try:
+            self.assertEqual(self.retire()[str(self.nu)]['action'], 'forget-unsafe')
+        finally:
+            self.nu.parent.chmod(0o700)
+
+    def test_r050_retire_list_is_part_of_the_approval(self):
+        with_orphans = state.build_plan()['approval']
+        state.COMPONENTS[:] = list(self.full)
+        without = state.build_plan()['approval']
+        state.COMPONENTS[:] = ['bash', 'zsh', 'uv', 'chezmoi']
+        self.assertNotEqual(with_orphans, without)
+        self.starship.write_text('editado\n')
+        self.assertNotEqual(state.build_plan()['approval'], with_orphans)
+
+    def test_r050_read_only_commands_do_not_write(self):
+        def tree():
+            return sorted((str(p), p.stat().st_mode, p.read_bytes() if p.is_file() else b'')
+                          for p in self.home.rglob('*') if not p.is_symlink() and p.name != 'lock')
+        before = tree()
+        plan = state.build_plan()
+        self.assertTrue(plan['retire'])
+        with patch.dict(os.environ, {'DEVSHELL_JSON': '0'}), patch('sys.argv', ['state.py', 'diff']), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            state.main()
+        self.assertIn('-format = "x"', out.getvalue())
+        self.assertEqual(tree(), before)
+
+    def test_r050_binary_orphan_shows_placeholder_in_diff(self):
+        self.starship.write_bytes(b'\xff\xfe')
+        registry = json.loads((state.STATE / 'current.json').read_text())
+        registry[str(self.starship)] = state.digest(b'\xff\xfe')
+        self.write_registry(registry)
+        with patch.dict(os.environ, {'DEVSHELL_JSON': '0'}), patch('sys.argv', ['state.py', 'diff']), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            state.main()
+        self.assertIn('(conteúdo binário)', out.getvalue())
+
+    def test_r055_invalid_registry_is_refused(self):
+        for label, content in {'lista': '[]', 'número': '3', 'chave relativa': json.dumps({'relativo/x': 'a' * 64}),
+                               'valor não texto': json.dumps({str(self.starship): 3}),
+                               'hash curto': json.dumps({str(self.starship): 'abc'})}.items():
+            with self.subTest(label):
+                (state.STATE / 'current.json').write_text(content)
+                with self.assertRaisesRegex(ValueError, 'registro inválido'):
+                    state.build_plan()
+
+
+    def apply_tracking_render(self):
+        os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+        with patch.object(state, 'chezmoi_render') as render:
+            state.apply_configuration()
+        return render
+
+    def registry_now(self):
+        return json.loads((state.STATE / 'current.json').read_text())
+
+    def latest_tx(self):
+        directory = state.STATE / 'transactions' / (state.STATE / 'latest').read_text()
+        return directory, json.loads((directory / 'manifest.json').read_text())
+
+    def test_r051_apply_removes_orphans_with_backup_and_keeps_directories(self):
+        content, mode = self.starship.read_bytes(), self.starship.stat().st_mode & 0o777
+        self.apply()
+        self.assertFalse(self.starship.exists())
+        self.assertFalse(self.nu.exists())
+        self.assertTrue(self.nu.parent.is_dir())
+        registry = self.registry_now()
+        self.assertNotIn(str(self.starship), registry)
+        self.assertNotIn(str(self.nu), registry)
+        directory, tx = self.latest_tx()
+        removed = {entry['path']: entry for entry in tx['files'] if entry.get('action') == 'remove'}
+        self.assertEqual(set(removed), {str(self.starship), str(self.nu)})
+        backup = directory / removed[str(self.starship)]['backup']
+        self.assertEqual(backup.read_bytes(), content)
+        self.assertEqual(removed[str(self.starship)]['before']['mode'], mode)
+        self.assertIsNone(removed[str(self.starship)]['after'])
+        self.assertIsNone(removed[str(self.starship)]['applied'])
+
+    def retire_only(self):
+        """Perfis já em minimal; um alvo do universo registrado e no disco, sem nada a escrever."""
+        self.apply()
+        self.starship.write_text('format = "x"\n')
+        self.starship.chmod(0o640)
+        registry = self.registry_now()
+        registry[str(self.starship)] = state.digest(self.starship.read_bytes())
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        self.assertFalse([entry for entry in state.build_plan()['files'] if entry['action'] == 'write'])
+
+    def test_r051_retire_only_plan_opens_transaction_without_chezmoi(self):
+        self.retire_only()
+        before_latest = (state.STATE / 'latest').read_text()
+        render = self.apply_tracking_render()
+        render.assert_not_called()
+        self.assertNotEqual((state.STATE / 'latest').read_text(), before_latest)
+        self.assertFalse(self.starship.exists())
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['status'], 'committed')
+
+    def test_r051_forget_only_touches_no_file_and_rollback_restores_registry(self):
+        self.apply()
+        ghost = str(self.home / '.config/nushell/env.nu')
+        (self.root / 'dotfiles/dot_config/nushell/env.nu').write_text('# env\n')
+        registry = self.registry_now()
+        registry[ghost] = 'd' * 64
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        before = self.registry_now()
+        self.apply()
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['files'], [])
+        self.assertEqual(tx['forgotten'], [ghost])
+        self.assertNotIn(ghost, self.registry_now())
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(self.registry_now(), before)
+
+    def test_r051_file_changed_after_plan_invalidates_approval(self):
+        self.retire_only()
+        os.environ['DEVSHELL_APPROVAL'] = state.build_plan()['approval']
+        self.starship.write_text('editado depois do plano\n')
+        registry = self.registry_now()
+        with self.assertRaises(ValueError), patch.object(state, 'chezmoi_render'):
+            state.apply_configuration()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r051_failure_after_first_removal_restores_everything(self):
+        registry = self.registry_now()
+        real_remove = state.remove_checked
+        calls = []
+
+        def fail_second(entry):
+            calls.append(entry['path'])
+            if len(calls) == 2:
+                raise OSError('falha injetada na segunda remoção')
+            return real_remove(entry)
+        content = {path: path.read_bytes() for path in (self.starship, self.nu)}
+        with patch.object(state, 'remove_checked', side_effect=fail_second):
+            with self.assertRaisesRegex(OSError, 'falha injetada'):
+                self.apply()
+        for path, data in content.items():
+            self.assertEqual(path.read_bytes(), data)
+        self.assertEqual(self.registry_now(), registry)
+        statuses = sorted(row['status'] for row in state.history()['transactions'])
+        self.assertIn('failed-restored', statuses)
+
+    def test_r051_bad_backup_removes_nothing(self):
+        self.retire_only()
+        registry = self.registry_now()
+        real_copy = state.shutil.copy2
+
+        def corrupt(source, target, *args, **kwargs):
+            result = real_copy(source, target, *args, **kwargs)
+            if str(source) == str(self.starship):
+                Path(target).write_text('backup corrompido\n')
+            return result
+        with patch.object(state.shutil, 'copy2', side_effect=corrupt):
+            with self.assertRaisesRegex(RuntimeError, 'backup'):
+                self.apply_tracking_render()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r051_parent_swapped_by_symlink_is_refused(self):
+        self.apply()
+        # Órfão em diretório próprio, para trocar só ele.
+        self.nu.write_text('# nu\n')
+        registry = self.registry_now()
+        registry[str(self.nu)] = state.digest(self.nu.read_bytes())
+        (state.STATE / 'current.json').write_text(json.dumps(registry))
+        elsewhere = self.home / 'outro-lugar'
+        elsewhere.mkdir(mode=0o700)
+        (elsewhere / 'config.nu').write_text('# nu\n')
+        real_copy = state.shutil.copy2
+
+        def swap(source, target, *args, **kwargs):
+            result = real_copy(source, target, *args, **kwargs)
+            if str(source) == str(self.nu):
+                moved = self.home / 'nushell-original'
+                self.nu.parent.rename(moved)
+                self.nu.parent.symlink_to(elsewhere, target_is_directory=True)
+            return result
+        with patch.object(state.shutil, 'copy2', side_effect=swap):
+            with self.assertRaises((OSError, ValueError, RuntimeError)):
+                self.apply_tracking_render()
+        self.assertTrue((elsewhere / 'config.nu').exists())
+
+    def test_r052_rollback_restores_removed_files_and_registry(self):
+        registry = self.registry_now()
+        content, mode = self.starship.read_bytes(), self.starship.stat().st_mode & 0o777
+        self.apply()
+        os.environ['DEVSHELL_APPROVAL'] = state.rollback_plan()[0]['approval']
+        state.rollback()
+        self.assertEqual(self.starship.read_bytes(), content)
+        self.assertEqual(self.starship.stat().st_mode & 0o777, mode)
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r052_rollback_refuses_recreated_and_edited_path(self):
+        self.apply()
+        self.starship.write_text('recriado e editado\n')
+        with self.assertRaisesRegex(RuntimeError, 'editado'):
+            state.rollback_plan()
+
+    def test_r052_rollback_after_dotfile_left_checkout_points_to_backup(self):
+        self.apply()
+        directory, _ = self.latest_tx()
+        (self.root / 'dotfiles/dot_config/starship.toml').unlink()
+        with self.assertRaises(ValueError) as error:
+            state.rollback_plan()
+        self.assertIn(str(directory), str(error.exception))
+        self.assertIn(str(self.starship), str(error.exception))
+
+    def test_r052_prune_lists_and_warns_about_only_copy_of_retired_file(self):
+        self.apply()
+        retired_tx = (state.STATE / 'latest').read_text()
+        (self.root / 'dotfiles/dot_zshenv').write_text('outra versão\n')
+        self.apply()
+        self.assertIn(retired_tx, [row['id'] for row in state.history()['transactions']])
+        plan = state.prune_plan(1)
+        self.assertTrue(any(retired_tx in warning and 'retirad' in warning for warning in plan['warnings']), plan['warnings'])
+
+
+    def test_r053_doctor_reports_orphans_as_setup_step(self):
+        plan = state.build_plan()
+        issues = state.orphan_issues(plan)
+        self.assertIn(f'arquivo gerenciado fora dos perfis: {self.starship} (remove)', issues)
+        step = state.next_step(issues, 'minimal', 'informados')
+        self.assertEqual(step['kind'], 'setup')
+
+    def test_r053_summary_never_marks_dotfiles_up_to_date_with_orphans(self):
+        import setup as guided
+        plan = state.build_plan()
+        forget_only = dict(plan, files=[dict(entry, action='unchanged', conflict=False) for entry in plan['files']],
+                           retire=[dict(row, action='forget-missing') for row in plan['retire']])
+        inspection = {'permissions': [], 'native_command': [], 'user_components': [], 'blockers': []}
+        with patch.object(guided, 'cli_json', return_value=(forget_only, '')), \
+                patch.object(guided.fs, 'read_own_regular', return_value='minimal\n'), \
+                patch.dict(os.environ, {'DEVSHELL_PROFILES': 'minimal'}):
+            summary = guided.summary(inspection)
+        dotfiles = next(step for step in summary['steps'] if step['step'] == 'dotfiles')
+        self.assertNotEqual(dotfiles['status'], 'em dia')
+        self.assertIn('só saem do registro', dotfiles['detail'])
+        self.assertFalse(summary['nothing_to_do'])
+
+    def test_r053_universe_orphans_enter_the_permission_review(self):
+        import setup as guided
+        with patch.object(guided.artifacts, 'BIN', self.home / '.local/bin'), \
+                patch.object(guided.artifacts, 'DATA', self.home / '.local/share'), \
+                patch.object(guided.artifacts, 'CACHE', self.home / '.cache/devshell'):
+            paths = guided.target_paths()
+        self.assertIn(self.nu, paths)
+        self.assertIn(self.starship, paths)
+
+
+    def test_r050_permission_error_while_inspecting_is_forget_unsafe(self):
+        real = state.path_issues
+
+        def denied(path):
+            if str(path) == str(self.nu):
+                raise PermissionError(13, 'Permission denied', str(self.nu.parent))
+            return real(path)
+        with patch.object(state, 'path_issues', side_effect=denied):
+            self.assertEqual(self.retire()[str(self.nu)]['action'], 'forget-unsafe')
+
+    def test_r052_interrupted_before_backup_can_still_be_rolled_back(self):
+        """Morte entre o manifesto e a cópia do backup: pending, arquivos intactos e sem backup."""
+        self.retire_only()
+        registry = self.registry_now()
+        copying = []
+        real_atomic = state.atomic
+
+        class Killed(BaseException):
+            pass
+
+        def copy(*args, **kwargs):
+            copying.append(True)
+            raise Killed()
+
+        def atomic(path, *args, **kwargs):
+            if copying:
+                raise Killed()
+            return real_atomic(path, *args, **kwargs)
+        with patch.object(state.shutil, 'copy2', side_effect=copy), patch.object(state, 'atomic', side_effect=atomic):
+            with self.assertRaises(Killed):
+                self.apply_tracking_render()
+        _, tx = self.latest_tx()
+        self.assertEqual(tx['status'], 'pending')
+        self.assertTrue(self.starship.exists())
+        plan = state.rollback_plan()[0]
+        os.environ['DEVSHELL_APPROVAL'] = plan['approval']
+        state.rollback()
+        self.assertTrue(self.starship.exists())
+        self.assertEqual(self.registry_now(), registry)
+
+    def test_r053_orphan_without_repair_stays_out_of_the_permission_review(self):
+        import setup as guided
+        moved = self.home / 'nushell-real'
+        self.nu.parent.rename(moved)
+        self.nu.parent.symlink_to(moved, target_is_directory=True)
+        with patch.object(guided.artifacts, 'BIN', self.home / '.local/bin'), \
+                patch.object(guided.artifacts, 'DATA', self.home / '.local/share'), \
+                patch.object(guided.artifacts, 'CACHE', self.home / '.cache/devshell'):
+            paths = guided.target_paths()
+        self.assertNotIn(self.nu, paths)
+        self.assertIn(self.starship, paths)
+        self.assertEqual(self.retire()[str(self.nu)]['action'], 'forget-unsafe')
+
+    def test_r051_removal_refuses_a_file_swapped_after_the_content_check(self):
+        self.retire_only()
+        registry = self.registry_now()
+        real_rename = state.os.rename
+        calls = []
+
+        def rename(source, target, *args, **kwargs):
+            if not calls:
+                calls.append(target)
+                # Um editor salva por rename logo antes da retirada.
+                replacement = self.starship.with_name('.editor-tmp')
+                replacement.write_text('salvo agora pelo editor\n')
+                real_rename(replacement, self.starship)
+            return real_rename(source, target, *args, **kwargs)
+        with patch.object(state.os, 'rename', side_effect=rename):
+            with self.assertRaises(RuntimeError):
+                self.apply_tracking_render()
+        self.assertEqual(self.starship.read_text(), 'salvo agora pelo editor\n')
+        self.assertEqual(self.registry_now(), registry)
+
+
+state_path_issues = state.path_issues
+
+
 if __name__ == '__main__':
     unittest.main()

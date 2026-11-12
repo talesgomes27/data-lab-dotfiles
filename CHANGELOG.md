@@ -2,6 +2,14 @@
 
 ## Não publicado
 
+- **Mudança de comportamento do `apply`:** trocar de perfil passa a retirar os
+  arquivos gerenciados que ficaram de fora. Só é removido o que está igual ao
+  que a CLI escreveu, com backup e rollback; arquivo editado, ausente, inseguro
+  ou que saiu do repositório só sai do registro. O `plan` mostra cada caso
+  (`remove:`/`forget:`) e o `doctor` os acusa. No `setup`, remover pede a
+  palavra `retirar`. Um `current.json` com formato inválido passa a ser
+  recusado com saída 2.
+
 - Comandos rodados com outra HOME ou outro `XDG_CONFIG_HOME` sobre o mesmo
   estado param com saída 2 antes de qualquer plano, mostrando a configuração
   que o estado registra; só `rollback --list` e `project` seguem. Era o

@@ -205,6 +205,48 @@ BIN
     [ "$(/usr/bin/cat "$HOME/.zshenv")" = 'minha configuração' ]
 }
 
+@test 'R-053 setup só remove órfãos depois da palavra retirar e não pergunta sobre registrar perfis' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" plan --profile personal --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    "$SETUP_REPO/bin/devshell" apply --profile personal --approve "$hash" >/dev/null
+    starship="$XDG_CONFIG_HOME/starship.toml"
+    [ -f "$starship" ]
+    latest=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=<EOF>" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 1 ]
+    [ -f "$starship" ]
+    [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")" = "$latest" ]
+    [[ "$output" != *'Registrar os perfis'* ]]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=retirar" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'a remover'* && "$output" == *"remove: $starship"* ]]
+    [ ! -e "$starship" ]
+    run "$SETUP_REPO/bin/devshell" doctor --profile minimal
+    [[ "$output" != *'fora dos perfis'* ]]
+}
+
+@test 'R-053 plano só com órfãos pede retirar e nunca vira "Registrar os perfis"' {
+    prepare_setup
+    hash=$("$SETUP_REPO/bin/devshell" plan --profile minimal --json | python3 -c 'import json,sys;print(json.load(sys.stdin)["approval"])')
+    "$SETUP_REPO/bin/devshell" apply --profile minimal --approve "$hash" >/dev/null
+    # Alvo do universo registrado e no disco, sem nada a escrever: só a retirada.
+    orphan="$XDG_CONFIG_HOME/starship.toml"
+    /usr/bin/cp "$SETUP_REPO/dotfiles/dot_config/starship.toml" "$orphan"
+    python3 -c 'import hashlib,json,sys;p,o=sys.argv[1:];d=json.load(open(p));d[o]=hashlib.sha256(open(o,"rb").read()).hexdigest();json.dump(d,open(p,"w"))' \
+        "$XDG_STATE_HOME/devshell/current.json" "$orphan"
+    "$SETUP_REPO/bin/devshell" plan --profile minimal --json | python3 -c 'import json,sys;d=json.load(sys.stdin);assert not [f for f in d["files"] if f["action"]=="write"] and [r["action"] for r in d["retire"]]==["remove"],d["retire"]'
+    latest=$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=sim" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 1 ]
+    [ -f "$orphan" ]
+    [ "$(/usr/bin/cat "$XDG_STATE_HOME/devshell/latest")" = "$latest" ]
+    [[ "$output" != *'Registrar os perfis'* ]]
+    run bash -c 'python3 "$FOUNDRY_ROOT/tests/answer.py" "Aplicar os dotfiles=s" "digite retirar=retirar" -- "$SETUP_REPO/bin/devshell" setup --profile minimal'
+    [ "$status" -eq 0 ]
+    [[ "$output" != *'Registrar os perfis'* ]]
+    [ ! -e "$orphan" ]
+}
+
 teardown() {
     export PATH="${SETUP_ORIGINAL_PATH:-$PATH}"
 }

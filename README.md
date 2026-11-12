@@ -237,7 +237,7 @@ isso contornaria o journal da CLI.
 | Grupo de dependências | Conjunto nomeado de pacotes no `pyproject.toml`, como `notebook` ou `analytics`. |
 | Lock | Arquivo que registra a resolução das dependências, como `uv.lock`. |
 | Dry-run | Inspeção da operação sem aplicá-la. |
-| Rollback | Restauração da última transação de dotfiles; não desfaz instalações. |
+| Rollback | Restauração da última transação de dotfiles, inclusive dos arquivos retirados na troca de perfil; não desfaz instalações. |
 
 ## Manuais
 

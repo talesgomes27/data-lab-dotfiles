@@ -257,10 +257,66 @@ def state_check():
                          'rode com a mesma HOME e o mesmo XDG_CONFIG_HOME desse estado, ou use um XDG_STATE_HOME próprio')
 
 
+SHA256 = re.compile(r'[0-9a-f]{64}')
+
+
+def valid_registry(data):
+    """R-055: objeto com caminhos absolutos em texto e SHA-256 em hexadecimal minúsculo."""
+    return isinstance(data, dict) and all(
+        isinstance(key, str) and key.startswith('/') and isinstance(value, str) and SHA256.fullmatch(value)
+        for key, value in data.items())
+
+
 def registry():
     safe_path(STATE / 'current.json')
     path = STATE / 'current.json'
-    return json.loads(path.read_text()) if path.exists() else {}
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f'registro inválido: {path}') from exc
+    if not valid_registry(data):
+        raise ValueError(f'registro inválido: {path}; esperado objeto com caminhos absolutos e SHA-256')
+    return data
+
+
+def classify_orphan(target, recorded, universe):
+    """R-050: uma ação por órfão, na ordem outside → unsafe → missing → edited → remove, sem lançar exceção."""
+    row = {'path': target, 'recorded': recorded}
+    # O texto exato da chave decide antes de qualquer acesso ao disco (D-024).
+    if target not in universe:
+        return row | {'action': 'forget-outside', 'reason': 'fora dos alvos deste checkout; remova manualmente se quiser'}
+    path = Path(target)
+    try:
+        issues = list(path_issues(path))
+    except OSError as exc:
+        # Diretório sem permissão de busca, por exemplo: inseguro, nunca exceção (R-050).
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
+    if issues:
+        return row | {'action': 'forget-unsafe', 'reason': issues[0]['message']}
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return row | {'action': 'forget-missing', 'reason': 'arquivo já não existe'}
+    except OSError as exc:
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid():
+        return row | {'action': 'forget-unsafe', 'reason': f'não é arquivo regular independente do usuário: {target}'}
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        return row | {'action': 'forget-unsafe', 'reason': str(exc)}
+    if digest(content) != recorded:
+        return row | {'action': 'forget-edited', 'reason': 'editado depois do apply; fica intacto'}
+    before = {'sha256': digest(content), 'mode': stat.S_IMODE(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid}
+    return row | {'action': 'remove', 'reason': 'fora dos perfis atuais', 'before': before}
+
+
+def retire_plan(managed, desired):
+    """Órfãos: entradas do registro fora dos perfis atuais (Bloco E)."""
+    universe = set(desired_files(all_components=True))
+    return [classify_orphan(target, managed[target], universe) for target in sorted(managed) if target not in desired]
 
 
 def zsh_compiled_issues():
@@ -309,7 +365,8 @@ def source_sha256():
 def build_plan():
     managed = registry()
     entries = []
-    for target, content in desired_files().items():
+    desired = desired_files()
+    for target, content in desired.items():
         before = snapshot(Path(target))
         after = digest(content)
         action = 'unchanged' if before and before['sha256'] == after else 'write'
@@ -320,7 +377,9 @@ def build_plan():
               'platform': {'distro': os.environ['DEVSHELL_DISTRO'], 'adapter': os.environ['DEVSHELL_ADAPTER'],
                            'arch': os.environ['DEVSHELL_MACHINE'], 'libc': os.environ['DEVSHELL_LIBC'],
                            'supported_arch': os.environ['DEVSHELL_MACHINE'] in ('x86_64', 'aarch64')},
-              'dependencies': dependencies()}
+              'dependencies': dependencies(),
+              # Caminho, ação, motivo e, nos remove, o snapshot: tudo entra na aprovação (R-050).
+              'retire': retire_plan(managed, desired)}
     # Inclui a implementação e os manifestos: uma edição invalida a aprovação.
     result['source_sha256'] = source_sha256()
     result['approval'] = digest(encode(result))
@@ -351,6 +410,11 @@ def report(data):
         print('Componentes:', ', '.join(data['components']))
     for entry in data.get('files', []):
         print(f"  {entry['action']}: {entry['path']}" + (' [conflito]' if entry.get('conflict') else ''))
+    for entry in data.get('retire', []):
+        if entry['action'] == 'remove':
+            print(f"  remove: {entry['path']}")
+        else:
+            print(f"  forget: {entry['path']} ({entry['reason']})")
     deps = data.get('dependencies', {})
     if deps.get('missing'):
         print('Ausentes:', ', '.join(deps['missing']))
@@ -486,6 +550,44 @@ def restore_entry(directory, entry):
         atomic(path, backup.read_bytes(), entry['before'], backup)
 
 
+def remove_checked(entry):
+    """R-051: remove um órfão pelo descritor do diretório pai, conferindo identidade e conteúdo, sem seguir symlinks."""
+    path = Path(entry['path'])
+    safe_path(path.parent)
+    parent = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened, current = os.fstat(parent), os.lstat(path.parent)
+        if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+            raise RuntimeError(f'diretório trocado durante a retirada: {path.parent}')
+        info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        expected = entry['before']
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.getuid() \
+                or stat.S_IMODE(info.st_mode) != expected['mode'] or info.st_gid != expected['gid']:
+            raise RuntimeError(f'alvo trocado durante a retirada: {path}')
+        # Renomear antes de conferir: o que é apagado é exatamente o que foi conferido.
+        import uuid
+        hidden = f'.devshell-retire-{uuid.uuid4().hex}'
+        os.rename(path.name, hidden, src_dir_fd=parent, dst_dir_fd=parent)
+        moved = os.stat(hidden, dir_fd=parent, follow_symlinks=False)
+        same = (moved.st_dev, moved.st_ino) == (info.st_dev, info.st_ino) and stat.S_ISREG(moved.st_mode)
+        if same:
+            descriptor = os.open(hidden, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            with os.fdopen(descriptor, 'rb') as stream:
+                same = digest(stream.read()) == expected['sha256']
+        if not same:
+            # Devolve ao nome original sem sobrescrever nada (link falha se o nome já existe).
+            try:
+                os.link(hidden, path.name, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+                os.unlink(hidden, dir_fd=parent)
+            except FileExistsError:
+                raise RuntimeError(f'alvo alterado durante a retirada: {path}; a versão encontrada ficou em '
+                                   f'{path.parent / hidden}') from None
+            raise RuntimeError(f'alvo alterado durante a retirada: {path}; nada foi removido')
+        os.unlink(hidden, dir_fd=parent)
+    finally:
+        os.close(parent)
+
+
 def apply_configuration():
     plan = build_plan()
     if os.environ['DEVSHELL_APPROVAL'] != plan['approval']:
@@ -493,6 +595,7 @@ def apply_configuration():
     if any(e['conflict'] for e in plan['files']) and os.environ['DEVSHELL_REPLACE'] != '1':
         raise ValueError('dotfiles existentes em conflito: revise diff e use --replace-existing explicitamente')
     changed = [entry for entry in plan['files'] if entry['action'] == 'write']
+    retired = plan['retire']
     if changed:
         chezmoi_render()
     with locked():
@@ -501,7 +604,7 @@ def apply_configuration():
         old_dir, old_tx = latest_transaction()
         if old_tx and old_tx['status'] in ('pending', 'rolling-back'):
             raise RuntimeError('transação interrompida: execute rollback antes de aplicar')
-        if not changed:
+        if not changed and not retired:
             # R-048: decidir e gravar sob o mesmo lock; perfis novos sem arquivos também são uma transação (D-028).
             recorded = read_profiles_record()
             if recorded is not None and canonical_profiles(recorded) == canonical_profiles(os.environ['DEVSHELL_PROFILES']):
@@ -511,20 +614,28 @@ def apply_configuration():
         name = uuid.uuid4().hex
         directory = STATE / 'transactions' / name
         # Ler registro e perfis antes do mkdir: recusa aqui não deixa transação vazia.
-        tx = {'status': 'pending', 'files': changed, 'previous_registry': registry(),
+        # D-026: cada remove entra em files com before, after nulo e backup; os forget-* só no relatório.
+        removals = [{'path': row['path'], 'action': 'remove', 'before': row['before'], 'after': None,
+                     'conflict': False, 'managed': True} for row in retired if row['action'] == 'remove']
+        tx = {'status': 'pending', 'files': changed + removals, 'previous_registry': registry(),
               'previous_latest': old_dir.name if old_dir else None,
               'previous_profiles': read_profiles_record(),
+              'forgotten': [row['path'] for row in retired if row['action'] != 'remove'],
               'created': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')}
         directory.mkdir(parents=True, mode=0o700)
         contents = desired_files()
-        for index, entry in enumerate(changed):
+        for index, entry in enumerate(tx['files']):
             entry['backup'] = str(index)
-            if entry['before']:
-                shutil.copy2(entry['path'], directory / str(index))
         atomic(directory / 'manifest.json', encode(tx))
         atomic(STATE / 'latest', name.encode())
         written = []
         try:
+            # Backups dentro do bloco protegido: uma cópia que falha cai no caminho de falha, sem transação vazia.
+            for entry in tx['files']:
+                if entry['before']:
+                    shutil.copy2(entry['path'], directory / entry['backup'])
+                    if entry['action'] == 'remove' and digest((directory / entry['backup']).read_bytes()) != entry['before']['sha256']:
+                        raise RuntimeError(f"backup divergente de {entry['path']}; nada foi removido")
             for entry in changed:
                 if snapshot(Path(entry['path'])) != entry['before']:
                     raise RuntimeError('alvo alterado durante a aplicação')
@@ -532,7 +643,14 @@ def apply_configuration():
                 written.append(entry)
                 entry['applied'] = snapshot(Path(entry['path']))
                 atomic(directory / 'manifest.json', encode(tx))
-            current = tx['previous_registry'] | {entry['path']: entry['after'] for entry in changed}
+            for entry in removals:
+                remove_checked(entry)
+                written.append(entry)
+                entry['applied'] = None
+                atomic(directory / 'manifest.json', encode(tx))
+            gone = {row['path'] for row in retired}
+            current = {key: value for key, value in tx['previous_registry'].items() if key not in gone} \
+                | {entry['path']: entry['after'] for entry in changed}
             atomic(STATE / 'current.json', encode(current))
             restore_profiles(os.environ['DEVSHELL_PROFILES'])
             tx['status'] = 'committed'
@@ -549,8 +667,11 @@ def apply_configuration():
             tx['status'] = 'failed-restored'
             atomic(directory / 'manifest.json', encode(tx))
             raise
-    result = {'operation': 'apply', 'transaction': name, 'changed': len(changed)}
-    if not changed:
+    result = {'operation': 'apply', 'transaction': name, 'changed': len(changed),
+              'removed': len(removals), 'forgotten': len(tx['forgotten'])}
+    if removals or tx['forgotten']:
+        result['message'] = f"{len(removals)} arquivo(s) retirado(s) com backup; {len(tx['forgotten'])} só saíram do registro."
+    if not changed and not retired:
         result['message'] = f"Configuração já corresponde ao plano; perfis {os.environ['DEVSHELL_PROFILES']} registrados nesta transação."
     report(result)
 
@@ -562,14 +683,19 @@ def rollback_plan():
     allowed = desired_files(all_components=True)
     entries = []
     for entry in tx['files']:
-        if entry['path'] not in allowed or not entry['backup'].isdigit():
-            raise ValueError('manifesto de rollback fora do escopo gerenciado')
+        if not str(entry.get('backup', '')).isdigit():
+            raise ValueError('manifesto de rollback fora do escopo gerenciado: backup inválido')
+        if entry['path'] not in allowed:
+            # R-052: um dotfile que saiu do checkout só volta à mão, a partir do backup, se houver.
+            where = f"o backup está em {directory / entry['backup']}" if entry.get('before') else 'não há backup (o arquivo não existia)'
+            raise ValueError(f"manifesto de rollback fora do escopo gerenciado: {entry['path']} não é mais alvo deste checkout; {where}")
         before = snapshot(Path(entry['path']))
         after_hash = before['sha256'] if before else None
         matches_applied = before == entry['applied'] if 'applied' in entry else after_hash == entry['after']
         if not matches_applied and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
             raise RuntimeError(f"arquivo editado após aplicação: {entry['path']}; preserve/mescle manualmente")
-        if entry['before']:
+        # Interrompida antes da cópia: o arquivo está como antes e o rollback não precisa do backup.
+        if entry['before'] and not (tx['status'] in ('pending', 'rolling-back') and before == entry['before']):
             backup = directory / entry['backup']
             saved = snapshot(backup)
             if not saved or saved['sha256'] != entry['before']['sha256']:
@@ -645,7 +771,7 @@ def readable_manifest(directory):
 def transaction_entry(directory):
     """Classifica uma entrada de transactions/ sem seguir symlinks e sem lançar exceção."""
     entry = {'id': directory.name, 'status': 'invalida', 'files': None, 'created': None,
-             'previous_latest': None, 'reason': None, 'items': [], 'originals': []}
+             'previous_latest': None, 'reason': None, 'items': [], 'originals': [], 'retired': []}
     try:
         if not TRANSACTION_ID.fullmatch(directory.name):
             entry['reason'] = 'nome fora do padrão de 32 hexadecimais'
@@ -667,7 +793,10 @@ def transaction_entry(directory):
                           'created': manifest.get('created'), 'previous_latest': manifest.get('previous_latest'),
                           # Arquivo preexistente não gerenciado: o original só existe nesta transação.
                           'originals': sorted(item['path'] for item in manifest['files']
-                                              if isinstance(item, dict) and item.get('conflict') and item.get('before'))}
+                                              if isinstance(item, dict) and item.get('conflict') and item.get('before')),
+                          # Arquivo retirado (Bloco E): a transação é a única cópia dele.
+                          'retired': sorted(item['path'] for item in manifest['files']
+                                            if isinstance(item, dict) and item.get('action') == 'remove')}
     except (OSError, ValueError) as exc:
         entry['reason'] = str(exc)
     return entry
@@ -757,6 +886,8 @@ def prune_plan(keep):
             warnings.append(f"remove a primeira transação ({entry['id']}), que guarda os dotfiles de antes do primeiro apply")
         elif action == 'delete' and entry['originals']:
             warnings.append(f"remove a transação {entry['id']}, única cópia dos originais substituídos: {', '.join(entry['originals'])}")
+        if action == 'delete' and entry.get('retired'):
+            warnings.append(f"remove a transação {entry['id']}, única cópia dos arquivos retirados: {', '.join(entry['retired'])}")
         rows.append({'id': entry['id'], 'status': entry['status'], 'action': action, 'items': entry['items'],
                      'chain': chain.index(entry['id']) if entry['id'] in chain else None})
     rows.sort(key=lambda row: (row['chain'] is None, row['chain'] or 0, row['id']))
@@ -862,9 +993,14 @@ def version_issues():
 
 
 # D-019: pendências que o setup resolve; o resto é ação manual, inclusive o que não estiver nesta tabela.
-SETUP_RESOLVES = ('componente ausente: ', 'arquivo esperado ausente: ', 'arquivo esperado não corresponde ao perfil: ',
+SETUP_RESOLVES = ('componente ausente: ', 'arquivo gerenciado fora dos perfis: ', 'arquivo esperado ausente: ', 'arquivo esperado não corresponde ao perfil: ',
                   'arquivo gerenciado divergente: ', 'componente de usuário ausente: ', 'componente não executável: ',
                   'interpretador uv ausente: ', 'ferramenta uv ausente: ', 'ferramenta uv sem-link: ')
+
+
+def orphan_issues(plan):
+    """R-053: cada órfão é uma pendência que o setup resolve na etapa de aplicação."""
+    return [f"arquivo gerenciado fora dos perfis: {row['path']} ({row['action']})" for row in plan['retire']]
 
 
 def next_step(issues, profiles, source):
@@ -909,6 +1045,15 @@ def main():
                 path = Path(target)
                 before = path.read_text() if path.exists() else ''
                 print(''.join(difflib.unified_diff(before.splitlines(True), content.decode().splitlines(True), fromfile=target, tofile=target + ' (proposto)')), end='')
+            for entry in plan['retire']:
+                if entry['action'] != 'remove':
+                    continue
+                try:
+                    old = Path(entry['path']).read_bytes().decode()
+                except UnicodeDecodeError:
+                    print(f"--- {entry['path']}\n+++ {entry['path']} (removido)\n(conteúdo binário)")
+                    continue
+                print(''.join(difflib.unified_diff(old.splitlines(True), [], fromfile=entry['path'], tofile=entry['path'] + ' (removido)')), end='')
             return
         if command == 'doctor':
             plan['issues'] = [f'componente ausente: {item}' for item in plan['dependencies']['missing']]
@@ -938,6 +1083,7 @@ def main():
                 except (ValueError, OSError) as exc:
                     plan['issues'].append(f'extensão Zsh local insegura: {exc}')
             plan['issues'].extend(zsh_compiled_issues())
+            plan['issues'].extend(orphan_issues(plan))
             import artifacts
             plan['issues'].extend(artifacts.health_issues())
             if not plan['platform']['supported_arch']:

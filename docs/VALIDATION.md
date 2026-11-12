@@ -33,6 +33,48 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Retirada de arquivos órfãos (Bloco E) — 2026-11-12
+
+Item 1 do ROADMAP, com o escopo da D-022: o registro `current.json` é a
+fonte, sem manifesto de migrações.
+- Trocar de perfil passa a retirar os arquivos gerenciados que ficaram de
+  fora: só os que estão iguais ao que a CLI escreveu, com backup, rollback e,
+  no `setup`, a palavra `retirar`.
+- O resto só sai do registro (`forget-*`).
+- Um `current.json` com formato inválido é recusado (R-055).
+
+**Testes.** Escritos antes do código em cada tarefa e vistos falhando pelo
+motivo esperado: 8 de classificação, 11 de `apply` e `rollback` e 3 de
+`doctor` e `setup`, mais os casos que vieram da revisão. Dois Bats ponta a
+ponta em `tests/setup.bats` rodam no CI, porque esta sessão não tem Bats: troca
+de `personal` para `minimal` e plano só com órfãos. Neles, uma resposta
+diferente de `retirar` cancela, e "Registrar os perfis" nunca aparece.
+
+**Revisão independente do código.** Encontrou dois P1, corrigidos:
+- uma transação interrompida entre o manifesto e a cópia do backup ficava sem
+  rollback. Agora o backup só é exigido quando o arquivo não está mais como
+  antes;
+- um erro de permissão ao inspecionar um órfão virava exceção. Agora vira
+  `forget-unsafe`.
+
+Também foram corrigidos:
+- os dois P2: órfão sem reparo possível (symlink, outro dono, hardlink)
+  bloqueava o setup; e não havia Bats de um plano só com órfãos;
+- os P3: a remoção renomeia antes de conferir e devolve o arquivo ao nome
+  original por `link` se algo mudou, sem sobrescrever; a mensagem do rollback
+  distingue os casos; o `apply` informa o que retirou.
+
+Cada correção tem um teste que falhou antes. Restam janelas TOCTOU que exigem
+outro processo do mesmo usuário trocando ancestrais acima do diretório pai.
+
+**Verificação.**
+- CI: o [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293),
+  no commit `d1a551f`, aprovou os sete jobs: 231 Bats e 124 unittest sem
+  skips, cinco imagens e smoke online.
+- Local: Ruff 0.17.3, `bash -n` e os 124 unittest.
+- O exemplo da USAGE é a saída de `plan --profile minimal` numa HOME
+  temporária com `personal` aplicado.
+
 ## Estado preso à configuração (Bloco E0) — 2026-11-12
 
 **Apuração do incidente do R-046.**

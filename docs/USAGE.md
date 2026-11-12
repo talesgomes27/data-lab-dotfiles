@@ -26,6 +26,36 @@ juntos. Só `rollback --list` e `project` funcionam nesse caso. Mudar os
 perfis registrados, mesmo sem arquivos a alterar, cria uma transação, que
 aparece em `rollback --list` e pode ser desfeita.
 
+### Trocar de perfil e retirar o que ficou de fora
+
+Quando você troca de perfil, por exemplo de `personal` para `minimal`, os
+arquivos que só o perfil antigo gerava ficam de fora. O `plan` lista cada um
+com o que o próximo `apply` fará (saída executada em HOME temporária, com
+`starship.toml` editado à mão):
+
+```console
+$ ./bin/devshell plan --profile minimal
+  write: ~/.config/devshell/components
+  remove: ~/.config/direnv/lib/devshell-python.sh
+  remove: ~/.config/nushell/config.nu
+  remove: ~/.config/nushell/env.nu
+  forget: ~/.config/starship.toml (editado depois do apply; fica intacto)
+```
+
+Como cada linha é tratada:
+- **`remove`:** o arquivo está igual ao que a CLI escreveu. É removido com
+  backup na transação, e o `rollback` o devolve.
+- **`forget`:** o arquivo fica intacto e só sai do registro. Isso vale para
+  arquivo editado por você, arquivo que já não existe, arquivo em caminho
+  inseguro e dotfile que saiu do repositório. Remova à mão, se quiser.
+- **Diretórios:** os que ficarem vazios não são removidos.
+
+O `doctor` acusa esses arquivos e sugere o `setup`. No `setup`, a remoção pede
+uma confirmação à parte: digite `retirar`.
+
+Um `XDG_CONFIG_HOME` diferente numa sessão não leva à retirada: o comando é
+recusado antes, porque o estado pertence a outra configuração.
+
 ## Navegar entre pastas
 
 Visite uma pasta pelo caminho completo. O zoxide guarda visitas localmente e,
