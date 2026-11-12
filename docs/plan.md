@@ -57,6 +57,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
+  - item: escopo do Bloco F (desinstalação com prova de dono e recibos; desfazer é reinstalar; saída completa depois)
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "respostas 'Com prova de dono + recibos (Recomendado)', 'Reinstalar (Recomendado)' e 'Depois (Recomendado)' na conversa"
   - item: Bloco E0 (R-047, R-048; T-351 a T-354) e plano revisto do Bloco E (T-401 a T-406, T-490); E0 primeiro, autorização só para cada merge
     por: usuario
     em: "2026-11-12"
@@ -90,7 +94,7 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: merge do Bloco E pelo usuário; depois, escolher o próximo item do ROADMAP
+proximo_passo: revisão independente do desenho e do plano do Bloco F e aprovação do usuário antes do código
 pendencias: ["R-010: execução agendada na main"]
 ```
 
@@ -713,6 +717,107 @@ localmente onde houver as ferramentas.
 - Verificação: comandos acima, registrados na VALIDATION. O merge é decidido
   pelo usuário.
 
+## Bloco F: desinstalação de componentes
+
+Item 2 do [ROADMAP](ROADMAP.md), com o escopo decidido em 2026-11-12:
+- componentes com prova de dono (`python`, `devshell`, `pyinit`, `plugins`,
+  `firacode`), com recibo novo nos três últimos;
+- desfazer é reinstalar (D-031);
+- a saída completa fica para depois (N-016).
+
+Testes antes do código; unittest vistos falhando nesta sessão e Bats no
+`workflow_dispatch` da branch.
+
+### T-501 Testes do plano de desinstalação
+- Requisitos: R-060, R-061, R-064
+- Arquivos: `tests/test_boundaries.py` (classe `Uninstall`),
+  `tests/uninstall.bats` (novo)
+- Dependências: nenhuma
+- Critério de aceite:
+  - por componente, os casos `remove` e `manual`:
+    - `devshell`: igual ao gerado e diferente;
+    - `python`: venv conforme, sem-link, divergente, link órfão e link de
+      outro dono;
+    - `pyinit`: hash igual e diferente;
+    - `plugins` e `firacode`: com recibo, sem recibo com cache, sem recibo e
+      sem cache, arquivo editado;
+  - symlink, hardlink e outro dono viram `manual`;
+  - `uv`, `chezmoi`, `nu` e um componente desconhecido saem com 2;
+  - o aviso quando o componente está nos perfis lembrados;
+  - o plano e o `--dry-run` deixam a árvore idêntica;
+  - o hash muda com a lista;
+  - a recusa do R-047 com estado de outra configuração.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-502 Plano e CLI
+- Requisitos: R-060, R-061, R-064
+- Objetivo: D-030.
+- Arquivos: `bin/devshell` (comando `uninstall`, ajuda), `lib/uninstall.py`
+  (novo; reaproveita `python_tools.tool_state`, `launcher.contents`,
+  `artifacts.members` e `state`)
+- Dependências: T-501
+- Critério de aceite: os casos de T-501 passam. O comando passa pela checagem
+  do R-047, mas não pela do R-046, porque não depende dos perfis para
+  decidir. Não há `--component all`. Os testes existentes continuam verdes.
+- Verificação: `python3 -m unittest`; `bin/devshell --help`.
+
+### T-503 Recibo de instalação
+- Requisitos: R-062
+- Objetivo: D-032.
+- Arquivos: `tests/test_boundaries.py` e `tests/install.bats` (antes),
+  `lib/artifacts.py` (`apply`)
+- Dependências: T-502
+- Critério de aceite:
+  - o recibo é gravado sob o lock, atômico e com modo 0600, e lista os
+    arquivos e os pacotes de origem;
+  - um install sem mudanças regrava o recibo que falta;
+  - um install que falha não grava recibo;
+  - o doctor não muda.
+- Verificação: testes novos.
+
+### T-504 Testes da remoção aprovada
+- Requisitos: R-063
+- Arquivos: `tests/test_boundaries.py`, `tests/uninstall.bats`
+- Dependências: T-503
+- Critério de aceite:
+  - para cada componente, a remoção aprovada tira só os `remove`, mantém os
+    `manual` e remove os diretórios vazios criados pela instalação;
+  - o recibo sai por último;
+  - hash vencido não remove nada;
+  - arquivo trocado entre o plano e a remoção é recusado pela identidade;
+  - falha no meio: só itens inteiros saem, e o plano seguinte continua;
+  - a venv passa por `STATE/uninstalling/`;
+  - o `fc-cache` roda depois da fonte, se existir (simulado);
+  - depois de desinstalar e reinstalar, o `doctor` fica como antes.
+- Verificação: os testes novos falham só nos casos novos.
+
+### T-505 Remoção aprovada
+- Requisitos: R-063
+- Arquivos: `lib/uninstall.py`, `lib/state.py` (reaproveitar
+  `remove_checked` e a remoção por renomeação da poda)
+- Dependências: T-504
+- Critério de aceite: os casos de T-504 passam; nenhum caminho fora dos
+  listados é tocado (árvore comparada antes e depois).
+- Verificação: `python3 -m unittest`; Bats no CI.
+
+### T-506 Documentação
+- Requisitos: R-065
+- Arquivos: `docs/USAGE.md`, `docs/SECURITY.md`, `docs/ARCHITECTURE.md`,
+  `README.md`, `CHANGELOG.md`, `docs/ROADMAP.md`
+- Dependências: T-505
+- Critério de aceite: exemplo executado em HOME temporária; linha na tabela
+  de recuperação; ROADMAP com o item 2 implementado e a saída completa como
+  item próprio.
+- Verificação: links locais conferidos.
+
+### T-590 Encerramento do Bloco F
+- Requisitos: R-060 a R-065
+- Arquivos: `docs/spec.md`, `docs/VALIDATION.md`
+- Dependências: T-506
+- Critério de aceite: `workflow_dispatch` com os sete jobs verdes e zero
+  skips; revisão independente sem P0/P1; evidência por requisito. O merge é
+  decidido pelo usuário.
+
 ## Encerramento
 
 ### T-900 Verificação final e revisão independente
@@ -733,7 +838,7 @@ localmente onde houver as ferramentas.
 | Consulta ao PyPI com cache temporário (geração dos locks e conferência das quatro plataformas) | T-202 | pypi.org, via `uv pip compile` e `uv pip install --dry-run` |
 | Commit na branch de trabalho | cada bloco | repositório local |
 | Push da branch e PR | cada bloco | `origin` (talesgomes27/data-lab-dotfiles) |
-| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-354, T-490 | GitHub Actions do repositório |
+| `workflow_dispatch` na branch, com downloads reais de apt, GitHub e PyPI nos runners | T-101, T-201, T-206, T-900, T-354, T-490, T-590 | GitHub Actions do repositório |
 | Migração das suas instalações atuais (`uv tool uninstall` e nova instalação) | depois do merge do Bloco C | sua HOME; feita por você, não pela CLI |
 | Execução semanal após o merge, sem prazo, com os mesmos downloads e notificação de falha para quem editou o cron | T-101 | GitHub Actions; desativada após 60 dias sem atividade |
 
