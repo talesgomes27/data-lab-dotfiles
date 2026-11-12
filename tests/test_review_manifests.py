@@ -66,6 +66,11 @@ class FakeHttp:
 
 class ReviewTest(unittest.TestCase):
     def setUp(self):
+        # prepare() muda os.environ para apontar lib/ ao --out; não pode vazar para o resto da suíte.
+        environment = patch.dict(os.environ)
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.runs = 0
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name)
@@ -115,6 +120,9 @@ class ReviewTest(unittest.TestCase):
         return files
 
     def run_review(self, groups=('github',), run=None, min_age=7):
+        # Cada execução num --out novo e vazio (R-080).
+        self.runs += 1
+        self.out = self.base / f'out-{self.runs}'
         return review.review(self.root, self.out, list(groups), self.http, run or self.no_run, NOW, min_age)
 
     @staticmethod
@@ -238,6 +246,7 @@ class ReviewTest(unittest.TestCase):
         self.assertIn('sem checksum publicado', json.dumps(report, ensure_ascii=False))
 
     def test_r080_only_and_json_and_isolation(self):
+        self.out = self.base / 'out-main'
         self.release('astral-sh/uv', '0.13.7')
         with patch.object(review, 'build_http', return_value=self.http), patch.dict(os.environ, {'HOME': str(self.base / 'home-real')}):
             (self.base / 'home-real').mkdir()
@@ -328,6 +337,112 @@ class ReviewTest(unittest.TestCase):
         argv = next(a for a, _ in calls if a[1:3] == ['python', 'list'])
         self.assertIn('--all-platforms', argv)
         self.assertIn('divergente', json.dumps(report, ensure_ascii=False))
+
+    # Achados da revisão do código
+
+    def test_r080_unavailable_never_masks_a_blocked_and_drops_the_patch(self):
+        files = self.new_uv()
+        url = next(iter(files))
+        name = url.rsplit('/', 1)[1]
+        self.release('astral-sh/uv', '0.14.0', assets=[(name + '.sha256', url + '.sha256')])
+        self.http.bytes[url + '.sha256'] = f'{"b" * 64}  {name}\n'.encode()
+        old = tarball({'repo-0.8.0/hl.zsh': b'# hl\n'})
+        self.artifacts['artifacts'].append({'component': 'plugins', 'name': 'hl', 'version': '0.8.0', 'arch': 'any', 'libc': 'any',
+                                            'format': 'tar.gz', 'sha256': sha(old), 'health': {'hl.zsh': sha(b'# hl\n')},
+                                            'url': 'https://api.github.com/repos/x/hl/tarball/0.8.0'})
+        self.write_manifests()
+        self.http.json['https://api.github.com/repos/x/hl/tags?per_page=100'] = [{'name': '0.9.0'}]
+        self.http.bytes['https://api.github.com/repos/x/hl/tarball/0.9.0'] = tarball({'repo-0.9.0/hl.zsh': b'# novo\n'})
+        with patch.object(review.shutil, 'which', return_value=None):
+            report, patch_text, code = self.run_review(groups=('github', 'plugins', 'cpython'))
+        self.assertEqual(code, 2)
+        self.assertEqual(patch_text, '')
+        self.assertFalse((self.out / 'manifests.patch').exists())
+
+    def test_r080_non_empty_out_is_refused(self):
+        self.release('astral-sh/uv', '0.13.7')
+        self.out = self.base / 'usado'
+        self.out.mkdir()
+        (self.out / 'manifests.patch').write_text('antigo')
+        with self.assertRaises(review.Blocked):
+            review.review(self.root, self.out, ['github'], self.http, self.no_run, NOW, 7)
+
+    def test_r080_script_never_writes_bytecode(self):
+        self.assertTrue(review.sys.dont_write_bytecode)
+
+    def test_r080_http_errors_map_to_the_right_exit(self):
+        for code, kind in ((404, review.Blocked), (500, review.Unavailable), (503, review.Unavailable), (429, review.Unavailable)):
+            with self.subTest(code):
+                error = urllib.error.HTTPError('https://api.github.com', code, 'x', {}, None)
+                self.assertIsInstance(review.http_error(error, 'u'), kind)
+        self.assertIsInstance(review.http_error(urllib.error.URLError('timeout'), 'u'), review.Unavailable)
+
+    def test_r081_redirect_handler_validates_every_hop(self):
+        handler = review.Redirects()
+        with self.assertRaises(review.Blocked):
+            handler.redirect_request(None, None, 302, 'Found', {}, 'http://github.com/x')
+        opener = review.build_http().opener
+        self.assertTrue(any(isinstance(h, review.Redirects) for h in opener.handlers))
+
+    def test_r081_interrupted_download_and_bad_json_are_reported(self):
+        class Broken:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self, *args):
+                raise TimeoutError('tempo esgotado')
+
+            def geturl(self):
+                return 'https://github.com/x'
+        http = review.Http()
+        with patch.object(http, 'open', return_value=Broken()), self.assertRaises(review.Unavailable):
+            http.get_bytes('https://github.com/x')
+        with patch.object(http, 'get_bytes', return_value=b'nao json'), self.assertRaises(review.Blocked):
+            http.get_json('https://api.github.com/x')
+
+    def test_r081_prerelease_and_missing_binary(self):
+        self.new_uv()
+        self.release('astral-sh/uv', '0.14.0', prerelease=True)
+        self.assertEqual(self.run_review()[2], 2)
+        for url in list(self.http.bytes):
+            if url.endswith('.tar.gz'):
+                triple = url.rsplit('/', 1)[1][3:-7]
+                self.http.bytes[url] = tarball({f'uv-{triple}/uv': elf(62)})
+        self.release('astral-sh/uv', '0.14.0')
+        self.assertEqual(self.run_review()[2], 2)
+
+    def test_r081_size_delta_against_the_old_release(self):
+        files = self.new_uv()
+        names = [url.rsplit('/', 1)[1] for url in files]
+        self.release('astral-sh/uv', '0.14.0')
+        self.http.json['https://api.github.com/repos/astral-sh/uv/releases/tags/0.13.7'] = {
+            'assets': [{'name': name, 'size': 10} for name in names]}
+        report, _, _ = self.run_review()
+        item = next(row for row in report['items'] if row['component'] == 'uv')
+        self.assertTrue(all('delta' in row for row in item['files']), item['files'])
+
+    def test_r082_uv_env_is_exactly_isolated(self):
+        with patch.dict(os.environ, {'UV_INDEX_URL': 'https://evil.example', 'HTTPS_PROXY': 'http://proxy:1'}):
+            env = review.uv_env(self.base / 'out-env')
+        self.assertNotIn('UV_INDEX_URL', env)
+        self.assertEqual(env['HTTPS_PROXY'], 'http://proxy:1')
+        allowed = {'PATH', 'HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'UV_CACHE_DIR',
+                   'UV_PYTHON_INSTALL_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy',
+                   'no_proxy', 'SSL_CERT_FILE', 'SSL_CERT_DIR'}
+        self.assertLessEqual(set(env), allowed)
+
+    def test_r083_report_names_the_uv_floors(self):
+        pythons = [{'implementation': 'cpython', 'version': '3.13.14', 'variant': 'default', 'os': 'linux',
+                    'arch': arch, 'libc': libc} for arch in ('x86_64', 'aarch64') for libc in ('gnu', 'musl')]
+        run, _ = self.fake_uv(pythons=pythons)
+        with patch.object(review.shutil, 'which', return_value='/usr/bin/uv'):
+            report, _, _ = self.run_review(groups=('cpython',), run=run)
+        text = json.dumps(report, ensure_ascii=False)
+        self.assertIn('UV_HASH_FLOOR', text)
+        self.assertIn('0.13.5', text)
 
 
 if __name__ == '__main__':
