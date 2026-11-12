@@ -69,7 +69,10 @@ GitHub, plugins e fonte, ferramentas Python e CPython.
   conservador.
 
 **Verificação.**
-- CI: workflow_dispatch 43272814605 no commit `327a265` (resultado registrado ao concluir).
+- CI: o [workflow_dispatch 43272814605](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43272814605),
+  no commit `327a265`, aprovou os sete jobs: 239 Bats e 203 unittest sem
+  skips, cinco imagens e smoke online. O script não roda no CI; os testes
+  dele, sim.
 - **Execução real nesta sessão,** com o checkout comparado antes e depois
   por `git status --porcelain=v2 --ignored`:
   - PyPI: ruff 0.17.3 -> 0.17.4 proposto, com o lock regenerado e conferido
