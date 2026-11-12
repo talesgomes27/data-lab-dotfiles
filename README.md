@@ -250,6 +250,7 @@ isso contornaria o journal da CLI.
 | Entender backups e limites | [Segurança](docs/SECURITY.md) |
 | Entender o funcionamento e as decisões | [Arquitetura](docs/ARCHITECTURE.md) e [ADRs](docs/ADR/README.md) |
 | Conferir testes e compatibilidade | [Validação](docs/VALIDATION.md) |
+| Ver o que vem a seguir | [Roadmap](docs/ROADMAP.md) |
 | Contribuir ou preparar uma versão | [Contribuição](CONTRIBUTING.md) |
 
 Fontes oficiais estão em [Referências](docs/REFERENCES.md); mudanças destinadas
