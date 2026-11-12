@@ -57,6 +57,10 @@ aprovacoes:
     por: usuario
     em: "2026-11-12"
     evidencia: "respostas 'Retirar órfãos (Recomendado)', 'Preservar e desregistrar (Recomendado)' e 'Aprovar o desenho' na conversa"
+  - item: desenho e plano revistos do Bloco F (spec v11, R-060 a R-065, D-030 a D-034; T-501 a T-506, T-590), autorização só para o merge
+    por: usuario
+    em: "2026-11-12"
+    evidencia: "resposta 'Aprovar e implementar' na conversa"
   - item: escopo do Bloco F (desinstalação com prova de dono e recibos; desfazer é reinstalar; saída completa depois)
     por: usuario
     em: "2026-11-12"
@@ -98,7 +102,7 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: revisão independente do desenho e do plano do Bloco F e aprovação do usuário antes do código
+proximo_passo: implementar o Bloco F (T-501 a T-506, T-590)
 pendencias: ["R-010: execução agendada na main"]
 ```
 
