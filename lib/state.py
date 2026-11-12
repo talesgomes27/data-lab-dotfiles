@@ -703,8 +703,11 @@ def check_transaction(directory, tx, current_of, top=True, allowed=None):
         if not matches_applied and not (interrupted and before == entry['before']):
             applied = entry.get('applied')
             if before and applied and before['sha256'] == applied['sha256']:
-                raise RuntimeError(f"arquivo editado (modo alterado) após aplicação: {entry['path']} (transação {directory.name}); "
-                                   f"volte com chmod {applied['mode']:o} ou preserve manualmente")
+                if (before['uid'], before['gid']) == (applied['uid'], applied['gid']):
+                    raise RuntimeError(f"arquivo editado (modo alterado) após aplicação: {entry['path']} (transação {directory.name}); "
+                                       f"volte com chmod {applied['mode']:o} ou preserve manualmente")
+                raise RuntimeError(f"arquivo editado (dono ou grupo alterado) após aplicação: {entry['path']} "
+                                   f"(transação {directory.name}); preserve manualmente")
             raise RuntimeError(f"arquivo editado após aplicação: {entry['path']} (transação {directory.name}); preserve/mescle manualmente")
         # Interrompida antes da cópia: o arquivo está como antes e o rollback não precisa do backup.
         if entry['before'] and not (interrupted and before == entry['before']):
@@ -789,8 +792,11 @@ def chain_rollback_plan():
                              'revise rollback --list antes de continuar')
         return {'operation': 'rollback-all', 'transactions': [], 'warnings': [], 'message': 'Nenhuma transação para desfazer.',
                 'approval': digest(b'rollback-all-vazio')}
+    if not TRANSACTION_ID.fullmatch(latest) or latest not in entries:
+        raise ValueError(f'latest aponta para transação inexistente ou inválida: {latest}; revise rollback --list')
     allowed = desired_files(all_components=True)
     simulated, chain, manifests, errors, warnings = {}, [], [], [], []
+    visited = set()
 
     def current_of(path):
         if path not in simulated:
@@ -798,6 +804,10 @@ def chain_rollback_plan():
         return simulated[path]
     name, oldest = latest, None
     while name:
+        if name in visited:
+            errors.append(f'ciclo na cadeia de transações em {name}; revise rollback --list')
+            break
+        visited.add(name)
         entry = entries.get(name)
         if entry is None:
             # Só um previous_latest que não existe mais é poda (D-009); o resto é cadeia inválida.
@@ -854,12 +864,17 @@ def chain_rollback():
     with locked():
         if chain_rollback_plan()['approval'] != plan['approval']:
             raise RuntimeError('estado mudou antes do rollback --all')
-        for row in plan['transactions']:
-            single, directory, tx = rollback_plan()
-            if directory is None or directory.name != row['id']:
-                raise RuntimeError(f"cadeia mudou durante o rollback --all: esperado {row['id']}")
-            warnings += undo_transaction(single, directory, tx)
-            done += 1
+        try:
+            for row in plan['transactions']:
+                single, directory, tx = rollback_plan()
+                if directory is None or directory.name != row['id']:
+                    raise RuntimeError(f"cadeia mudou durante o rollback --all: esperado {row['id']}")
+                warnings += undo_transaction(single, directory, tx)
+                done += 1
+        except (OSError, ValueError, RuntimeError) as exc:
+            # R-070: o que já foi desfeito fica; a mensagem diz quanto e como continuar.
+            raise RuntimeError(f'{done} transação(ões) desfeita(s) antes da falha; rode rollback --all de novo para '
+                               f'continuar: {exc}' + (f" | avisos: {'; '.join(warnings)}" if warnings else '')) from exc
     report({'operation': 'rollback-all', 'restored_transactions': done, 'warnings': warnings,
             'message': 'Cadeia desfeita.' if done else 'Nenhuma transação para desfazer.'})
 

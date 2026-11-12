@@ -2302,7 +2302,7 @@ class ChainRollback(unittest.TestCase):
             if len(calls) == 3:
                 raise OSError('falha injetada')
             return real(*args)
-        with patch.object(state, 'undo_transaction', side_effect=fail_third), self.assertRaises(OSError):
+        with patch.object(state, 'undo_transaction', side_effect=fail_third), self.assertRaises(RuntimeError):
             self.run_all()
         self.assertEqual(json.loads(self.manifest(self.ids[3]).read_text())['status'], 'rolled-back')
         remaining = state.chain_rollback_plan()['transactions']
@@ -2315,6 +2315,32 @@ class ChainRollback(unittest.TestCase):
         state.rollback()
         self.assertEqual(self.latest(), self.ids[2])
 
+
+
+    def test_r070_dangling_or_malformed_latest_is_an_error(self):
+        for value in ('f' * 32, 'lixo'):
+            with self.subTest(value):
+                (state.STATE / 'latest').write_text(value)
+                with self.assertRaisesRegex(ValueError, 'latest'):
+                    state.chain_rollback_plan()
+
+    def test_r070_cycle_in_the_chain_is_an_error(self):
+        self.edit_manifest(self.ids[3], lambda data: data.update(previous_latest=self.ids[3]))
+        with self.assertRaisesRegex(ValueError, 'ciclo'):
+            state.chain_rollback_plan()
+
+    def test_r070_failure_message_counts_what_was_undone(self):
+        real = state.undo_transaction
+        calls = []
+
+        def fail_second(*args):
+            calls.append(args)
+            if len(calls) == 2:
+                raise OSError('falha injetada')
+            return real(*args)
+        with patch.object(state, 'undo_transaction', side_effect=fail_second), \
+                self.assertRaisesRegex(RuntimeError, '1 transação'):
+            self.run_all()
 
 
 class LeaveHelpers(unittest.TestCase):
@@ -2362,12 +2388,14 @@ class LeaveHelpers(unittest.TestCase):
         self.assertTrue(any('editado' in blocker for blocker in summary['blockers']))
         self.assertTrue(any('plugins' in blocker for blocker in summary['blockers']))
 
-    def make_state(self):
-        for name in ('transactions/' + 'a' * 32 + '/manifest.json', 'launcher-backups/x/0', 'permission-repairs/r.json',
-                     'install-receipts/plugins.json', 'current.json', 'profiles'):
+    def make_state(self, status='rolled-back'):
+        manifest = json.dumps({'status': status, 'files': [], 'previous_latest': None, 'previous_registry': {}})
+        for name, content in (('transactions/' + 'a' * 32 + '/manifest.json', manifest), ('launcher-backups/x/0', '{}'),
+                              ('permission-repairs/r.json', '{}'), ('install-receipts/plugins.json', '{}'),
+                              ('current.json', '{}'), ('profiles', 'minimal\n')):
             path = self.state_dir / name
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            path.write_text('{}')
+            path.write_text(content)
         return self.state_dir
 
     def test_r074_purge_is_offered_only_after_the_whole_chain(self):
@@ -2422,6 +2450,30 @@ class LeaveHelpers(unittest.TestCase):
         self.assertIn('/venv-minha', text)
         self.assertIn('./bin/devshell', text)
         self.assertIn('CPython', text)
+
+
+    def test_r074_purge_is_refused_with_transactions_outside_the_chain(self):
+        for status in ('committed', 'pending'):
+            with self.subTest(status):
+                self.make_state(status)
+                plan = self.leave.purge_plan()
+                self.assertFalse(plan['offered'])
+        self.make_state()
+        (self.state_dir / 'transactions' / ('a' * 32) / 'manifest.json').write_text('{}')
+        self.assertFalse(self.leave.purge_plan()['offered'])
+
+    def test_r074_failed_removal_reports_where_the_state_went(self):
+        self.make_state()
+        plan = self.leave.purge_plan()
+        with patch.dict(os.environ, {'DEVSHELL_APPROVAL': plan['approval']}), \
+                patch.object(self.leave.shutil, 'rmtree', side_effect=OSError('falha')), \
+                self.assertRaisesRegex(RuntimeError, 'devshell-purge'):
+            self.leave.purge(plan)
+        self.assertTrue(any('devshell-purge' in line for line in self.leave.remains_paths()))
+
+    def test_r074_purge_plan_warns_about_the_launcher_original(self):
+        self.make_state()
+        self.assertTrue(any('lançador' in warning for warning in self.leave.purge_plan()['warnings']))
 
 
 if __name__ == '__main__':

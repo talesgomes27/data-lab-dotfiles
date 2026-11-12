@@ -64,11 +64,25 @@ def purge_plan():
         return result | {'reason': 'o caminho de estado não é um diretório'}
     if (root / 'latest').exists():
         return result | {'reason': 'ainda há latest: desfaça a cadeia inteira (rollback --all) antes'}
-    pending = [entry['id'] for entry in fs.transaction_entries() if entry['status'] in ('pending', 'rolling-back')]
-    if pending:
-        return result | {'reason': 'há transações interrompidas: ' + ', '.join(pending)}
+    # Só depois da cadeia inteira: nenhuma transação aplicada, interrompida ou inválida (podem guardar originais).
+    try:
+        if fs.chain_rollback_plan()['transactions']:
+            return result | {'reason': 'ainda há transações a desfazer: rode rollback --all antes'}
+    except (ValueError, RuntimeError, OSError) as exc:
+        return result | {'reason': str(exc)}
+    left = [f"{entry['id']} ({entry['status']})" for entry in fs.transaction_entries()
+            if entry['status'] not in ('rolled-back', 'failed-restored')]
+    if left:
+        return result | {'reason': 'há transações que não foram desfeitas: ' + ', '.join(left)}
     listing, total = [], 0
-    for current, directories, files in os.walk(root, followlinks=False):
+
+    def unreadable(error):
+        raise error
+    try:
+        walked = list(os.walk(root, followlinks=False, onerror=unreadable))
+    except OSError as exc:
+        return result | {'reason': f'não foi possível ler todo o estado: {exc}'}
+    for current, directories, files in walked:
         for name in sorted(directories + files):
             path = Path(current) / name
             # O arquivo de lock é recriado pelo próprio apagar, sob o lock; fica fora do hash.
@@ -78,7 +92,11 @@ def purge_plan():
             listing.append([path.relative_to(root).as_posix(), info.st_mode, info.st_size])
             total += info.st_size if not path.is_dir() else 0
     contents = sorted({row[0].split('/', 1)[0] for row in listing})
-    result |= {'offered': True, 'contents': contents, 'bytes': total,
+    warnings = []
+    if 'launcher-backups' in contents:
+        warnings.append(f"launcher-backups pode guardar o original de um lançador substituído com --replace-existing: "
+                        f"copie-o de {root / 'launcher-backups'} antes, se quiser")
+    result |= {'offered': True, 'contents': contents, 'bytes': total, 'warnings': warnings,
                'message': 'irreversível: as transações e os backups somem; o cache de artefatos fica'}
     result['approval'] = fs.digest(fs.encode(result) + fs.encode(sorted(listing)))
     return result
@@ -96,13 +114,29 @@ def purge(planned):
             raise RuntimeError('remoção recursiva sem proteção contra symlinks nesta plataforma; apague à mão')
         hidden = fs.STATE.parent / f'.devshell-purge-{uuid.uuid4().hex}'
         os.rename(fs.STATE, hidden)
-    shutil.rmtree(hidden)
+    try:
+        shutil.rmtree(hidden)
+    except OSError as exc:
+        raise RuntimeError(f'o estado foi movido para {hidden}, mas não foi apagado por completo: {exc}; '
+                           'apague esse diretório à mão') from exc
     return {'operation': 'leave-purge', 'removed': str(fs.STATE)}
+
+
+def remains_paths():
+    """Estados movidos por um purge que não terminou (R-074)."""
+    parent = fs.STATE.parent
+    if not parent.is_dir() or parent.is_symlink():
+        return []
+    return [f'estado movido por um --purge-state que não terminou: {path}; apague à mão'
+            for path in sorted(parent.glob('.devshell-purge-*'))]
 
 
 def remains():
     """R-072: o que continua na máquina, com o caminho ou o comando para remover à mão."""
-    lines = []
+    lines = list(remains_paths())
+    launcher_backups = fs.STATE / 'launcher-backups'
+    if os.path.isdir(launcher_backups) and any(launcher_backups.iterdir()):
+        lines.append(f'backups do lançador (podem guardar o seu original de ~/.local/bin/devshell): {launcher_backups}')
     if os.path.lexists(fs.STATE):
         lines.append(f'estado da CLI (transações e backups): {fs.STATE}; para apagar, rode ./bin/devshell leave --purge-state '
                      f'ou remova à mão')
@@ -143,6 +177,13 @@ def main():
             print('  bloqueio:', blocker)
         if data['nothing_to_do']:
             print('Nada a fazer: o Data Lab já não está aplicado nesta HOME.')
+    elif command == 'show-plan':
+        data = json.load(sys.stdin)
+        if data['operation'].startswith('uninstall-'):
+            import uninstall
+            uninstall.report(data)
+        else:
+            fs.report(data)
     elif command == 'purge-plan':
         print(json.dumps(purge_plan(), ensure_ascii=False))
     elif command == 'purge':
