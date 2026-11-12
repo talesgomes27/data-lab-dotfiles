@@ -85,6 +85,28 @@ Diretórios adicionados automaticamente ao PATH são recusados se contiverem
 `:`: nesse contexto o caractere dividiria um caminho em entradas separadas.
 O instalador uv também recusa `UV_TOOL_BIN_DIR` com `:` antes de gravar.
 
+## Estado de outra configuração
+
+O estado em `$XDG_STATE_HOME/devshell` registra os caminhos que a CLI
+escreveu. Um comando rodado com outra HOME ou outro `XDG_CONFIG_HOME` sobre o
+mesmo estado é recusado antes de qualquer plano, sem gravar nada. Isso evita o
+caso do incidente de 2026-11-12: com o `XDG_CONFIG_HOME` trocado, um `apply`
+sem mudanças gravou `minimal` no registro de perfis real. Não há flag para
+contornar.
+
+Para mudar de vez o `XDG_CONFIG_HOME`, mova o diretório de estado antigo para
+fora, por exemplo `mv ~/.local/state/devshell ~/.local/state/devshell.antigo`,
+e rode `./bin/devshell setup --profile PERFIS` na configuração nova. O
+diretório antigo leva as transações e seus backups, o recibo do lançador,
+`permission-repairs` e o registro de perfis. Para consultá-lo ou fazer
+rollback dele, renomeie-o para `devshell` dentro de um diretório próprio e
+rode com `XDG_STATE_HOME` apontando para esse diretório e com o
+`XDG_CONFIG_HOME` antigo.
+
+Toda mudança do registro de perfis passa por uma transação, inclusive sem
+arquivos a alterar. Com `rollback --prune --keep 1`, essas transações também
+contam entre as mantidas.
+
 ## Backups e recuperação
 
 A instalação do lançador tem journal próprio em `launcher-backups/UUID`, sob

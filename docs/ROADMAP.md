@@ -66,9 +66,9 @@ reproduzido numa HOME simulada: com a HOME e o estado reais, mas com
 mudanças. Esse registro tira os mesmos 24 componentes. O comando exato não foi
 identificado sem o histórico da shell, mas o mecanismo está demonstrado.
 
-**Correção:** Bloco E0 na spec (R-047 e R-048). O estado passa a ser recusado
-quando pertence a outra configuração, e toda mudança do registro de perfis
-abre uma transação.
+**Correção:** Bloco E0 (R-047 e R-048), implementado. O estado passa a ser
+recusado quando pertence a outra configuração, e toda mudança do registro de
+perfis abre uma transação.
 
 ### 1. Retirada de arquivos órfãos
 
