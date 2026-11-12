@@ -431,7 +431,8 @@ como escopo.
   para vazio; conteúdo que não é UTF-8 aparece como "(conteúdo binário)".
   Nenhum desses comandos grava nada (AGENTS.md).
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::OrphanRetirement (cinco ações, ordem, nenhum acesso ao disco fora do universo, sete casos inseguros, PermissionError, hash, comandos só de leitura, diff com placeholder binário); suíte completa sem skips no [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293)
 
 ### R-051 Apply retira na mesma transação
 - Enunciado: o `apply` aprovado remove os órfãos `remove` e tira do registro
@@ -449,7 +450,8 @@ como escopo.
   backup e o registro anterior é restaurado, como numa escrita que falha. Diretórios que ficarem vazios não
   são removidos (D-025). Arquivos `forget-*` nunca são tocados.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::OrphanRetirement.test_r051_* (backup e diretórios, plano só com órfãos sem Chezmoi, só forget, hash vencido, falha na segunda remoção, backup corrompido, pai trocado por symlink, arquivo trocado depois da conferência); suíte completa sem skips no [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293)
 
 ### R-052 Rollback devolve o que foi retirado
 - Enunciado: o `rollback` da transação recoloca os arquivos removidos e o
@@ -466,7 +468,8 @@ como escopo.
   --prune`) trata essas transações como as outras e avisa quando remove a única
   cópia de um arquivo retirado.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::OrphanRetirement.test_r052_* (rollback com conteúdo, modo e registro; caminho recriado e editado; dotfile que saiu do checkout; poda que avisa a única cópia; transação interrompida antes do backup); suíte completa sem skips no [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293)
 
 ### R-053 Doctor e setup tratam órfãos como pendência do setup
 - Enunciado: o `doctor` acusa os órfãos, e o `setup` os resolve na etapa de
@@ -486,7 +489,8 @@ como escopo.
   universo entram na revisão de permissões do setup (D-027). Depois do `setup`, o `doctor` não
   acusa mais órfãos.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::OrphanRetirement.test_r053_* (doctor e next_step, resumo, revisão de permissões D-027, órfão sem reparo fora dela); tests/setup.bats (dois testes R-053: troca de perfil e plano só com órfãos, palavra retirar, sem "Registrar os perfis"); suíte completa sem skips no [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293)
 
 ### R-055 Registro válido
 - Enunciado: um `current.json` com formato inválido é recusado antes de
@@ -496,7 +500,8 @@ como escopo.
   minúsculos), Quando qualquer comando lê o registro, Então sai com 2 e uma
   mensagem que aponta o arquivo, sem traceback e sem gravar nada.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_boundaries.py::OrphanRetirement.test_r055_invalid_registry_is_refused; suíte completa sem skips no [workflow_dispatch 43235722293](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43235722293)
 
 ### R-054 Documentação da retirada
 - Enunciado: README, USAGE, SECURITY e CHANGELOG explicam que trocar de perfil
@@ -511,7 +516,8 @@ como escopo.
   numa sessão é recusado pelo R-047, e não vira retirada. O CHANGELOG
   marca a mudança de comportamento do `apply`.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: docs/USAGE.md (Trocar de perfil e retirar o que ficou de fora, com saída executada); docs/SECURITY.md (Retirada de arquivos fora dos perfis e linha da tabela de recuperação); docs/ARCHITECTURE.md; README.md; CHANGELOG.md
 
 **Documentação**
 

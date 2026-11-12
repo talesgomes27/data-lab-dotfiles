@@ -90,7 +90,7 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: merge do Bloco E0 pelo usuário; depois implementar o Bloco E (T-401 a T-406, T-490)
+proximo_passo: merge do Bloco E pelo usuário; depois, escolher o próximo item do ROADMAP
 pendencias: ["R-010: execução agendada na main"]
 ```
 
