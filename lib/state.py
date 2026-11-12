@@ -427,7 +427,16 @@ def report(data):
         print('Diagnóstico:', issue)
     for warning in data.get('warnings', []):
         print('Aviso:', warning)
-    for row in data.get('transactions', []):
+    if data.get('operation') == 'rollback-all':
+        for row in data.get('transactions', []):
+            print(f"  {row['id']}: {row['status']}" + (f", {row['created']}" if row.get('created') else '')
+                  + f"; perfis voltam a: {row['profiles_restore'] or '(nenhum registro)'}")
+            for item in row['files']:
+                print(f"    {'restaurar do backup' if item['to'] == 'backup' else 'remover'}: {item['path']}")
+        rows = []
+    else:
+        rows = data.get('transactions', [])
+    for row in rows:
         details = [row.get('status'), f"cadeia {row['chain']}" if row.get('chain') is not None else 'fora da cadeia']
         if row.get('action'):
             details.insert(0, row['action'])
