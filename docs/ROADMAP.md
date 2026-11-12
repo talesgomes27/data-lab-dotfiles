@@ -70,11 +70,10 @@ identificado sem o histórico da shell, mas o mecanismo está demonstrado.
 recusado quando pertence a outra configuração, e toda mudança do registro de
 perfis abre uma transação.
 
-### 1. Retirada de arquivos órfãos
+### 1. Retirada de arquivos órfãos (implementado)
 
-Escopo reduzido das migrações declarativas, desenhado na spec v7 (R-050 a
-R-055, D-022 a D-027): o registro `current.json` é a fonte, sem manifesto de
-migrações (D-022). A remoção de arquivos pede uma confirmação digitada à parte
+Escopo reduzido das migrações declarativas (R-050 a R-055, D-022 a D-027): o
+registro `current.json` é a fonte, sem manifesto de migrações (D-022). A remoção de arquivos pede uma confirmação digitada à parte
 no `setup`, por causa do incidente do R-046.
 
 Texto original do item, mantido como referência para um manifesto futuro

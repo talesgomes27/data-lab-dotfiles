@@ -190,7 +190,15 @@ transação, inclusive quando não há arquivos a alterar, e restaurado pelo
 rollback; comandos sem `--profile` os usam. Antes de escolher perfis,
 `state.py state-check` confere que o `current.json` não registra alvos deste
 checkout sob outra HOME ou outro `XDG_CONFIG_HOME`; se registrar, o comando
-para (R-047). Os exemplos em `examples/`
+para (R-047).
+
+O registro `current.json` é a fonte da retirada de órfãos (D-022). Entradas
+fora dos perfis atuais aparecem no plano com uma ação: `remove`, quando o
+arquivo está igual ao registrado e no conjunto de alvos do checkout, ou
+`forget-*`, nos outros casos. A lista entra no hash de aprovação. O `apply`
+remove na mesma transação, com backup conferido e remoção pelo descritor do
+diretório pai. O rollback devolve os arquivos pelo journal, sem formato novo
+(D-026). Os exemplos em `examples/`
 têm ambientes próprios. Os testes e os scripts de verificação ficam em `tests/`
 e `scripts/`. Consulte o [guia de contribuição](../CONTRIBUTING.md) para validar
 mudanças e a [instalação](INSTALLATION.md) para operar a CLI.
