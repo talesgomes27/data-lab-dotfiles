@@ -2,6 +2,9 @@
 
 ## Não publicado
 
+- CI: `actions/checkout` fixado na v7.0.1 (Node.js 24), por SHA revisado na
+  fonte oficial; some o aviso de Node.js 20 descontinuado.
+
 - Para quem mantém o projeto: `scripts/review-manifests.py` propõe, como um
   patch revisável, as versões e os checksums novos dos manifestos. Ele confere
   cada artefato baixado e regenera os locks das ferramentas Python. O comando

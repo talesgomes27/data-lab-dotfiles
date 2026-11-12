@@ -23,6 +23,18 @@ class WeeklyWorkflow(unittest.TestCase):
         for line in manual:
             self.assertEqual(line, "if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'")
 
+    def test_actions_are_pinned_by_full_sha_with_version(self):
+        uses = re.findall(r'^\s*- uses: (.+)$', self.text, re.M)
+        self.assertTrue(uses)
+        for line in uses:
+            self.assertRegex(line, r'^[\w.-]+/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$')
+
+    def test_checkout_uses_the_reviewed_node24_release(self):
+        # v7.0.1 declara runs.using: node24 (conferido no action.yml do commit, fonte oficial).
+        checkouts = re.findall(r'actions/checkout@(\S+) # (\S+)', self.text)
+        self.assertEqual(len(checkouts), 3)
+        self.assertEqual(set(checkouts), {('3d3c42e5aac5ba805825da76410c181273ba90b1', 'v7.0.1')})
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -191,8 +191,6 @@ fixtures.
 
 São independentes e menores; entram quando houver espaço.
 
-- **Pin do `actions/checkout`:** a v4.2.2 ainda declara Node.js 20, e o runner
-  força Node.js 24. Atualizar exige revisão do SHA na fonte oficial.
 - **Ambiente das sessões remotas:** um setup script com ShellCheck, shfmt, Bats
   e Zsh deixaria `bash scripts/check.sh` rodar completo fora do CI.
 - **Teste Bats da D-020:** um cenário ponta a ponta em `tests/setup.bats` para
