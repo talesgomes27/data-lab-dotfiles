@@ -198,7 +198,7 @@ Fatos observados (2026-11-09):
   dos módulos essenciais continua conferido pelo RECORD.
 - Prioridade: alta
 - Estado: verificado
-- Evidência: tests/setup.bats (oito testes R-023 do doctor, inclusive link para fora da venv e interpretador fora do CPython gerenciado); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
+- Evidência: tests/setup.bats (oito testes R-023 do doctor, inclusive link para fora da venv e interpretador fora do CPython gerenciado); tests/test_boundaries.py::PythonToolLocks.test_r023_unsafe_managed_python_points_to_interpreter_not_venv e test_r023_unsafe_managed_python_is_manual_in_doctor (D-020); suíte completa sem skips, matriz e smoke online no [workflow_dispatch 43185525822](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43185525822) (T-900)
 
 ### R-024 Smoke online com lock
 - Enunciado: o smoke online instala as ferramentas pelo fluxo com hash.
@@ -495,6 +495,16 @@ arquivo já é igual ao desejado e só o registro em `current.json` difere: o
 apply seguinte reescreve o registro, e acusar levaria a um setup sem nada a
 fazer; `next_step` entra no CHANGELOG como campo novo
 do JSON.
+
+### D-020 CPython gerenciado inseguro é ação manual sobre o interpretador
+Interpretador e `patchlevel.h` ficam em `UV_PYTHON_INSTALL_DIR`, fora da venv.
+Se um deles, ou um ancestral, tem caminho inseguro (escrita de grupo/outros,
+dono inesperado, symlink), a ferramenta continua `divergente` e bloqueante,
+mas a mensagem aponta o diretório do CPython e, para modos, `chmod -R go-w`
+nele, sem pedir para mover a venv. No doctor, o interpretador aparece como
+`interpretador uv com caminho inseguro`, ação manual. O setup não corrige esses
+modos: o diretório é do uv e pode servir outros projetos, fora do escopo
+restrito das escritas. Achado P2 da revisão do T-900.
 
 ```mermaid
 flowchart LR

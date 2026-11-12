@@ -2,6 +2,12 @@
 
 ## Não publicado
 
+- CPython gerenciado com escrita de grupo/outros (ou outro caminho inseguro) em
+  `UV_PYTHON_INSTALL_DIR` deixa de aparecer como "venv divergente, mova a venv":
+  `doctor`, `install` e `setup` apontam o diretório do interpretador e o
+  `chmod -R go-w` a aplicar nele, e o doctor mostra
+  `interpretador uv com caminho inseguro` como ação manual.
+
 - `apply` recusado por registro de perfis ou `current.json` inseguro (symlink,
   permissão aberta) não deixa mais um diretório de transação vazio, que depois
   bloqueava `rollback --prune` até ser removido à mão.

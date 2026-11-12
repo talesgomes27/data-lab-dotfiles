@@ -779,6 +779,60 @@ Prompt_Toolkit==3.0.53 ; sys_platform == 'win32' \\
             with self.subTest(path=path), patch.object(python_tools, 'venv_issues', side_effect=ValueError(f'permissões inseguras: {path}')):
                 self.assertIn(expected, python_tools.tool_state('ruff', lock, self.dirs, '3.13.11')['detail'][0])
 
+    def managed_venv(self):
+        """Venv mínima apontando para um CPython 'gerenciado' em UV_PYTHON_INSTALL_DIR."""
+        self.write_lock(f'ruff==0.17.3 --hash=sha256:{self.HASH}\n')
+        lock = python_tools.locks(self.spec)['ruff']
+        python_dir = self.home / 'data/uv/python'
+        cpython = python_dir / 'cpython-3.13.11-linux-x86_64-gnu'
+        (cpython / 'bin').mkdir(parents=True, mode=0o700)
+        (cpython / 'include/python3.13').mkdir(parents=True, mode=0o700)
+        (cpython / 'bin/python3.13').write_text('')
+        (cpython / 'bin/python3.13').chmod(0o700)
+        (cpython / 'include/python3.13/patchlevel.h').write_text('#define PY_VERSION "3.13.11"\n')
+        venv, link = python_tools.paths('ruff', self.dirs)
+        (venv / 'bin').mkdir(parents=True, mode=0o700)
+        (venv / 'lib/python3.13/site-packages').mkdir(parents=True, mode=0o700)
+        (venv / 'pyvenv.cfg').write_text('version_info = 3.13.11\n')
+        (venv / 'bin/python').symlink_to(cpython / 'bin/python3.13')
+        link.parent.mkdir(mode=0o700)
+        for path in (self.home, self.home / 'data', self.home / 'data/uv', python_dir):
+            path.chmod(0o700)
+        dirs = self.dirs | {'UV_PYTHON_INSTALL_DIR': str(python_dir)}
+        return lock, dirs, cpython
+
+    def test_r023_unsafe_managed_python_points_to_interpreter_not_venv(self):
+        lock, dirs, cpython = self.managed_venv()
+        baseline = python_tools.tool_state('ruff', lock, dirs, '3.13.11')
+        self.assertNotIn('CPython gerenciado', ' '.join(baseline['detail']))
+        for target in (cpython / 'bin/python3.13', cpython / 'include/python3.13/patchlevel.h', cpython):
+            with self.subTest(target=target.name):
+                mode = target.stat().st_mode & 0o777
+                target.chmod(mode | 0o020)
+                try:
+                    row = python_tools.tool_state('ruff', lock, dirs, '3.13.11')
+                finally:
+                    target.chmod(mode)
+                self.assertEqual(row['state'], 'divergente')
+                detail = row['detail'][0]
+                self.assertIn('CPython gerenciado', detail)
+                self.assertIn(str(cpython), detail)
+                self.assertIn('chmod -R go-w', detail)
+                self.assertNotIn('mova a venv', detail)
+                self.assertNotIn('modos inseguros na venv', detail)
+
+    def test_r023_unsafe_managed_python_is_manual_in_doctor(self):
+        _, dirs, cpython = self.managed_venv()
+        (cpython / 'bin/python3').symlink_to('python3.13')
+        spec = {'interpreters': ['3.13.11']}
+        self.assertEqual(artifacts.interpreter_issues(spec, dirs), [])
+        (cpython / 'bin/python3.13').chmod(0o720)
+        issues = artifacts.interpreter_issues(spec, dirs)
+        self.assertEqual(len(issues), 1)
+        self.assertTrue(issues[0].startswith('interpretador uv com caminho inseguro: 3.13.11'), issues)
+        self.assertIn('chmod -R go-w', issues[0])
+        self.assertEqual(state.next_step(issues, ['minimal'], 'padrão')['kind'], 'manual')
+
     def test_r021_uv_environment_drops_active_envs_and_user_uv_settings(self):
         with patch.dict(os.environ, {'VIRTUAL_ENV': '/outra', 'CONDA_PREFIX': '/conda', 'UV_VENV_CLEAR': '1',
                                      'UV_INDEX_URL': 'https://exemplo.invalid', 'PATH': '/usr/bin'}):

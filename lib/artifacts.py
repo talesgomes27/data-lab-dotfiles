@@ -80,19 +80,24 @@ def interpreter_issues(spec, dirs):
         if not candidates:
             issues.append(f'interpretador uv ausente: {version}')
             continue
-        found = False
+        found, unsafe = False, None
         for candidate in candidates:
             try:
-                fs.safe_path((candidate / 'bin/python3').resolve())
                 header = candidate / 'include' / ('python' + '.'.join(version.split('.')[:2])) / 'patchlevel.h'
-                fs.safe_path(header)
+                python_tools.managed_safe_path((candidate / 'bin/python3').resolve(), candidate)
+                python_tools.managed_safe_path(header, candidate)
                 match = re.search(r'^#define\s+PY_VERSION\s+"([^"]+)"', header.read_text(), re.M)
                 if match and match.group(1) == version:
                     found = True
                     break
+            except python_tools.ManagedPythonUnsafe as exc:
+                unsafe = unsafe or exc
             except (OSError, ValueError):
                 continue
-        if not found:
+        if not found and unsafe:
+            issues.append(f'interpretador uv com caminho inseguro: {version}: '
+                          + python_tools.managed_python_hint(unsafe.root, str(unsafe)))
+        elif not found:
             issues.append(f'interpretador uv divergente: {version}')
     return issues
 
