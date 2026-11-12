@@ -689,7 +689,8 @@ localmente onde houver as ferramentas.
     limites do rollback (dotfile que saiu do repositório) e da poda (única
     cópia), e a lembrança de que, com `--replace-existing`, o original do
     usuário está só na transação daquele apply;
-  - USAGE avisa sobre `XDG_CONFIG_HOME` diferente numa sessão;
+  - USAGE explica que um `XDG_CONFIG_HOME` diferente numa sessão é recusado
+    (R-047), e não vira retirada;
   - ARCHITECTURE descreve o registro como fonte da retirada;
   - CHANGELOG marca a mudança de comportamento do `apply`;
   - no ROADMAP, o item 1 vira "concluído" e o escopo reduzido fica

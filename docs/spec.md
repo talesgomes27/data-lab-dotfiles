@@ -409,8 +409,10 @@ como escopo.
     em caminho seguro, e o SHA-256 atual é igual ao registrado;
   - `forget-edited`: o conteúdo atual difere do registrado (D-023);
   - `forget-missing`: o arquivo não existe mais;
-  - `forget-outside`: fora do universo, por exemplo dotfile removido do
-    repositório ou `XDG_CONFIG_HOME` trocado (D-024);
+  - `forget-outside`: fora do universo e sem corresponder a nenhum alvo, por
+    exemplo dotfile removido do repositório (D-024). Chaves de outra HOME ou
+    de outro `XDG_CONFIG_HOME` não chegam aqui: o R-047 recusa o comando
+    antes;
   - `forget-unsafe`: no universo, mas inseguro: qualquer motivo de
     `path_issues` (symlink no caminho ou em ancestral, outro dono, permissões,
     caminho inválido), hardlink, tipo não regular ou `PermissionError` na
@@ -503,8 +505,8 @@ como escopo.
   transação se o dotfile saiu do repositório, e a poda pode remover a única
   cópia de um arquivo retirado. A SECURITY também lembra que, num perfil
   aplicado com `--replace-existing`, o original do usuário está só na
-  transação daquele apply. A USAGE avisa que um `XDG_CONFIG_HOME` diferente
-  numa sessão faz os caminhos antigos virarem `forget-outside`. O CHANGELOG
+  transação daquele apply. A USAGE explica que um `XDG_CONFIG_HOME` diferente
+  numa sessão é recusado pelo R-047, e não vira retirada. O CHANGELOG
   marca a mudança de comportamento do `apply`.
 - Prioridade: média
 - Estado: proposto
@@ -755,8 +757,9 @@ Remover só caminhos de `desired_files(all_components=True)` mantém a retirada
 dentro do escopo que o rollback já aceita (`rollback_plan` recusa caminhos fora
 dele). Um registro adulterado não consegue apontar a remoção para fora dos
 alvos que o checkout pode gerar. O que está fora, como um dotfile removido do
-repositório ou um `XDG_CONFIG_HOME` antigo, é preservado e sai do registro com
-aviso para remoção manual.
+repositório, é preservado e sai do registro com aviso para remoção manual. Um
+`XDG_CONFIG_HOME` antigo não chega à classificação, porque o R-047 recusa o
+comando antes.
 
 ### D-025 Diretórios ficam
 Diretórios vazios depois da retirada não são removidos, como já diz a tabela de
