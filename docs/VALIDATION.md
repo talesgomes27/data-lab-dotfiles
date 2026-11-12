@@ -33,6 +33,62 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Revisão assistida de manifestos (Bloco H) — 2026-11-12
+
+Item 3 do ROADMAP: `scripts/review-manifests.py`, ferramenta de mantenedor
+fora da CLI. Ela consulta as fontes oficiais e grava um relatório e um patch
+em `--out`, sem tocar o checkout nem a HOME. Os grupos são binários do
+GitHub, plugins e fonte, ferramentas Python e CPython.
+
+**Testes.** Escritos antes do código e vistos falhando: 26 casos em
+`tests/test_review_manifests.py`, sem rede, com HTTP e `uv` simulados.
+
+**Revisões independentes.**
+- **Desenho:** três P1 incorporados antes do código: compile sem
+  `--no-build`, CPython dependente do `uv` local e o `download()` da CLI, que
+  grava na HOME.
+- **Código:** um P1, corrigido com teste: uma saída 3 de um grupo escondia
+  a saída 2 de outro, e o patch parcial era gravado. Agora a 2 tem
+  precedência, e qualquer bloqueio descarta o patch.
+- **P2 corrigidos:**
+  - bytecode no checkout ao rodar pelo shebang;
+  - download interrompido virava traceback;
+  - 429 e 5xx davam a saída 2;
+  - JSON inválido sem tratamento;
+  - `--out` reaproveitado podia deixar um patch antigo;
+  - faltavam a variação de tamanho e os pisos do `uv` no relatório;
+  - testes fracos, e o ambiente vazava entre os testes.
+- **P3 corrigidos:**
+  - o lock confere o marcador e o minor;
+  - o dry-run guarda o stderr;
+  - ELF de 64 bits;
+  - as referências ignoram `.venv` e `.test-tools`;
+  - falha de TLS dá a saída 2.
+- **P3 não aplicado:** descartar só o componente bloqueado. A revisão
+  inteira é refeita depois de entendido o erro, que é o caminho mais
+  conservador.
+
+**Verificação.**
+- CI: workflow_dispatch 43272814605 no commit `327a265` (resultado registrado ao concluir).
+- **Execução real nesta sessão,** com o checkout comparado antes e depois
+  por `git status --porcelain=v2 --ignored`:
+  - PyPI: ruff 0.17.3 -> 0.17.4 proposto, com o lock regenerado e conferido
+    nas quatro plataformas; o patch passa em `git apply --check`. A versão
+    nova não foi aplicada: isso é uma revisão de manifesto à parte.
+  - GitHub: a API devolveu 403 sem cabeçalho de limite. O proxy da sessão
+    registrou túneis fechados no meio da troca. Por isso, o script deu
+    saída 2 e não gerou patch quando o grupo `github` estava junto.
+  - CPython: saída 3, porque o `uv` local (0.11.32) não é o fixado (0.13.7).
+  - Um `--out` reaproveitado foi recusado com a saída 2.
+
+**Limites.**
+- Os grupos `github` e `plugins` e a lista de hosts de redirecionamento só
+  foram exercitados com HTTP simulado. A rede real do GitHub não foi
+  alcançada nesta sessão.
+- O CPython só é revisado com o `uv` fixado ou com o proposto no PATH.
+- Um checksum que confere prova só o transporte: as notas da release
+  continuam a ser lidas por uma pessoa.
+
 ## Saída completa (Bloco G) — 2026-11-12
 
 Item 2b do ROADMAP:

@@ -130,7 +130,11 @@ revisao_do_bloco_e0:
   por: subagente revisor de desenho
   em: "2026-11-12"
   resultado: "pronto com ressalvas; 5 P2 e 6 P3 incorporados (spec v9: D-029 compara todas as chaves, rollback e lançador cobertos, rollback --list isento, R-048 com o manifesto completo)"
-proximo_passo: implementar o Bloco H (T-701 a T-704, T-790)
+revisao_do_codigo_do_bloco_h:
+  por: subagente revisor de código
+  em: "2026-11-12"
+  resultado: "1 P1 (saída 3 escondia a 2 e mantinha patch parcial), 7 P2 e 7 P3; corrigidos com testes, exceto o descarte por componente (registrado em docs/VALIDATION.md)"
+proximo_passo: PR do Bloco H e merge com autorização
 pendencias: ["R-010: execução agendada na main"]
 ```
 

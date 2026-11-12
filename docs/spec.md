@@ -2,7 +2,7 @@
 projeto: data-lab-dotfiles
 arquetipo: {principal: automacao}
 stack: [bash, python-stdlib, chezmoi, uv, github-actions]
-versao_spec: 16
+versao_spec: 17
 atualizado_em: 2026-11-12
 gerado_por: pre-code-pipeline
 ---
@@ -831,16 +831,23 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     - 0, com ou sem proposta;
     - 2 em divergência de checksum, artefato inválido, host fora da lista, 404
       de uma combinação ou downgrade;
+    - 2 também com um `--out` que já existe e não está vazio, com JSON
+      inválido e com falha de TLS, que pode ser interceptação;
     - 3 sem rede, com o limite da API do GitHub esgotado (403 com
-      `X-RateLimit-Remaining: 0`, com a mensagem da N-024) ou sem o `uv`
-      exigido.
+      `X-RateLimit-Remaining: 0`, com a mensagem da N-024), com 429 ou 5xx,
+      ou sem o `uv` exigido.
+    - A 2 tem precedência sobre a 3: um grupo indisponível nunca esconde um
+      bloqueio de outro.
   - **Componente bloqueado:** um erro numa combinação bloqueia o componente
-    inteiro, sem patch parcial com versões misturadas.
+    inteiro, sem patch parcial com versões misturadas. Cada componente é
+    revisado à parte, e o relatório lista todos. Com qualquer saída 2, não
+    há patch nenhum; com só a 3, o patch traz o que foi conferido.
   - **Referências antigas:** o relatório lista, por busca no checkout, os
     arquivos que ainda citam as versões antigas (testes, fixtures, docs,
     exemplos, `ci-setup.sh`), para a pessoa revisar junto com o patch.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_review_manifests.py (R-080: isolamento, --only/--json, saída 2 com precedência sobre a 3 sem patch, --out não vazio recusado, bytecode, mapeamento HTTP, árvore inalterada); execução real em 2026-11-12 com o checkout inalterado (git status comparado) e patch aplicável com git apply --check
 
 ### R-081 Binários do GitHub, plugins e fonte
 - Enunciado: para `uv`, `chezmoi`, `nu`, plugins e FiraCode, a versão nova vem
@@ -880,7 +887,8 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     entrada, sem executar.
   - **Segurança:** nada baixado é executado nem extraído para o disco.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_review_manifests.py (R-081: quatro URLs e checksums, checksum publicado, combinação ausente, ELF de 64 bits, binário ausente, pre-release, downgrade, idade mínima, prefixo v, plugins, saltos de redirecionamento no Redirects real, download interrompido, JSON inválido, variação de tamanho); a lista de hosts não foi conferida com a rede real (403 do proxy da sessão)
 
 ### R-082 Ferramentas Python e locks
 - Enunciado: para `ruff`, `pre-commit` e `ipython`, a versão nova vem do PyPI,
@@ -899,7 +907,8 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     ferramenta entra no relatório como bloqueada, sem patch.
   - **Patch:** troca a versão em `python.json` e o lock inteiro.
 - Prioridade: alta
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_review_manifests.py (R-082: argv do compile e do dry-run, env exato sem UV_* do usuário, falha numa plataforma); execução real: ruff 0.17.3 -> 0.17.4 com o lock regenerado e conferido nas quatro plataformas
 
 ### R-083 CPython do uv
 - Enunciado: as versões de patch dos interpretadores são propostas a partir
@@ -921,7 +930,8 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     instaladas passam a `divergente` (bloqueante), e que o CHANGELOG precisa
     de uma nota de migração.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: tests/test_review_manifests.py (R-083: uv fixado exigido, filtro e quatro combinações, pisos UV_HASH_FLOOR no relatório); execução real: saída 3 com o uv 0.11.32 local diferente do fixado
 
 ### R-084 Validação e documentação
 - Enunciado: o CONTRIBUTING descreve o fluxo, e o script é testado sem rede.
@@ -943,7 +953,8 @@ O `pyinit` fica de fora: ele tem o fluxo próprio da skill `bump-pyinit`.
     `--no-build` também no compile.
   - **CHANGELOG:** a ferramenta nova fica registrada na seção do mantenedor.
 - Prioridade: média
-- Estado: proposto
+- Estado: verificado
+- Evidência: CONTRIBUTING.md (Revisão assistida de manifestos; --no-build no compile); CHANGELOG.md; docs/ARCHITECTURE.md; 26 testes sem rede em tests/test_review_manifests.py; o script não roda no check.sh nem no CI
 
 **Documentação**
 
