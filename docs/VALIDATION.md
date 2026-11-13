@@ -33,6 +33,49 @@ evidência não afirma que estejam instaladas nos estudos de cada usuário.
 O teste de JupyterLab por CLI não demonstra um fluxo completo de notebook no
 navegador. A integridade conferida pelo doctor tem os limites de SECURITY.md.
 
+## Pin de pyinit em aef9333 — 2026-11-13
+
+O submódulo e o artefato `pyinit` passaram de `1d9e141` para
+`aef93331f0b612430116f9aa20d71742fcc1e1d2`, merge do PR #18 na `main` do
+template, que inclui os PRs #9 a #18. O PR #18 só tipa `migrate.py` com mypy
+strict; um pin intermediário em `2b16d82` (PR #17) foi conferido e substituído
+antes do commit. A URL usa o SHA completo. As outras
+entradas do manifesto não mudaram. Os links do `docs/SCIENCE.md` para o
+README e o guia de migração do template seguem o novo commit.
+
+**Conferido nesta sessão.**
+- **Commit na `main` remota do template:** `git branch -r --contains`.
+- **SHA-256 dos bytes do submódulo:**
+  `bdc37f672fb6c834d72e3e4304d9a5fea8fb74307727821119ac564960a640df`
+  (89.252 bytes). Gitlink, versão, URL e checksum conferem entre si, pela mesma
+  checagem do `tests/pyinit.bats`.
+- **Arquivo gerado:** `init_project.sh` agora sai de
+  `scripts/build_init_project.py`, e `--check` confirmou que ele está em dia
+  com as fontes. Continua sendo um arquivo só, com os módulos Python
+  embutidos.
+- **Comportamento em HOME temporária,** com o script do submódulo:
+  - `--migrate --dry-run` deu o plano esperado, sem alterar a HOME;
+  - a configuração IDE vinculada por symlink foi recusada com saída 2, antes
+    de chamar o `uv`;
+  - `--help` lista todas as opções documentadas no README e no SCIENCE.
+- **Suíte:** 205 unittest, `bash -n` no gerador.
+
+**CI.** O [workflow_dispatch 43435101108](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43435101108),
+no commit `2054fa4`, aprovou os sete jobs: 239 Bats e 205 unittest sem
+skips, cinco imagens e smoke online.
+- **Bats:** os sete casos do `tests/pyinit.bats` passaram.
+- **Smoke online:** o `setup --profile science` instalou o `pyinit` pelo
+  download público fixado, que o instalador confere pelo SHA-256, e o
+  `pyinit --help` mostrou a ajuda da versão nova.
+
+**Limites.**
+- **Download nesta sessão:** não foi conferido, porque o proxy respondeu 403
+  ao `github.com`; a conferência ficou com o smoke online do CI.
+- **CI do template:** o resultado para `aef9333` não foi consultado.
+- **Instalações:** o `pyinit` instalado e a HOME real não foram atualizados.
+  Instalar a versão nova é uma operação aprovada à parte
+  (`devshell install --component pyinit`).
+
 ## Pin do actions/checkout em v7.0.1 — 2026-11-12
 
 O CI avisava que `actions/checkout` v4.2.2 declara Node.js 20, e que o runner

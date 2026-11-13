@@ -2,6 +2,14 @@
 
 ## Não publicado
 
+- `pyinit` fixado no commit `aef9333` do python-template-linux (PRs #9 a #18
+  do template). Projetos novos passam a ganhar `.github/workflows/ci.yml` e
+  `.pre-commit-config.yaml`; há `--no-ide`, `--no-r`, `--no-git`, `--no-ci` e
+  `--no-pre-commit` para não criar cada parte, `--dry-run` também na criação,
+  `--version`, e `--list-backups`/`--restore ID` para os backups da migração.
+  Para usar a versão nova, reinstale o componente:
+  `./bin/devshell install --component pyinit`, revise o plano e aprove o hash.
+
 - CI: `actions/checkout` fixado na v7.0.1 (Node.js 24), por SHA revisado na
   fonte oficial; some o aviso de Node.js 20 descontinuado.
 
