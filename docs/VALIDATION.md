@@ -60,11 +60,17 @@ README e o guia de migração do template seguem o novo commit.
   - `--help` lista todas as opções documentadas no README e no SCIENCE.
 - **Suíte:** 205 unittest, `bash -n` no gerador.
 
+**CI.** O [workflow_dispatch 43435101108](https://github.com/talesgomes27/data-lab-dotfiles/actions/runs/43435101108),
+no commit `2054fa4`, aprovou os sete jobs: 239 Bats e 205 unittest sem
+skips, cinco imagens e smoke online.
+- **Bats:** os sete casos do `tests/pyinit.bats` passaram.
+- **Smoke online:** o `setup --profile science` instalou o `pyinit` pelo
+  download público fixado, que o instalador confere pelo SHA-256, e o
+  `pyinit --help` mostrou a ajuda da versão nova.
+
 **Limites.**
-- **Download público:** não foi conferido nesta sessão, porque o proxy
-  respondeu 403 ao `github.com`, e o passo fica para o CI.
-- **Bats, ShellCheck e shfmt:** não estão instalados aqui, e o
-  `tests/pyinit.bats` roda só no CI.
+- **Download nesta sessão:** não foi conferido, porque o proxy respondeu 403
+  ao `github.com`; a conferência ficou com o smoke online do CI.
 - **CI do template:** o resultado para `aef9333` não foi consultado.
 - **Instalações:** o `pyinit` instalado e a HOME real não foram atualizados.
   Instalar a versão nova é uma operação aprovada à parte
