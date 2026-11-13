@@ -65,7 +65,7 @@ vínculos nesses destinos e caminhos físicos terminados em LF e mantém uv na
 somente famílias ausentes recebem padrões. O alvo Ruff é inferido pelas
 regras da própria ferramenta a partir de `requires-python`, com os limites
 documentados no
-[template fixado](https://github.com/talesgomes27/python-template-linux/blob/1d9e14154edac1c290409e6e41f36f1aa7330db4/README.md).
+[template fixado](https://github.com/talesgomes27/python-template-linux/blob/aef93331f0b612430116f9aa20d71742fcc1e1d2/README.md).
 
 O arquétipo `ds` declara JupyterLab no grupo `notebook`, mantendo
 Polars/DuckDB/PyArrow nas dependências do projeto e ipykernel em `dev`.
@@ -182,7 +182,7 @@ sistema e não executa stage, commit ou push.
 Confira `pyinit --help`: atualizar o clone ou aplicar dotfiles não reinstala o
 script. Use o instalador do componente e revise o plano/hash para atualizar uma
 instalação anterior, conforme a seção de manutenção acima. O contrato completo
-está no [guia de migração do template](https://github.com/talesgomes27/python-template-linux/blob/1d9e14154edac1c290409e6e41f36f1aa7330db4/docs/migration-recipe-for-agents.md).
+está no [guia de migração do template](https://github.com/talesgomes27/python-template-linux/blob/aef93331f0b612430116f9aa20d71742fcc1e1d2/docs/migration-recipe-for-agents.md).
 
 ## Preparar o ambiente pessoal
 
